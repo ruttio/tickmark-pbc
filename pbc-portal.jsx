@@ -451,24 +451,34 @@ export default function App() {
 
   /* ---- mutations: every one hits the backend, then refreshes ---- */
   const setStatus = (itemId, status, _by, action, extra = {}) =>
-    run(() => firmApi.setItemStatus(itemId, status, action, extra.note), reloadDetail);
+    run(async () => {
+      await firmApi.setItemStatus(itemId, status, action, extra.note);
+      // Auto-email the client when an item is sent back for revision.
+      if (status === "returned" && eng?.clientEmail) {
+        firmApi.notify(eng.id, "returned", { item_id: itemId }).catch(() => {});
+      }
+    }, reloadDetail);
 
-  const generateEngagement = ({ tplKey, client, periodEnd, baseDue, code, retDays, autoDelete }) =>
+  const generateEngagement = ({ tplKey, client, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite }) =>
     run(async () => {
       const t = TEMPLATES.find((x) => x.key === tplKey);
       const id = await firmApi.createEngagement(
-        { client, template: t.name, periodEnd, code, retentionDays: retDays, autoDelete },
+        { client, template: t.name, periodEnd, code, retentionDays: retDays, autoDelete, clientEmail },
         buildItems(t, baseDue)
       );
       setModal(null);
       await reloadList(id);
       setView("engagement");
+      if (sendInvite) {
+        try { await firmApi.notify(id, "invite"); }
+        catch (e) { alert("สร้างพอร์ทัลสำเร็จ แต่ส่งอีเมลไม่สำเร็จ: " + (e.message || e)); }
+      }
     });
 
-  const importEngagement = ({ client, periodEnd, baseDue, items, code, retDays, autoDelete }) =>
+  const importEngagement = ({ client, periodEnd, baseDue, items, code, retDays, autoDelete, clientEmail, sendInvite }) =>
     run(async () => {
       const id = await firmApi.createEngagement(
-        { client, template: "นำเข้าจาก Excel (PBC)", periodEnd, code, retentionDays: retDays, autoDelete },
+        { client, template: "นำเข้าจาก Excel (PBC)", periodEnd, code, retentionDays: retDays, autoDelete, clientEmail },
         items.map((it, i) => ({
           ref: String(i + 1).padStart(2, "0"), category: it.category || "General",
           description: it.text, required: true, dueDate: baseDue, status: it.status, sort: i,
@@ -477,6 +487,10 @@ export default function App() {
       setModal(null); setImportDraft(null); setOpenItem(null);
       await reloadList(id);
       setView("engagement");
+      if (sendInvite) {
+        try { await firmApi.notify(id, "invite"); }
+        catch (e) { alert("สร้างพอร์ทัลสำเร็จ แต่ส่งอีเมลไม่สำเร็จ: " + (e.message || e)); }
+      }
     });
 
   const addItem = ({ category, description, required, dueDate }) =>
@@ -502,6 +516,11 @@ export default function App() {
   // Private bucket -> short-lived signed URL, opened in a new tab.
   const downloadFile = (f) =>
     run(async () => { const url = await firmApi.signedDownloadUrl(f.storagePath, 60); window.open(url, "_blank"); });
+
+  const notifyClient = () => {
+    if (!eng?.clientEmail) { alert("ยังไม่มีอีเมลลูกค้า — เพิ่มได้ที่ ⚙ ตั้งค่าพอร์ทัล"); return; }
+    run(async () => { await firmApi.notify(eng.id, "invite"); alert("ส่งอีเมลแจ้งลูกค้าแล้ว → " + eng.clientEmail); });
+  };
 
   /* ---- Excel import: read file -> draft -> preview (pure client-side parse) ---- */
   const handleImportFile = async (file) => {
@@ -652,6 +671,7 @@ export default function App() {
               navigator.clipboard?.writeText(link).catch(() => {});
               alert("คัดลอกลิงก์สำหรับลูกค้าแล้ว (ส่งรหัส 16 หลักแยกช่องทาง):\n\n" + link);
             }}>🔗 ลิงก์ลูกค้า</button>
+            <button className="tk-btn ghost" onClick={notifyClient}>📧 แจ้งลูกค้า</button>
             <button className="tk-btn ghost" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
             {busy && <span className="tk-hint">กำลังบันทึก…</span>}
             <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
@@ -707,6 +727,7 @@ export default function App() {
         <PortalSettingsModal eng={eng} onClose={() => setModal(null)}
           onSavePasscode={(code) => setEngPasscode(eng.id, code)}
           onSaveRetention={(days, autoDelete) => setEngRetention(eng.id, days, autoDelete)}
+          onSaveClientEmail={(email) => run(() => firmApi.setClientEmail(eng.id, email), reloadDetail)}
           onDelete={() => deleteEng(eng.id)} />
       )}
     </div>
@@ -1124,7 +1145,7 @@ function ExpiredScreen({ eng, role, onExtend, onDelete }) {
   );
 }
 
-function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, onDelete }) {
+function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, onSaveClientEmail, onDelete }) {
   const base = eng.createdAt || Date.now();
   const currentDays = eng.expiresAt ? Math.round((eng.expiresAt - base) / DAY) : null;
   const matched = RETENTION_OPTIONS.find((o) => o.days === currentDays);
@@ -1132,6 +1153,7 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   const [autoDelete, setAutoDelete] = useState(!!eng.autoDelete);
   const [showPass, setShowPass] = useState(false);
   const [code, setCode] = useState("");
+  const [clientEmail, setClientEmail] = useState(eng.clientEmail || "");
   const x = engExpiry(eng);
 
   return (
@@ -1151,6 +1173,14 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
         <label className="tk-check"><input type="checkbox" checked={autoDelete} onChange={(e) => setAutoDelete(e.target.checked)} /> ลบอัตโนมัติเมื่อหมดอายุ</label>
       </div>
       <button className="tk-btn primary full" onClick={() => { onSaveRetention(days, autoDelete); onClose(); }}>บันทึกอายุพอร์ทัล</button>
+
+      <div style={{ height: 18 }} />
+      <p className="tk-block-h">อีเมลลูกค้า (สำหรับแจ้งเตือน)</p>
+      <label className="tk-field">
+        <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@company.com" />
+      </label>
+      <button className="tk-btn full" disabled={clientEmail === (eng.clientEmail || "")}
+        onClick={() => { onSaveClientEmail(clientEmail); onClose(); }}>บันทึกอีเมลลูกค้า</button>
 
       <div style={{ height: 18 }} />
       <p className="tk-block-h">รหัสเข้าพอร์ทัล</p>
@@ -1283,6 +1313,8 @@ function GenerateModal({ onClose, onCreate, busy }) {
   const [periodEnd, setPeriodEnd] = useState(new Date(new Date().getFullYear() - 1, 11, 31).toISOString().slice(0, 10));
   const [due, setDue] = useState(new Date(Date.now() + 14 * DAY).toISOString().slice(0, 10));
   const [code, setCode] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [sendInvite, setSendInvite] = useState(true);
   const [retDays, setRetDays] = useState(90);
   const [autoDelete, setAutoDelete] = useState(true);
   const tpl = TEMPLATES.find((t) => t.key === tplKey);
@@ -1294,6 +1326,8 @@ function GenerateModal({ onClose, onCreate, busy }) {
       tplKey, client: client.trim(),
       periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(),
       code, retDays, autoDelete,   // raw code — the DB hashes it (create_engagement)
+      clientEmail: clientEmail.trim(),
+      sendInvite: sendInvite && !!clientEmail.trim(),
     });
   };
   return (
@@ -1307,6 +1341,14 @@ function GenerateModal({ onClose, onCreate, busy }) {
       <label className="tk-field"><span>Client name</span>
         <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Northwind Trading Co." />
       </label>
+      <label className="tk-field"><span>อีเมลลูกค้า (ไม่บังคับ · สำหรับแจ้งเตือน)</span>
+        <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@company.com" />
+      </label>
+      {clientEmail.trim() && (
+        <label className="tk-check" style={{ alignSelf: "flex-start", paddingBottom: 4 }}>
+          <input type="checkbox" checked={sendInvite} onChange={(e) => setSendInvite(e.target.checked)} /> ส่งอีเมลแจ้งลูกค้าทันทีหลังสร้าง
+        </label>
+      )}
       <div className="tk-field-row">
         <label className="tk-field"><span>Period end</span><input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
         <label className="tk-field"><span>Default due date</span><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
@@ -1369,6 +1411,7 @@ function ImportModal({ draft, onClose, onImport }) {
   const [due, setDue] = useState(toDateInput(Date.now() + 14 * DAY));
   const [items, setItems] = useState(draft.items.map((i) => ({ ...i })));
   const [code, setCode] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
   const [retDays, setRetDays] = useState(90);
   const [autoDelete, setAutoDelete] = useState(true);
 
@@ -1390,6 +1433,8 @@ function ImportModal({ draft, onClose, onImport }) {
         <label className="tk-field"><span>Period end</span><input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
         <label className="tk-field"><span>กำหนดส่ง (ทุกข้อ)</span><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
       </div>
+      <label className="tk-field"><span>อีเมลลูกค้า (ไม่บังคับ · สำหรับแจ้งเตือน)</span>
+        <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@company.com" /></label>
       {(draft.meta.preparedBy || draft.meta.wpRef) && (
         <p className="tk-detected">
           {draft.meta.preparedBy && <span>Prepared by: <b>{draft.meta.preparedBy}</b></span>}
@@ -1436,7 +1481,7 @@ function ImportModal({ draft, onClose, onImport }) {
       <div className="tk-modal-actions">
         <button className="tk-btn ghost" onClick={onClose}>ยกเลิก</button>
         <button className="tk-btn primary" disabled={!included.length || !client.trim() || code.length !== 16}
-          onClick={() => onImport({ client: client.trim(), periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(), items: included, code, retDays, autoDelete })}>
+          onClick={() => onImport({ client: client.trim(), periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(), items: included, code, retDays, autoDelete, clientEmail: clientEmail.trim(), sendInvite: !!clientEmail.trim() })}>
           ยืนยันสร้างลิสต์ ({included.length})
         </button>
       </div>

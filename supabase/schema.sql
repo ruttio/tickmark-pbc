@@ -40,6 +40,7 @@ create table if not exists engagements (
   id            uuid primary key default gen_random_uuid(),
   firm_id       uuid not null references firms(id) on delete cascade,
   client        text not null,
+  client_email  text,                                 -- where client notifications are sent
   template      text not null,
   period_end    date,
   passcode_hash text not null,                       -- bcrypt hash of the 16-digit code
@@ -50,6 +51,8 @@ create table if not exists engagements (
 );
 -- for existing databases (idempotent):
 alter table engagements add column if not exists firm_seen_at timestamptz;
+-- for existing databases (idempotent):
+alter table engagements add column if not exists client_email text;
 create index if not exists idx_engagements_firm    on engagements(firm_id);
 create index if not exists idx_engagements_expiry   on engagements(expires_at) where auto_delete;
 
