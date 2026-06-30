@@ -241,27 +241,63 @@ function parsePBC(aoa) {
   let hr = -1;
   for (let r = 0; r < aoa.length; r++) {
     const cells = (aoa[r] || []).map((x) => String(x == null ? "" : x).trim().toLowerCase());
-    if (cells.includes("status") && (cells.includes("description") || cells.some((x) => x === "no." || x === "no"))) { hr = r; break; }
+    const hasKey = cells.some((x) => /status|requested|description|process/.test(x));
+    const hasAnchor = cells.some((x) => x === "no." || x === "no") || cells.some((x) => /status/.test(x));
+    if (hasKey && hasAnchor) { hr = r; break; }
   }
   if (hr < 0) hr = 0;
   const head = (aoa[hr] || []).map((x) => String(x == null ? "" : x).trim().toLowerCase());
   const find = (re) => head.findIndex((x) => re.test(x));
   const noCol = find(/^no\.?$/);
-  const descCol = find(/description/);
-  const reqCol = find(/requested/);
-  const statusCol = find(/status/);
-  const remarkCol = find(/remark/);
-  let textCol = reqCol >= 0 ? reqCol + 1 : descCol + 1;
-  if (textCol === statusCol || textCol < 0) textCol = reqCol >= 0 ? reqCol : descCol;
+  // Dedicated category column ("Process" / "Category" / "Section" / "หมวด").
+  // Many PBC templates put the section name here on EVERY row, not in the
+  // description column — so detect it explicitly instead of inferring.
+  const catCol = find(/process|category|section|cycle|area|หมวด|กระบวนการ|วงจร/);
+  const descCol = find(/description|document|particular|รายการ|เอกสาร/);
+  const reqCol = find(/requested|request/);
+  const statusCol = find(/status|สถานะ/);
+  const remarkCol = find(/remark|note|หมายเหตุ/);
+
+  // The actual document text often sits one column to the right of the
+  // "Requested Document" header (which labels a running number). Among the
+  // sensible candidate columns, pick the one with the most long text in the
+  // body — robust across templates.
+  const skip = new Set([noCol, catCol, statusCol, remarkCol].filter((c) => c >= 0));
+  const candidates = [...new Set([
+    reqCol >= 0 ? reqCol + 1 : -1, descCol >= 0 ? descCol : -1,
+    reqCol >= 0 ? reqCol : -1, descCol >= 0 ? descCol + 1 : -1,
+  ])].filter((c) => c >= 0 && !skip.has(c));
+  const score = (c) => {
+    let n = 0;
+    for (let r = hr + 1; r < aoa.length; r++) {
+      const v = cellStr(aoa[r], c);
+      if (v && isNaN(Number(v)) && v.length >= 5) n++;
+    }
+    return n;
+  };
+  let textCol = -1, best = -1;
+  for (const c of candidates) { const s = score(c); if (s > best) { best = s; textCol = c; } }
+  if (textCol < 0) textCol = descCol >= 0 ? descCol : reqCol;
 
   const items = [];
   let cat = "General";
   for (let r = hr + 1; r < aoa.length; r++) {
     const row = aoa[r] || [];
-    const cName = descCol >= 0 ? cellStr(row, descCol) : "";
-    if (cName) cat = cName;
+    // Category: prefer the dedicated column (filled on every row). With no such
+    // column, fall back to treating a description-only row as a section header.
+    if (catCol >= 0) {
+      const c = cellStr(row, catCol);
+      if (c) cat = c;
+    }
     let text = textCol >= 0 ? cellStr(row, textCol) : "";
-    if (!text && reqCol >= 0) { const rq = cellStr(row, reqCol); if (rq && isNaN(Number(rq))) text = rq; }
+    if (!text && reqCol >= 0 && reqCol !== textCol) {
+      const rq = cellStr(row, reqCol);
+      if (rq && isNaN(Number(rq))) text = rq;
+    }
+    if (catCol < 0 && descCol >= 0) {
+      const d = cellStr(row, descCol);
+      if (d && !text) { cat = d; continue; }
+    }
     if (!text) continue;
     items.push({
       id: uid(), category: cat || "General", text,
