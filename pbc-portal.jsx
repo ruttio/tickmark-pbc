@@ -861,6 +861,19 @@ function FirmDashboard({ dash, notifs, onOpen, onNew, onMarkAllRead }) {
   }, [notifs]);
   const totalUnread = useMemo(() => (notifs || []).filter((n) => n.unread).length, [notifs]);
 
+  // Group notifications by company (engagement); unread groups first, newest first.
+  const groups = useMemo(() => {
+    const byEng = new Map();
+    (notifs || []).forEach((n) => {
+      let g = byEng.get(n.engagementId);
+      if (!g) { g = { engagementId: n.engagementId, client: n.client, items: [], unread: 0, latest: 0 }; byEng.set(n.engagementId, g); }
+      g.items.push(n);
+      if (n.unread) g.unread++;
+      if (n.at > g.latest) g.latest = n.at;
+    });
+    return [...byEng.values()].sort((a, b) => (b.unread > 0) - (a.unread > 0) || b.latest - a.latest);
+  }, [notifs]);
+
   if (dash === null) return <div className="tk-boot">กำลังโหลดภาพรวม…</div>;
 
   return (
@@ -884,20 +897,29 @@ function FirmDashboard({ dash, notifs, onOpen, onNew, onMarkAllRead }) {
                   <span>การแจ้งเตือนล่าสุด</span>
                   {totalUnread > 0 && <button className="tk-link" onClick={onMarkAllRead}>อ่านทั้งหมด</button>}
                 </div>
-                {!notifs || notifs.length === 0 ? (
+                {groups.length === 0 ? (
                   <p className="tk-muted" style={{ padding: "12px 14px", margin: 0 }}>ยังไม่มีการแจ้งเตือน</p>
                 ) : (
                   <ul className="tk-notif-list">
-                    {notifs.slice(0, 30).map((n) => (
-                      <li key={n.id} className={n.unread ? "unread" : ""}
-                        onClick={() => { setShowNotifs(false); onOpen(n.engagementId); }}>
-                        <span className="tk-notif-ic">{notifIcon(n.action)}</span>
-                        <span className="tk-notif-body">
-                          <b>{n.client}</b> · {notifLabel(n.action)}
-                          <i>{n.itemDescription}</i>
-                          <em>{timeAgo(n.at)}</em>
-                        </span>
-                        {n.unread && <span className="tk-notif-dot" />}
+                    {groups.map((g) => (
+                      <li key={g.engagementId} className={`tk-notif-group ${g.unread ? "unread" : ""}`}
+                        onClick={() => { setShowNotifs(false); onOpen(g.engagementId); }}>
+                        <div className="tk-notif-grp-head">
+                          <b>{g.client}</b>
+                          {g.unread > 0 && <span className="tk-notif-count">{g.unread} ใหม่</span>}
+                          <em>{timeAgo(g.latest)}</em>
+                        </div>
+                        <ul className="tk-notif-sub">
+                          {g.items.slice(0, 3).map((n) => (
+                            <li key={n.id} className={n.unread ? "unread" : ""}>
+                              <span>{notifIcon(n.action)}</span>
+                              <span>{notifLabel(n.action)} · <i>{n.itemDescription}</i></span>
+                            </li>
+                          ))}
+                          {g.items.length > 3 && (
+                            <li className="tk-notif-more">+ อีก {g.items.length - 3} รายการ</li>
+                          )}
+                        </ul>
                       </li>
                     ))}
                   </ul>
