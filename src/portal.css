@@ -91,6 +91,7 @@
 .tk-req{color:var(--pine);margin-left:6px;font-style:normal}
 .tk-desc-sub{display:flex;gap:12px;margin-top:3px}
 .tk-files-mini{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--pine)}
+.tk-note-flag{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--amber);background:var(--amber-tint);padding:1px 6px;border-radius:9px;cursor:help}
 .tk-due{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft)}
 .tk-due.od{color:var(--rust);font-weight:600}
 .tk-chev{color:var(--line);font-size:20px}

@@ -59,10 +59,13 @@ create table if not exists request_items (
   required      boolean not null default true,
   due_date      date,
   status        text not null default 'outstanding',  -- outstanding|submitted|review|accepted|returned
-  note          text default '',
+  note          text default '',                       -- return reason (shown to the client)
+  firm_note     text not null default '',              -- firm-internal note (never sent to clients)
   sort          int  not null default 0
 );
 create index if not exists idx_items_engagement on request_items(engagement_id);
+-- for existing databases (idempotent):
+alter table request_items add column if not exists firm_note text not null default '';
 
 create table if not exists item_files (
   id            uuid primary key default gen_random_uuid(),

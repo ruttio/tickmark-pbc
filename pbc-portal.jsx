@@ -479,6 +479,8 @@ export default function App() {
   const deleteItem = (itemId) =>
     run(() => firmApi.deleteItem(itemId), async () => { setOpenItem(null); await reloadDetail(); });
 
+  const saveItemNote = (itemId, note) => run(() => firmApi.setItemNote(itemId, note), reloadDetail);
+
   const setEngPasscode = (id, code) => run(() => firmApi.setPortalCode(id, code));
   const setEngRetention = (id, days, autoDelete) =>
     run(() => firmApi.setRetention(id, { expiresAt: expiryFromDays(days, eng?.createdAt || Date.now()), autoDelete }), reloadDetail);
@@ -663,6 +665,7 @@ export default function App() {
                       <span className="tk-desc-main">{it.description}{it.required && <i className="tk-req" title="Required">•</i>}</span>
                       <span className="tk-desc-sub">
                         {it.files.length > 0 && <span className="tk-files-mini">{it.files.length} file{it.files.length > 1 ? "s" : ""}</span>}
+                        {it.firmNote && <span className="tk-note-flag" title={it.firmNote}>📝 โน้ต</span>}
                         <span className={`tk-due ${isOverdue(it) ? "od" : ""}`}>Due {fmtDate(it.dueDate)}</span>
                       </span>
                     </div>
@@ -679,8 +682,8 @@ export default function App() {
 
       {/* Item drawer */}
       {drawerItem && (
-        <Drawer item={drawerItem} role="firm" busy={busy} onClose={() => setOpenItem(null)}
-          onSetStatus={setStatus} onDelete={deleteItem} onDownload={downloadFile} />
+        <Drawer key={drawerItem.id} item={drawerItem} role="firm" busy={busy} onClose={() => setOpenItem(null)}
+          onSetStatus={setStatus} onDelete={deleteItem} onDownload={downloadFile} onSaveNote={saveItemNote} />
       )}
 
       {/* Modals */}
@@ -1085,9 +1088,10 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   );
 }
 
-function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, busy }) {
+function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, busy }) {
   const fileRef = useRef(null);
   const [note, setNote] = useState(item.note || "");
+  const [firmNote, setFirmNote] = useState(item.firmNote || "");
   const s = STATUS[item.status];
   return (
     <>
@@ -1134,6 +1138,19 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
             </>
           )}
         </div>
+
+        {/* Firm-internal note (not shown to clients) */}
+        {role === "firm" && onSaveNote && (
+          <div className="tk-block">
+            <p className="tk-block-h">โน้ตภายใน · เห็นเฉพาะสำนักงาน</p>
+            <textarea className="tk-note" placeholder="บันทึกโน้ตสำหรับข้อนี้ (เช่น สิ่งที่ต้องตามต่อ)…"
+              value={firmNote} onChange={(e) => setFirmNote(e.target.value)} />
+            <button className="tk-btn full" disabled={busy || firmNote === (item.firmNote || "")}
+              onClick={() => onSaveNote(item.id, firmNote.trim())}>
+              {busy ? "กำลังบันทึก…" : "บันทึกโน้ต"}
+            </button>
+          </div>
+        )}
 
         {/* Firm actions */}
         {role === "firm" && (
