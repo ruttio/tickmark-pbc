@@ -205,6 +205,28 @@
 .tk-expired-hint{font-size:13px;color:var(--ink-soft);margin:6px 0 14px;line-height:1.5}
 .tk-expired-actions{display:flex;gap:8px;justify-content:center;margin-bottom:12px}
 
+/* firm dashboard: search + engagement cards */
+.tk-search{flex:1;min-width:240px;max-width:460px;font-family:'Inter';font-size:14px;border:1px solid var(--line);border-radius:9px;padding:10px 13px;background:var(--card);color:var(--ink)}
+.tk-search:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 3px var(--pine-tint)}
+.tk-dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+.tk-dash-card{display:flex;flex-direction:column;gap:9px;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 16px 14px;cursor:pointer;font-family:'Inter';transition:border-color .12s,box-shadow .12s}
+.tk-dash-card:hover{border-color:var(--pine);box-shadow:0 8px 24px rgba(18,30,25,.08)}
+.tk-dash-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.tk-dash-titles{min-width:0}
+.tk-dash-titles h3{font-family:'Spectral',serif;font-weight:600;font-size:18px;color:var(--ink);margin:2px 0 0;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-dash-pct{flex:none;font-family:'Spectral',serif;line-height:1;color:var(--pine)}
+.tk-dash-pct b{font-size:26px;font-weight:700}
+.tk-dash-pct i{font-size:13px;font-style:normal;margin-left:1px}
+.tk-dash-bar{height:7px;border-radius:5px;background:var(--neutral-tint);overflow:hidden}
+.tk-dash-bar span{display:block;height:100%;background:var(--amber);border-radius:5px;transition:width .3s}
+.tk-dash-bar.wip span{background:var(--amber)}
+.tk-dash-bar.done span{background:var(--pine)}
+.tk-dash-sub{display:flex;gap:4px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--ink-soft);margin:0}
+.tk-dash-sub .soon{color:var(--amber);font-weight:600}
+.tk-dash-sub .od{color:var(--rust);font-weight:600}
+.tk-dash-chips{display:flex;gap:5px;flex-wrap:wrap}
+.tk-dash-chips .tk-pill{font-size:10.5px;padding:3px 7px}
+
 @media(max-width:560px){
   .tk-client{font-size:26px}
   .tk-head{align-items:flex-start}

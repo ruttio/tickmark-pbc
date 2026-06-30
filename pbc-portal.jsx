@@ -366,6 +366,8 @@ export default function App() {
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState(false);            // a backend mutation is in flight
   const [err, setErr] = useState("");
+  const [view, setView] = useState("dashboard");      // 'dashboard' | 'engagement'
+  const [dash, setDash] = useState(null);             // engagements + progress for the dashboard
 
   /* ---- auth session ---- */
   useEffect(() => {
@@ -399,6 +401,21 @@ export default function App() {
     else { setEngagements([]); setCurrentId(null); setEng(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  /* ---- dashboard: all portals + their progress ---- */
+  const loadDashboard = async () => {
+    setErr("");
+    try { setDash(await firmApi.listEngagementsWithProgress()); }
+    catch (e) { setErr(e.message || "โหลดภาพรวมไม่สำเร็จ"); }
+  };
+  useEffect(() => {
+    if (session && profile?.approved && view === "dashboard") loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, profile, view]);
+
+  // navigation between the dashboard and a single engagement
+  const openEngagement = (id) => { setCurrentId(id); setOpenItem(null); setView("engagement"); };
+  const goDashboard = () => { setOpenItem(null); setView("dashboard"); };
 
   /* ---- load the selected portal's detail when it changes ---- */
   const reloadDetail = async () => {
@@ -435,6 +452,7 @@ export default function App() {
       );
       setModal(null);
       await reloadList(id);
+      setView("engagement");
     });
 
   const importEngagement = ({ client, periodEnd, baseDue, items, code, retDays, autoDelete }) =>
@@ -448,6 +466,7 @@ export default function App() {
       );
       setModal(null); setImportDraft(null); setOpenItem(null);
       await reloadList(id);
+      setView("engagement");
     });
 
   const addItem = ({ category, description, required, dueDate }) =>
@@ -466,7 +485,7 @@ export default function App() {
   const extendEng = (id, days) =>
     run(() => firmApi.setRetention(id, { expiresAt: Math.max(Date.now(), eng?.expiresAt || Date.now()) + days * DAY, autoDelete: eng?.autoDelete }), reloadDetail);
   const deleteEng = (id) =>
-    run(() => firmApi.deleteEngagement(id), async () => { setOpenItem(null); setModal(null); await reloadList(); });
+    run(() => firmApi.deleteEngagement(id), async () => { setOpenItem(null); setModal(null); setView("dashboard"); await reloadList(); });
 
   // Private bucket -> short-lived signed URL, opened in a new tab.
   const downloadFile = (f) =>
@@ -536,8 +555,11 @@ export default function App() {
           <span className="tk-tag">PBC portal · firm</span>
         </div>
         <div className="tk-top-right">
-          {engagements.length > 0 && (
-            <select className="tk-select" value={currentId || ""} onChange={(e) => { setCurrentId(e.target.value); setOpenItem(null); }}>
+          {view === "engagement" && (
+            <button className="tk-btn ghost" onClick={goDashboard}>← ภาพรวม</button>
+          )}
+          {view === "engagement" && engagements.length > 0 && (
+            <select className="tk-select" value={currentId || ""} onChange={(e) => openEngagement(e.target.value)}>
               {engagements.map((e) => {
                 const x = engExpiry(e);
                 const tag = x.state === "expired" ? " · หมดอายุ" : x.state === "soon" ? ` · เหลือ ${x.daysLeft} วัน` : "";
@@ -555,8 +577,8 @@ export default function App() {
         <div className="tk-purge">{err}<button onClick={() => setErr("")}>✕</button></div>
       )}
 
-      {engagements.length === 0 && !currentId ? (
-        <Empty onGenerate={() => setModal("generate")} />
+      {view === "dashboard" ? (
+        <FirmDashboard dash={dash} onOpen={openEngagement} onNew={() => setModal("generate")} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
       ) : engExpiry(eng).state === "expired" ? (
@@ -785,6 +807,95 @@ function PendingApprovalScreen({ email, onSignOut }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- Firm dashboard: all portals + progress + search ------------ */
+function FirmDashboard({ dash, onOpen, onNew }) {
+  const [q, setQ] = useState("");
+
+  const filtered = useMemo(() => {
+    const list = dash || [];
+    const s = q.trim().toLowerCase();
+    if (!s) return list;
+    return list.filter((e) => `${e.client} ${e.template}`.toLowerCase().includes(s));
+  }, [dash, q]);
+
+  const totals = useMemo(() => {
+    const list = dash || [];
+    const items = list.reduce((n, e) => n + (e.total || 0), 0);
+    const accepted = list.reduce((n, e) => n + (e.accepted || 0), 0);
+    return { count: list.length, items, accepted, pct: items ? Math.round((accepted / items) * 100) : 0 };
+  }, [dash]);
+
+  if (dash === null) return <div className="tk-boot">กำลังโหลดภาพรวม…</div>;
+
+  return (
+    <main className="tk-main">
+      <section className="tk-head">
+        <div>
+          <p className="tk-eyebrow">ภาพรวมทั้งหมด</p>
+          <h1 className="tk-client">Engagements</h1>
+          <p className="tk-meta">
+            {totals.count} พอร์ทัล · <b>{totals.accepted}</b>/{totals.items} รายการรับแล้ว · {totals.pct}%
+          </p>
+        </div>
+        <button className="tk-btn primary" onClick={onNew}><Tick size={13} /> New portal</button>
+      </section>
+
+      <section className="tk-toolbar">
+        <input className="tk-search" type="search" value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="🔍 ค้นหาชื่อลูกค้า หรือ template…" />
+        {q && <span className="tk-hint">พบ {filtered.length} จาก {dash.length}</span>}
+      </section>
+
+      {dash.length === 0 ? (
+        <div className="tk-empty">
+          <Tick size={40} />
+          <h2>ยังไม่มีพอร์ทัล</h2>
+          <p>สร้างพอร์ทัลแรกจาก template เพื่อเริ่มงาน</p>
+          <button className="tk-btn primary" onClick={onNew}>Generate request list</button>
+        </div>
+      ) : filtered.length === 0 ? (
+        <p className="tk-none">ไม่พบพอร์ทัลที่ตรงกับ “{q}”</p>
+      ) : (
+        <div className="tk-dash-grid">
+          {filtered.map((e) => <EngagementCard key={e.id} e={e} onOpen={() => onOpen(e.id)} />)}
+        </div>
+      )}
+    </main>
+  );
+}
+
+function EngagementCard({ e, onOpen }) {
+  const x = engExpiry(e);
+  const tone = e.pct >= 100 ? "done" : e.pct > 0 ? "wip" : "";
+  return (
+    <button className="tk-dash-card" onClick={onOpen}>
+      <div className="tk-dash-top">
+        <div className="tk-dash-titles">
+          <p className="tk-eyebrow" style={{ margin: 0 }}>{e.template}</p>
+          <h3>{e.client}</h3>
+        </div>
+        <span className="tk-dash-pct"><b>{e.pct}</b><i>%</i></span>
+      </div>
+      <div className={`tk-dash-bar ${tone}`}><span style={{ width: `${e.pct}%` }} /></div>
+      <p className="tk-dash-sub">
+        <span>{e.accepted}/{e.total} รับแล้ว</span>
+        {x.state !== "none" && (
+          <span className={x.state === "expired" ? "od" : x.state === "soon" ? "soon" : ""}>
+            {" · "}{x.state === "expired" ? "หมดอายุ" : `เหลือ ${x.daysLeft} วัน`}
+          </span>
+        )}
+      </p>
+      <div className="tk-dash-chips">
+        {STATUS_ORDER.filter((s) => e.by?.[s]).map((s) => (
+          <span key={s} className={`tk-pill ${STATUS[s].tone}`}>
+            <span className="g">{STATUS[s].glyph}</span>{e.by[s]}
+          </span>
+        ))}
+      </div>
+    </button>
   );
 }
 
