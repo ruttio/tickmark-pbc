@@ -1,0 +1,10 @@
+{
+  // Tells Cloudflare to deploy this as a static-asset site (serves ./dist),
+  // instead of trying to auto-detect a framework (which forced Vite 6).
+  // `npx wrangler deploy` reads this and uploads dist/ — no Worker code needed.
+  "name": "tickmark-pbc",
+  "compatibility_date": "2026-06-30",
+  "assets": {
+    "directory": "./dist"
+  }
+}
