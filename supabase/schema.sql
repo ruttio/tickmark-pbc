@@ -45,8 +45,11 @@ create table if not exists engagements (
   passcode_hash text not null,                       -- bcrypt hash of the 16-digit code
   expires_at    timestamptz,                         -- null = never expires
   auto_delete   boolean not null default true,
+  firm_seen_at  timestamptz,                         -- last time firm viewed this portal (for unread badges)
   created_at    timestamptz not null default now()
 );
+-- for existing databases (idempotent):
+alter table engagements add column if not exists firm_seen_at timestamptz;
 create index if not exists idx_engagements_firm    on engagements(firm_id);
 create index if not exists idx_engagements_expiry   on engagements(expires_at) where auto_delete;
 

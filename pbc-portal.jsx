@@ -368,6 +368,7 @@ export default function App() {
   const [err, setErr] = useState("");
   const [view, setView] = useState("dashboard");      // 'dashboard' | 'engagement'
   const [dash, setDash] = useState(null);             // engagements + progress for the dashboard
+  const [notifs, setNotifs] = useState([]);           // recent client activity (notification center)
 
   /* ---- auth session ---- */
   useEffect(() => {
@@ -405,8 +406,13 @@ export default function App() {
   /* ---- dashboard: all portals + their progress ---- */
   const loadDashboard = async () => {
     setErr("");
-    try { setDash(await firmApi.listEngagementsWithProgress()); }
-    catch (e) { setErr(e.message || "โหลดภาพรวมไม่สำเร็จ"); }
+    try {
+      const [d, n] = await Promise.all([
+        firmApi.listEngagementsWithProgress(),
+        firmApi.listNotifications().catch(() => []),
+      ]);
+      setDash(d); setNotifs(n);
+    } catch (e) { setErr(e.message || "โหลดภาพรวมไม่สำเร็จ"); }
   };
   useEffect(() => {
     if (session && profile?.approved && view === "dashboard") loadDashboard();
@@ -414,8 +420,12 @@ export default function App() {
   }, [session, profile, view]);
 
   // navigation between the dashboard and a single engagement
-  const openEngagement = (id) => { setCurrentId(id); setOpenItem(null); setView("engagement"); };
+  const openEngagement = (id) => {
+    setCurrentId(id); setOpenItem(null); setView("engagement");
+    firmApi.markEngagementSeen(id).catch(() => {}); // clear its unread badge
+  };
   const goDashboard = () => { setOpenItem(null); setView("dashboard"); };
+  const markAllRead = () => run(() => firmApi.markAllSeen(), loadDashboard);
 
   /* ---- load the selected portal's detail when it changes ---- */
   const reloadDetail = async () => {
@@ -580,7 +590,8 @@ export default function App() {
       )}
 
       {view === "dashboard" ? (
-        <FirmDashboard dash={dash} onOpen={openEngagement} onNew={() => setModal("generate")} />
+        <FirmDashboard dash={dash} notifs={notifs} onOpen={openEngagement}
+          onNew={() => setModal("generate")} onMarkAllRead={markAllRead} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
       ) : engExpiry(eng).state === "expired" ? (
@@ -813,9 +824,21 @@ function PendingApprovalScreen({ email, onSignOut }) {
   );
 }
 
-/* ---------- Firm dashboard: all portals + progress + search ------------ */
-function FirmDashboard({ dash, onOpen, onNew }) {
+/* ---------- Firm dashboard: all portals + progress + search + notifs ---- */
+function timeAgo(ts) {
+  if (!ts) return "";
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return "เมื่อสักครู่";
+  const m = Math.floor(s / 60); if (m < 60) return `${m} นาทีที่แล้ว`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h} ชม.ที่แล้ว`;
+  return `${Math.floor(h / 24)} วันที่แล้ว`;
+}
+const notifLabel = (a) => (/remove/i.test(a) ? "ลบไฟล์ที่อัปไว้" : /submit/i.test(a) ? "อัปโหลดเอกสาร" : a);
+const notifIcon = (a) => (/remove/i.test(a) ? "🗑" : "📤");
+
+function FirmDashboard({ dash, notifs, onOpen, onNew, onMarkAllRead }) {
   const [q, setQ] = useState("");
+  const [showNotifs, setShowNotifs] = useState(false);
 
   const filtered = useMemo(() => {
     const list = dash || [];
@@ -831,6 +854,13 @@ function FirmDashboard({ dash, onOpen, onNew }) {
     return { count: list.length, items, accepted, pct: items ? Math.round((accepted / items) * 100) : 0 };
   }, [dash]);
 
+  const unreadByEng = useMemo(() => {
+    const m = {};
+    (notifs || []).forEach((n) => { if (n.unread && n.engagementId) m[n.engagementId] = (m[n.engagementId] || 0) + 1; });
+    return m;
+  }, [notifs]);
+  const totalUnread = useMemo(() => (notifs || []).filter((n) => n.unread).length, [notifs]);
+
   if (dash === null) return <div className="tk-boot">กำลังโหลดภาพรวม…</div>;
 
   return (
@@ -843,7 +873,40 @@ function FirmDashboard({ dash, onOpen, onNew }) {
             {totals.count} พอร์ทัล · <b>{totals.accepted}</b>/{totals.items} รายการรับแล้ว · {totals.pct}%
           </p>
         </div>
-        <button className="tk-btn primary" onClick={onNew}><Tick size={13} /> New portal</button>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div className="tk-notif-wrap">
+            <button className="tk-btn" onClick={() => setShowNotifs((s) => !s)}>
+              🔔 แจ้งเตือน{totalUnread > 0 && <b className="tk-notif-count">{totalUnread}</b>}
+            </button>
+            {showNotifs && (
+              <div className="tk-notif-panel">
+                <div className="tk-notif-head">
+                  <span>การแจ้งเตือนล่าสุด</span>
+                  {totalUnread > 0 && <button className="tk-link" onClick={onMarkAllRead}>อ่านทั้งหมด</button>}
+                </div>
+                {!notifs || notifs.length === 0 ? (
+                  <p className="tk-muted" style={{ padding: "12px 14px", margin: 0 }}>ยังไม่มีการแจ้งเตือน</p>
+                ) : (
+                  <ul className="tk-notif-list">
+                    {notifs.slice(0, 30).map((n) => (
+                      <li key={n.id} className={n.unread ? "unread" : ""}
+                        onClick={() => { setShowNotifs(false); onOpen(n.engagementId); }}>
+                        <span className="tk-notif-ic">{notifIcon(n.action)}</span>
+                        <span className="tk-notif-body">
+                          <b>{n.client}</b> · {notifLabel(n.action)}
+                          <i>{n.itemDescription}</i>
+                          <em>{timeAgo(n.at)}</em>
+                        </span>
+                        {n.unread && <span className="tk-notif-dot" />}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+          <button className="tk-btn primary" onClick={onNew}><Tick size={13} /> New portal</button>
+        </div>
       </section>
 
       <section className="tk-toolbar">
@@ -863,18 +926,21 @@ function FirmDashboard({ dash, onOpen, onNew }) {
         <p className="tk-none">ไม่พบพอร์ทัลที่ตรงกับ “{q}”</p>
       ) : (
         <div className="tk-dash-grid">
-          {filtered.map((e) => <EngagementCard key={e.id} e={e} onOpen={() => onOpen(e.id)} />)}
+          {filtered.map((e) => (
+            <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
+          ))}
         </div>
       )}
     </main>
   );
 }
 
-function EngagementCard({ e, onOpen }) {
+function EngagementCard({ e, onOpen, unread }) {
   const x = engExpiry(e);
   const tone = e.pct >= 100 ? "done" : e.pct > 0 ? "wip" : "";
   return (
     <button className="tk-dash-card" onClick={onOpen}>
+      {unread > 0 && <span className="tk-card-bang" title={`${unread} การแจ้งเตือนใหม่`}>!</span>}
       <div className="tk-dash-top">
         <div className="tk-dash-titles">
           <p className="tk-eyebrow" style={{ margin: 0 }}>{e.template}</p>
