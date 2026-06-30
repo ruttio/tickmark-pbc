@@ -451,13 +451,7 @@ export default function App() {
 
   /* ---- mutations: every one hits the backend, then refreshes ---- */
   const setStatus = (itemId, status, _by, action, extra = {}) =>
-    run(async () => {
-      await firmApi.setItemStatus(itemId, status, action, extra.note);
-      // Auto-email the client when an item is sent back for revision.
-      if (status === "returned" && eng?.clientEmail) {
-        firmApi.notify(eng.id, "returned", { item_id: itemId }).catch(() => {});
-      }
-    }, reloadDetail);
+    run(() => firmApi.setItemStatus(itemId, status, action, extra.note), reloadDetail);
 
   const generateEngagement = ({ tplKey, client, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite }) =>
     run(async () => {
@@ -519,8 +513,11 @@ export default function App() {
 
   const notifyClient = () => {
     if (!eng?.clientEmail) { alert("ยังไม่มีอีเมลลูกค้า — เพิ่มได้ที่ ⚙ ตั้งค่าพอร์ทัล"); return; }
-    run(async () => { await firmApi.notify(eng.id, "invite"); alert("ส่งอีเมลแจ้งลูกค้าแล้ว → " + eng.clientEmail); });
+    setModal("notify");
   };
+  // Send exactly one email of the chosen kind ('invite' | 'returned' | 'reminder').
+  const sendNotify = (kind) =>
+    run(async () => { await firmApi.notify(eng.id, kind); setModal(null); alert("ส่งอีเมลแล้ว → " + eng.clientEmail); });
 
   /* ---- Excel import: read file -> draft -> preview (pure client-side parse) ---- */
   const handleImportFile = async (file) => {
@@ -729,6 +726,9 @@ export default function App() {
           onSaveRetention={(days, autoDelete) => setEngRetention(eng.id, days, autoDelete)}
           onSaveClientEmail={(email) => run(() => firmApi.setClientEmail(eng.id, email), reloadDetail)}
           onDelete={() => deleteEng(eng.id)} />
+      )}
+      {modal === "notify" && eng && (
+        <NotifyModal eng={eng} busy={busy} onClose={() => setModal(null)} onSend={sendNotify} />
       )}
     </div>
   );
@@ -1484,6 +1484,33 @@ function ImportModal({ draft, onClose, onImport }) {
           onClick={() => onImport({ client: client.trim(), periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(), items: included, code, retDays, autoDelete, clientEmail: clientEmail.trim(), sendInvite: !!clientEmail.trim() })}>
           ยืนยันสร้างลิสต์ ({included.length})
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+function NotifyModal({ eng, busy, onClose, onSend }) {
+  const returned = (eng.items || []).filter((i) => i.status === "returned").length;
+  const outstanding = (eng.items || []).filter((i) => i.status === "outstanding").length;
+  const opts = [
+    { kind: "invite", icon: "📂", label: "แจ้งเปิดพอร์ทัล (เชิญอัปโหลด)", desc: "ส่งลิงก์พอร์ทัล + ขอให้เริ่มอัปโหลดเอกสาร" },
+    { kind: "returned", icon: "↩️", label: "เตือนเอกสารที่ต้องแก้ไข", desc: "รวมทุกข้อที่ส่งกลับ (returned) เป็นเมลเดียว", n: returned, disabled: returned === 0 },
+    { kind: "reminder", icon: "⏰", label: "เตือนเอกสารที่ยังไม่ส่ง", desc: "รวมทุกข้อที่ยังค้าง (outstanding) เป็นเมลเดียว", n: outstanding, disabled: outstanding === 0 },
+  ];
+  return (
+    <Modal title="แจ้งเตือนลูกค้า" onClose={onClose}>
+      <p className="tk-tplblurb" style={{ marginTop: 0 }}>ส่งถึง <b>{eng.clientEmail}</b> · เลือกอย่างเดียว ส่งทีละเมล (ประหยัดโควตา)</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {opts.map((o) => (
+          <button key={o.kind} className="tk-notify-opt" disabled={busy || o.disabled} onClick={() => onSend(o.kind)}>
+            <span className="ic">{o.icon}</span>
+            <span className="body">
+              <b>{o.label}{o.n != null && <i className="cnt">{o.n}</i>}</b>
+              <em>{o.disabled ? "— ไม่มีรายการ" : o.desc}</em>
+            </span>
+            <span className="go">{busy ? "…" : "ส่ง ›"}</span>
+          </button>
+        ))}
       </div>
     </Modal>
   );

@@ -254,6 +254,17 @@
 .tk-notif-sub li i{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tk-notif-more{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--pine)}
 
+/* notify-client chooser */
+.tk-notify-opt{display:flex;align-items:center;gap:12px;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:13px 14px;cursor:pointer;font-family:'Inter'}
+.tk-notify-opt:hover:not(:disabled){border-color:var(--pine);background:#f3f5ee}
+.tk-notify-opt:disabled{opacity:.5;cursor:not-allowed}
+.tk-notify-opt .ic{font-size:20px;flex:none}
+.tk-notify-opt .body{flex:1;min-width:0;display:flex;flex-direction:column}
+.tk-notify-opt .body b{font-size:14px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:7px}
+.tk-notify-opt .body b .cnt{font-style:normal;font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--pine-tint);color:var(--pine);padding:1px 7px;border-radius:9px}
+.tk-notify-opt .body em{font-style:normal;font-size:12px;color:var(--ink-soft);margin-top:2px}
+.tk-notify-opt .go{flex:none;font-size:13px;font-weight:600;color:var(--pine)}
+
 @media(max-width:560px){
   .tk-client{font-size:26px}
   .tk-head{align-items:flex-start}

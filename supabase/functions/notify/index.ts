@@ -89,18 +89,27 @@ Deno.serve(async (req) => {
     html = shell(`เรียน ${eng.client}`,
       `สำนักงานได้เปิดพอร์ทัลสำหรับงาน <b>${eng.template}</b> และมีรายการเอกสารที่ต้องจัดเตรียม โปรดเข้าพอร์ทัลเพื่ออัปโหลดเอกสาร`,
       portalUrl, "เข้าพอร์ทัลเพื่ออัปโหลด", foot);
-  } else if (kind === "returned") {
-    const item_id = String(body.item_id || "");
-    let itemDesc = "";
-    if (item_id) {
-      const { data: it } = await admin.from("request_items")
-        .select("description").eq("id", item_id).eq("engagement_id", eng.id).maybeSingle();
-      itemDesc = it?.description || "";
+  } else if (kind === "returned" || kind === "reminder") {
+    // One consolidated email summarising all items in the relevant state.
+    const wantStatus = kind === "returned" ? "returned" : "outstanding";
+    const { data: its } = await admin.from("request_items")
+      .select("ref, description").eq("engagement_id", eng.id).eq("status", wantStatus).order("sort");
+    if (!its || its.length === 0) {
+      return json({ error: kind === "returned" ? "ไม่มีรายการที่ส่งกลับให้แก้ไข" : "ไม่มีรายการที่ยังค้างอยู่" }, 400);
     }
-    subject = `มีเอกสารที่ต้องแก้ไข — ${eng.client}`;
-    html = shell("มีเอกสารที่ต้องแก้ไข",
-      `สำนักงานได้ส่งกลับเอกสาร${itemDesc ? ` “<b>${itemDesc}</b>”` : ""} เพื่อให้แก้ไข/ส่งใหม่ โปรดเข้าพอร์ทัลเพื่อดูหมายเหตุและอัปโหลดอีกครั้ง`,
-      portalUrl, "เปิดดูและแก้ไข", foot);
+    const listHtml = `<ul style="font-size:14px;line-height:1.7;color:#16241f;margin:6px 0 18px;padding-left:20px">` +
+      its.map((i: any) => `<li>${i.ref ? i.ref + ". " : ""}${i.description}</li>`).join("") + `</ul>`;
+    if (kind === "returned") {
+      subject = `มีเอกสารที่ต้องแก้ไข (${its.length}) — ${eng.client}`;
+      html = shell("มีเอกสารที่ต้องแก้ไข",
+        `สำนักงานได้ส่งกลับเอกสารต่อไปนี้เพื่อให้แก้ไข/ส่งใหม่:${listHtml}โปรดเข้าพอร์ทัลเพื่อดูหมายเหตุและอัปโหลดอีกครั้ง`,
+        portalUrl, "เปิดดูและแก้ไข", foot);
+    } else {
+      subject = `เอกสารที่ยังรอจัดเตรียม (${its.length}) — ${eng.client}`;
+      html = shell("ยังมีเอกสารที่รอจัดเตรียม",
+        `รายการต่อไปนี้ยังไม่ได้รับ โปรดจัดเตรียมและอัปโหลด:${listHtml}`,
+        portalUrl, "เข้าพอร์ทัลเพื่ออัปโหลด", foot);
+    }
   } else {
     return json({ error: "unknown kind" }, 400);
   }
