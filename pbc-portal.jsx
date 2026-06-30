@@ -319,6 +319,7 @@ function seedState() {
 /* ======================================================================= */
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
+  const [profile, setProfile] = useState(undefined); // undefined = loading, then { approved, ... } | null
   const [engagements, setEngagements] = useState([]); // summary list (no items)
   const [currentId, setCurrentId] = useState(null);
   const [eng, setEng] = useState(null);               // detail of currentId (items + files + history)
@@ -337,6 +338,16 @@ export default function App() {
     const unsub = firmApi.onAuthChange((s) => { if (alive) setSession(s); });
     return () => { alive = false; unsub(); };
   }, []);
+
+  /* ---- load the signed-in user's profile (for the approval gate) ---- */
+  useEffect(() => {
+    let alive = true;
+    if (!session) { setProfile(undefined); return; }
+    firmApi.getProfile()
+      .then((p) => { if (alive) setProfile(p); })
+      .catch(() => { if (alive) setProfile(null); });
+    return () => { alive = false; };
+  }, [session]);
 
   /* ---- load the firm's portals once signed in (RLS scopes to this firm) ---- */
   const reloadList = async (selectId) => {
@@ -475,6 +486,9 @@ export default function App() {
 
   if (session === undefined) return <div className="tk-boot">Loading…</div>;
   if (!session) return <AuthScreen />;
+  if (profile === undefined) return <div className="tk-boot">Loading…</div>;
+  if (!profile || !profile.approved)
+    return <PendingApprovalScreen email={session.user?.email} onSignOut={signOut} />;
 
   return (
     <div className="tk-root">
@@ -702,6 +716,36 @@ function AuthScreen() {
           {!SUPABASE_CONFIGURED && (
             <p className="tk-lock-demo" style={{ marginTop: 12 }}>⚠ ยังไม่ได้ตั้งค่า backend (.env.local)</p>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Account pending approval ----------------------------------- */
+function PendingApprovalScreen({ email, onSignOut }) {
+  return (
+    <div className="tk-root">
+      <header className="tk-top">
+        <div className="tk-brand">
+          <Tick size={20} />
+          <span className="tk-word">Tickmark</span>
+          <span className="tk-tag">PBC portal · firm</span>
+        </div>
+        <div className="tk-top-right">
+          <button className="tk-icon" title="ออกจากระบบ" onClick={onSignOut}>⎋</button>
+        </div>
+      </header>
+      <div className="tk-lock">
+        <div className="tk-lock-card">
+          <div className="tk-lock-icon">⏳</div>
+          <h2>บัญชีรอการอนุมัติ</h2>
+          <p className="tk-muted">
+            สมัครสำเร็จแล้ว — บัญชี <b>{email}</b> กำลังรอผู้ดูแลระบบอนุมัติ
+            เมื่อได้รับอนุมัติแล้วจึงจะเริ่มสร้างพอร์ทัลได้
+          </p>
+          <p className="tk-lock-foot">โปรดติดต่อผู้ดูแลระบบ หรือลองเข้าสู่ระบบใหม่อีกครั้งภายหลัง</p>
+          <button className="tk-btn full" onClick={onSignOut}>ออกจากระบบ</button>
         </div>
       </div>
     </div>

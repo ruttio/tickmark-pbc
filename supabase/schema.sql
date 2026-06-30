@@ -29,8 +29,11 @@ create table if not exists profiles (
   id          uuid primary key references auth.users(id) on delete cascade,
   firm_id     uuid not null references firms(id) on delete cascade,
   full_name   text,
+  approved    boolean not null default false,   -- admin must approve before use
   created_at  timestamptz not null default now()
 );
+-- for existing databases (idempotent):
+alter table profiles add column if not exists approved boolean not null default false;
 
 -- A portal = one engagement for one client.
 create table if not exists engagements (
@@ -133,8 +136,8 @@ begin
   if length(regexp_replace(p_code, '\D', '', 'g')) <> 16 then
     raise exception 'passcode must be exactly 16 digits';
   end if;
-  select firm_id into v_firm from profiles where id = auth.uid();
-  if v_firm is null then raise exception 'no firm profile for this user'; end if;
+  select firm_id into v_firm from profiles where id = auth.uid() and approved;
+  if v_firm is null then raise exception 'account is pending approval (or no firm profile)'; end if;
 
   insert into engagements(firm_id, client, template, period_end, passcode_hash, expires_at, auto_delete)
   values (
@@ -189,7 +192,7 @@ alter table unlock_throttle enable row level security;  -- same
 
 -- helper: the caller's firm
 create or replace function my_firm() returns uuid language sql stable security definer set search_path = public as $$
-  select firm_id from profiles where id = auth.uid()
+  select firm_id from profiles where id = auth.uid() and approved
 $$;
 
 drop policy if exists own_profile on profiles;
