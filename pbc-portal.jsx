@@ -355,6 +355,8 @@ function seedState() {
 /* ======================================================================= */
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
+  const [recovery, setRecovery] = useState(() =>
+    typeof window !== "undefined" && window.location.hash.includes("type=recovery")); // arrived via reset link
   const [profile, setProfile] = useState(undefined); // undefined = loading, then { approved, ... } | null
   const [engagements, setEngagements] = useState([]); // summary list (no items)
   const [currentId, setCurrentId] = useState(null);
@@ -374,9 +376,21 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     firmApi.getSession().then((s) => { if (alive) setSession(s); });
-    const unsub = firmApi.onAuthChange((s) => { if (alive) setSession(s); });
+    const unsub = firmApi.onAuthChange((event, s) => {
+      if (!alive) return;
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
+      setSession(s);
+    });
     return () => { alive = false; unsub(); };
   }, []);
+
+  const saveNewPassword = (pw) =>
+    run(async () => {
+      await firmApi.updatePassword(pw);
+      setRecovery(false);
+      history.replaceState(null, "", window.location.pathname + window.location.search); // drop the token from the URL
+      alert("ตั้งรหัสผ่านใหม่เรียบร้อยแล้ว");
+    });
 
   /* ---- load the signed-in user's profile (for the approval gate) ---- */
   useEffect(() => {
@@ -568,6 +582,7 @@ export default function App() {
   const drawerItem = eng?.items.find((it) => it.id === openItem) || null;
 
   if (session === undefined) return <div className="tk-boot">Loading…</div>;
+  if (recovery) return <SetNewPasswordScreen busy={busy} onSave={saveNewPassword} onSignOut={signOut} />;
   if (!session) return <AuthScreen />;
   if (profile === undefined) return <div className="tk-boot">Loading…</div>;
   if (!profile || !profile.approved)
@@ -745,13 +760,18 @@ function AuthScreen() {
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
 
-  const ready = email.trim() && password.length >= 6 && (mode === "signin" || firmName.trim());
+  const ready = mode === "reset"
+    ? !!email.trim()
+    : email.trim() && password.length >= 6 && (mode === "signin" || firmName.trim());
 
   const submit = async () => {
     if (!ready || busy) return;
     setBusy(true); setErr(""); setInfo("");
     try {
-      if (mode === "signup") {
+      if (mode === "reset") {
+        await firmApi.requestPasswordReset(email.trim());
+        setInfo("ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว — เปิดลิงก์ในอีเมลเพื่อตั้งรหัสใหม่ (เช็ค spam ด้วย)");
+      } else if (mode === "signup") {
         const data = await firmApi.signUp({ email: email.trim(), password, firmName: firmName.trim(), fullName: fullName.trim() });
         // If "Confirm email" is on, no session is returned until the user confirms.
         if (!data.session) setInfo("สมัครสำเร็จ — ถ้าเปิด Confirm email ไว้ โปรดยืนยันทางอีเมลก่อน แล้วเข้าสู่ระบบ");
@@ -776,9 +796,11 @@ function AuthScreen() {
       <div className="tk-lock">
         <div className="tk-lock-card" style={{ textAlign: "left" }}>
           <div className="tk-lock-icon" style={{ textAlign: "center" }}>🏢</div>
-          <h2 style={{ textAlign: "center" }}>{mode === "signin" ? "เข้าสู่ระบบสำนักงาน" : "สมัครสำนักงานใหม่"}</h2>
+          <h2 style={{ textAlign: "center" }}>{mode === "signin" ? "เข้าสู่ระบบสำนักงาน" : mode === "signup" ? "สมัครสำนักงานใหม่" : "รีเซ็ตรหัสผ่าน"}</h2>
           <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>
-            {mode === "signin" ? "สำหรับพนักงานสำนักงาน — เห็นเฉพาะงานของสำนักงานคุณ" : "สร้างบัญชีสำนักงานของคุณเพื่อเริ่มสร้างพอร์ทัล"}
+            {mode === "signin" ? "สำหรับพนักงานสำนักงาน — เห็นเฉพาะงานของสำนักงานคุณ"
+              : mode === "signup" ? "สร้างบัญชีสำนักงานของคุณเพื่อเริ่มสร้างพอร์ทัล"
+              : "ใส่อีเมลที่ใช้สมัคร เราจะส่งลิงก์ตั้งรหัสผ่านใหม่ให้"}
           </p>
 
           {mode === "signup" && (
@@ -791,24 +813,63 @@ function AuthScreen() {
           )}
           <label className="tk-field"><span>อีเมล</span>
             <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@firm.com" /></label>
-          <label className="tk-field"><span>รหัสผ่าน (≥ 6 ตัว)</span>
-            <input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              value={password} onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" /></label>
+          {mode !== "reset" && (
+            <label className="tk-field"><span>รหัสผ่าน (≥ 6 ตัว)</span>
+              <input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                value={password} onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" /></label>
+          )}
 
           {err && <p className="tk-lock-err">{err}</p>}
           {info && <p className="tk-lock-demo">{info}</p>}
 
           <button className="tk-btn primary full" disabled={!ready || busy} onClick={submit}>
-            {busy ? "กำลังดำเนินการ…" : mode === "signin" ? "เข้าสู่ระบบ" : "สมัครและเริ่มใช้งาน"}
+            {busy ? "กำลังดำเนินการ…" : mode === "signin" ? "เข้าสู่ระบบ" : mode === "signup" ? "สมัครและเริ่มใช้งาน" : "ส่งลิงก์รีเซ็ตรหัสผ่าน"}
           </button>
-          <button type="button" className="tk-link" style={{ display: "block", margin: "12px auto 0" }}
+          {mode === "signin" && (
+            <button type="button" className="tk-link" style={{ display: "block", margin: "12px auto 0" }}
+              onClick={() => { setMode("reset"); setErr(""); setInfo(""); }}>ลืมรหัสผ่าน?</button>
+          )}
+          <button type="button" className="tk-link" style={{ display: "block", margin: "8px auto 0" }}
             onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setErr(""); setInfo(""); }}>
-            {mode === "signin" ? "ยังไม่มีบัญชี? สมัครสำนักงานใหม่" : "มีบัญชีแล้ว? เข้าสู่ระบบ"}
+            {mode === "signin" ? "ยังไม่มีบัญชี? สมัครสำนักงานใหม่" : mode === "signup" ? "มีบัญชีแล้ว? เข้าสู่ระบบ" : "← กลับเข้าสู่ระบบ"}
           </button>
           {!SUPABASE_CONFIGURED && (
             <p className="tk-lock-demo" style={{ marginTop: 12 }}>⚠ ยังไม่ได้ตั้งค่า backend (.env.local)</p>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Set a new password (password recovery) --------------------- */
+function SetNewPasswordScreen({ busy, onSave, onSignOut }) {
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const ok = pw.length >= 6 && pw === pw2;
+  return (
+    <div className="tk-root">
+      <header className="tk-top">
+        <div className="tk-brand">
+          <Tick size={20} /><span className="tk-word">Tickmark</span><span className="tk-tag">PBC portal · firm</span>
+        </div>
+      </header>
+      <div className="tk-lock">
+        <div className="tk-lock-card" style={{ textAlign: "left" }}>
+          <div className="tk-lock-icon" style={{ textAlign: "center" }}>🔑</div>
+          <h2 style={{ textAlign: "center" }}>ตั้งรหัสผ่านใหม่</h2>
+          <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>กรอกรหัสผ่านใหม่สำหรับบัญชีของคุณ</p>
+          <label className="tk-field"><span>รหัสผ่านใหม่ (≥ 6 ตัว)</span>
+            <input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" /></label>
+          <label className="tk-field"><span>ยืนยันรหัสผ่านใหม่</span>
+            <input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && ok && onSave(pw)} placeholder="••••••••" /></label>
+          {pw2 && pw !== pw2 && <p className="tk-lock-err">รหัสผ่านไม่ตรงกัน</p>}
+          <button className="tk-btn primary full" disabled={!ok || busy} onClick={() => onSave(pw)}>
+            {busy ? "กำลังบันทึก…" : "บันทึกรหัสผ่านใหม่"}
+          </button>
+          <button type="button" className="tk-link" style={{ display: "block", margin: "12px auto 0" }} onClick={onSignOut}>ยกเลิก / ออกจากระบบ</button>
         </div>
       </div>
     </div>
