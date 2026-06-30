@@ -81,9 +81,12 @@ create table if not exists item_files (
   size          bigint not null,
   type          text,
   storage_path  text not null,                        -- e.g. {engagement_id}/{item_id}/{filename}
-  uploaded_at   timestamptz not null default now()
+  uploaded_at   timestamptz not null default now(),
+  firm_downloaded_at timestamptz                       -- when the firm last downloaded this file
 );
 create index if not exists idx_files_item on item_files(item_id);
+-- for existing databases (idempotent):
+alter table item_files add column if not exists firm_downloaded_at timestamptz;
 
 create table if not exists item_history (
   id       uuid primary key default gen_random_uuid(),

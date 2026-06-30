@@ -525,14 +525,22 @@ export default function App() {
 
   // Private bucket -> short-lived signed URL, opened in a new tab.
   const downloadFile = (f) =>
-    run(async () => { const url = await firmApi.signedDownloadUrl(f.storagePath, 60); window.open(url, "_blank"); });
+    run(async () => {
+      const url = await firmApi.signedDownloadUrl(f.storagePath, 60);
+      window.open(url, "_blank");
+      await firmApi.markFilesDownloaded([f.id]);
+      await reloadDetail();
+    });
 
-  // Zip every uploaded file of this engagement (foldered by category) and download.
-  const downloadAllZip = () =>
+  // Zip this engagement's files (foldered by category). onlyNew = skip files
+  // the firm already downloaded. Marks the included files downloaded afterwards.
+  const downloadZip = (onlyNew) =>
     run(async () => {
       if (!eng) return;
-      const files = eng.items.flatMap((it) => it.files.map((f) => ({ ...f, category: it.category, ref: it.ref })));
-      if (files.length === 0) { alert("ยังไม่มีไฟล์ให้ดาวน์โหลด"); return; }
+      let files = eng.items.flatMap((it) => it.files.map((f) => ({ ...f, category: it.category, ref: it.ref })));
+      if (onlyNew) files = files.filter((f) => !f.downloadedAt);
+      if (files.length === 0) { alert(onlyNew ? "ไม่มีไฟล์ใหม่ที่ยังไม่ได้โหลด" : "ยังไม่มีไฟล์ให้ดาวน์โหลด"); return; }
+      setModal(null);
       const JSZip = (await import("jszip")).default;
       const zip = new JSZip();
       const safe = (s) => String(s || "").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
@@ -545,9 +553,11 @@ export default function App() {
       const blob = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `PBC_${safe(eng.client)}.zip`;
+      a.download = `PBC_${safe(eng.client)}${onlyNew ? "_new" : ""}.zip`;
       a.click();
       URL.revokeObjectURL(a.href);
+      await firmApi.markFilesDownloaded(files.map((f) => f.id));
+      await reloadDetail();
     });
 
   const notifyClient = () => {
@@ -703,7 +713,7 @@ export default function App() {
             <button className="tk-btn" onClick={() => importRef.current?.click()}>⤓ นำเข้าจาก Excel</button>
             <button className="tk-btn" onClick={() => setModal("add")}>+ Add item</button>
             <button className="tk-btn ghost" onClick={exportCSV}>↓ Export CSV</button>
-            <button className="tk-btn ghost" onClick={downloadAllZip}>⤓ โหลดไฟล์ทั้งหมด (.zip)</button>
+            <button className="tk-btn ghost" onClick={() => setModal("zip")}>⤓ โหลดไฟล์ (.zip)</button>
             <button className="tk-btn ghost" onClick={() => {
               const link = `${location.origin}/client.html?e=${eng.id}`;
               navigator.clipboard?.writeText(link).catch(() => {});
@@ -770,6 +780,9 @@ export default function App() {
       )}
       {modal === "notify" && eng && (
         <NotifyModal eng={eng} busy={busy} onClose={() => setModal(null)} onSend={sendNotify} />
+      )}
+      {modal === "zip" && eng && (
+        <ZipModal eng={eng} busy={busy} onClose={() => setModal(null)} onDownload={downloadZip} />
       )}
     </div>
   );
@@ -1343,8 +1356,11 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
               <li key={i}>
                 <span className="tk-fileicon">▤</span>
                 <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
+                {role === "firm" && f.downloadedAt && (
+                  <span className="tk-dl-done" title={`โหลดแล้วเมื่อ ${fmtDate(f.downloadedAt)}`}>✓</span>
+                )}
                 {role === "firm" && onDownload && (
-                  <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>download</button>
+                  <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>{f.downloadedAt ? "โหลดซ้ำ" : "download"}</button>
                 )}
                 {role === "client" && item.status !== "accepted" && (
                   <button className="tk-x" onClick={() => onRemoveFile(item.id, i)}>remove</button>
@@ -1588,6 +1604,33 @@ function ImportModal({ draft, onClose, onImport }) {
           onClick={() => onImport({ client: client.trim(), periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(), items: included, code, retDays, autoDelete, clientEmail: clientEmail.trim(), sendInvite: !!clientEmail.trim() })}>
           ยืนยันสร้างลิสต์ ({included.length})
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+function ZipModal({ eng, busy, onClose, onDownload }) {
+  const allFiles = (eng.items || []).flatMap((it) => it.files);
+  const total = allFiles.length;
+  const news = allFiles.filter((f) => !f.downloadedAt).length;
+  const opts = [
+    { onlyNew: false, icon: "📦", label: "ดาวน์โหลดทั้งหมด", desc: "ทุกไฟล์ในพอร์ทัลนี้ (จัดโฟลเดอร์ตามหมวด)", n: total, disabled: total === 0 },
+    { onlyNew: true, icon: "🆕", label: "เฉพาะที่ยังไม่ได้โหลด", desc: "ข้ามไฟล์ที่เคยโหลดไปแล้ว", n: news, disabled: news === 0 },
+  ];
+  return (
+    <Modal title="ดาวน์โหลดไฟล์ (.zip)" onClose={onClose}>
+      <p className="tk-tplblurb" style={{ marginTop: 0 }}>มีไฟล์ทั้งหมด <b>{total}</b> · ยังไม่ได้โหลด <b>{news}</b></p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {opts.map((o) => (
+          <button key={String(o.onlyNew)} className="tk-notify-opt" disabled={busy || o.disabled} onClick={() => onDownload(o.onlyNew)}>
+            <span className="ic">{o.icon}</span>
+            <span className="body">
+              <b>{o.label}<i className="cnt">{o.n}</i></b>
+              <em>{o.disabled ? "— ไม่มีไฟล์" : o.desc}</em>
+            </span>
+            <span className="go">{busy ? "…" : "โหลด ›"}</span>
+          </button>
+        ))}
       </div>
     </Modal>
   );
