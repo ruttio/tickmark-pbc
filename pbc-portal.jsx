@@ -556,7 +556,7 @@ export default function App() {
         </div>
         <div className="tk-top-right">
           {view === "engagement" && (
-            <button className="tk-btn ghost" onClick={goDashboard}>← ภาพรวม</button>
+            <button className="tk-topbtn" onClick={goDashboard}>← ภาพรวม</button>
           )}
           {view === "engagement" && engagements.length > 0 && (
             <select className="tk-select" value={currentId || ""} onChange={(e) => openEngagement(e.target.value)}>

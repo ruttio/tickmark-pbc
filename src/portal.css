@@ -23,6 +23,8 @@
 .tk-seg button.on{background:var(--pine);color:#fff}
 .tk-icon{background:transparent;border:1px solid #34493f;color:#cfe0d8;width:32px;height:32px;border-radius:7px;cursor:pointer;font-size:15px}
 .tk-icon:hover{background:#1f3128}
+.tk-topbtn{font-family:'Inter';font-size:13px;font-weight:600;color:#cfe0d8;background:#1f3128;border:1px solid #34493f;border-radius:8px;padding:8px 13px;cursor:pointer}
+.tk-topbtn:hover{background:#26392f;color:#f3f5ef}
 
 /* main */
 .tk-main{max-width:920px;margin:0 auto;padding:26px 20px 60px}
