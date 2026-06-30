@@ -371,6 +371,7 @@ export default function App() {
   const [view, setView] = useState("dashboard");      // 'dashboard' | 'engagement'
   const [dash, setDash] = useState(null);             // engagements + progress for the dashboard
   const [notifs, setNotifs] = useState([]);           // recent client activity (notification center)
+  const [storage, setStorage] = useState(null);       // total bytes stored across the firm
 
   /* ---- auth session ---- */
   useEffect(() => {
@@ -421,11 +422,12 @@ export default function App() {
   const loadDashboard = async () => {
     setErr("");
     try {
-      const [d, n] = await Promise.all([
+      const [d, n, s] = await Promise.all([
         firmApi.listEngagementsWithProgress(),
         firmApi.listNotifications().catch(() => []),
+        firmApi.getStorageUsage().catch(() => null),
       ]);
-      setDash(d); setNotifs(n);
+      setDash(d); setNotifs(n); setStorage(s);
     } catch (e) { setErr(e.message || "โหลดภาพรวมไม่สำเร็จ"); }
   };
   useEffect(() => {
@@ -525,6 +527,29 @@ export default function App() {
   const downloadFile = (f) =>
     run(async () => { const url = await firmApi.signedDownloadUrl(f.storagePath, 60); window.open(url, "_blank"); });
 
+  // Zip every uploaded file of this engagement (foldered by category) and download.
+  const downloadAllZip = () =>
+    run(async () => {
+      if (!eng) return;
+      const files = eng.items.flatMap((it) => it.files.map((f) => ({ ...f, category: it.category, ref: it.ref })));
+      if (files.length === 0) { alert("ยังไม่มีไฟล์ให้ดาวน์โหลด"); return; }
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const safe = (s) => String(s || "").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+      for (const f of files) {
+        const url = await firmApi.signedDownloadUrl(f.storagePath, 300);
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        zip.file(`${safe(f.category)}/${f.ref ? f.ref + "_" : ""}${safe(f.name)}`, await res.blob());
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `PBC_${safe(eng.client)}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
   const notifyClient = () => {
     if (!eng?.clientEmail) { alert("ยังไม่มีอีเมลลูกค้า — เพิ่มได้ที่ ⚙ ตั้งค่าพอร์ทัล"); return; }
     setModal("notify");
@@ -621,7 +646,7 @@ export default function App() {
       )}
 
       {view === "dashboard" ? (
-        <FirmDashboard dash={dash} notifs={notifs} onOpen={openEngagement}
+        <FirmDashboard dash={dash} notifs={notifs} storage={storage} onOpen={openEngagement}
           onNew={() => setModal("generate")} onMarkAllRead={markAllRead} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
@@ -678,6 +703,7 @@ export default function App() {
             <button className="tk-btn" onClick={() => importRef.current?.click()}>⤓ นำเข้าจาก Excel</button>
             <button className="tk-btn" onClick={() => setModal("add")}>+ Add item</button>
             <button className="tk-btn ghost" onClick={exportCSV}>↓ Export CSV</button>
+            <button className="tk-btn ghost" onClick={downloadAllZip}>⤓ โหลดไฟล์ทั้งหมด (.zip)</button>
             <button className="tk-btn ghost" onClick={() => {
               const link = `${location.origin}/client.html?e=${eng.id}`;
               navigator.clipboard?.writeText(link).catch(() => {});
@@ -918,7 +944,9 @@ function timeAgo(ts) {
 const notifLabel = (a) => (/remove/i.test(a) ? "ลบไฟล์ที่อัปไว้" : /submit/i.test(a) ? "อัปโหลดเอกสาร" : a);
 const notifIcon = (a) => (/remove/i.test(a) ? "🗑" : "📤");
 
-function FirmDashboard({ dash, notifs, onOpen, onNew, onMarkAllRead }) {
+const STORAGE_LIMIT = 1073741824; // 1 GB (Supabase free tier). Raise to 100*1024^3 on Pro.
+
+function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) {
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
 
@@ -1018,6 +1046,21 @@ function FirmDashboard({ dash, notifs, onOpen, onNew, onMarkAllRead }) {
           placeholder="🔍 ค้นหาชื่อลูกค้า หรือ template…" />
         {q && <span className="tk-hint">พบ {filtered.length} จาก {dash.length}</span>}
       </section>
+
+      {storage != null && (() => {
+        const pct = Math.min(100, Math.round((storage / STORAGE_LIMIT) * 100));
+        const tone = pct >= 90 ? "od" : pct >= 70 ? "soon" : "";
+        return (
+          <section className="tk-storage">
+            <div className="tk-storage-row">
+              <span>💾 พื้นที่จัดเก็บ</span>
+              <span className={tone}>{fmtSize(storage)} / 1 GB · {pct}%</span>
+            </div>
+            <div className={`tk-storage-bar ${tone}`}><span style={{ width: `${pct}%` }} /></div>
+            {pct >= 80 && <p className="tk-storage-warn">ใกล้เต็มแล้ว — ลบพอร์ทัลเก่า/ดาวน์โหลดไฟล์ออก หรืออัป Supabase Pro (100 GB)</p>}
+          </section>
+        );
+      })()}
 
       {dash.length === 0 ? (
         <div className="tk-empty">
