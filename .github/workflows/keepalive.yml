@@ -1,0 +1,26 @@
+name: Supabase keep-alive
+
+# Free-tier Supabase projects pause after 7 days with no requests. This hits the
+# REST API once a day, which counts as database activity and resets that timer,
+# so the project never pauses while this runs.
+#
+# The URL + anon key below are PUBLIC by design (the anon key ships in the
+# frontend bundle and is gated by Row Level Security) — safe to commit.
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # daily ~06:17 UTC (~13:17 Asia/Bangkok). Odd minute = fewer GH delays.
+  workflow_dispatch: {}   # lets you run it manually from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST (counts as DB activity)
+        run: |
+          URL="https://pmekiinkzfpmrzikmhmo.supabase.co/rest/v1/engagements?select=id&limit=1"
+          KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZWtpaW5remZwbXJ6aWttaG1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3ODQwMDUsImV4cCI6MjA5ODM2MDAwNX0.9zsKl7HduPWtfSGs8d3OOJAwVgEw4DPYC7NVRdQs89E"
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" "$URL")
+          echo "Supabase ping => HTTP $code"
+          test "$code" = "200"
