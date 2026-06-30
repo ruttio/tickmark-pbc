@@ -1142,8 +1142,8 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
         {/* Firm-internal note (not shown to clients) */}
         {role === "firm" && onSaveNote && (
           <div className="tk-block">
-            <p className="tk-block-h">โน้ตภายใน · เห็นเฉพาะสำนักงาน</p>
-            <textarea className="tk-note" placeholder="บันทึกโน้ตสำหรับข้อนี้ (เช่น สิ่งที่ต้องตามต่อ)…"
+            <p className="tk-block-h">หมายเหตุถึงลูกค้า · ลูกค้าเห็นได้</p>
+            <textarea className="tk-note" placeholder="ข้อความ/คำแนะนำถึงลูกค้าสำหรับข้อนี้…"
               value={firmNote} onChange={(e) => setFirmNote(e.target.value)} />
             <button className="tk-btn full" disabled={busy || firmNote === (item.firmNote || "")}
               onClick={() => onSaveNote(item.id, firmNote.trim())}>

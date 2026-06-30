@@ -377,6 +377,21 @@ function ClientRow({ item, token, onUploaded }) {
     }
   };
 
+  const remove = async (fileId) => {
+    if (!confirm("ลบไฟล์นี้ออกจากพอร์ทัล?")) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await clientApi.removeFile(token, item.id, fileId);
+      await onUploaded();
+    } catch (e) {
+      if (e.status === 401) { await onUploaded(); return; }
+      setErr(e.message || "ลบไฟล์ไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <li className="tk-row" style={{ cursor: "default", flexWrap: "wrap" }}>
       <span className="tk-ref">{item.ref}</span>
@@ -400,6 +415,12 @@ function ClientRow({ item, token, onUploaded }) {
           </div>
         )}
 
+        {item.firmNote && (
+          <div className="tk-callout note" style={{ marginTop: 8 }}>
+            <b>📝 หมายเหตุจากสำนักงาน:</b> {item.firmNote}
+          </div>
+        )}
+
         {item.files.length > 0 && (
           <ul className="tk-filelist" style={{ marginTop: 8 }}>
             {item.files.map((f) => (
@@ -409,6 +430,9 @@ function ClientRow({ item, token, onUploaded }) {
                   <b>{f.name}</b>
                   <i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i>
                 </span>
+                {canUpload && (
+                  <button className="tk-x" disabled={busy} onClick={() => remove(f.id)}>ลบ</button>
+                )}
               </li>
             ))}
           </ul>

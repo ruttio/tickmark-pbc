@@ -60,7 +60,7 @@ create table if not exists request_items (
   due_date      date,
   status        text not null default 'outstanding',  -- outstanding|submitted|review|accepted|returned
   note          text default '',                       -- return reason (shown to the client)
-  firm_note     text not null default '',              -- firm-internal note (never sent to clients)
+  firm_note     text not null default '',              -- firm's note/instruction for this item (shown to the client)
   sort          int  not null default 0
 );
 create index if not exists idx_items_engagement on request_items(engagement_id);

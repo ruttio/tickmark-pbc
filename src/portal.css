@@ -120,6 +120,7 @@
 .tk-drawer-meta{font-size:12.5px;color:var(--ink-soft);margin:0 0 14px;font-family:'JetBrains Mono',monospace}
 .tk-callout{font-size:13px;line-height:1.5;padding:11px 13px;border-radius:9px;margin-bottom:14px}
 .tk-callout.rust{background:var(--rust-tint);color:#7a2c22}
+.tk-callout.note{background:var(--amber-tint);color:#7a5512}
 .tk-block{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:12px}
 .tk-block-h{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--ink-soft);margin:0 0 10px}
 .tk-muted{color:var(--ink-soft);font-size:13px;margin:0}

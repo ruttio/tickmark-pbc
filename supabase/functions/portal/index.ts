@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
       const { data: eng } = await admin.from("engagements")
         .select("id, client, template, period_end, expires_at").eq("id", engagement_id).maybeSingle();
       const { data: items } = await admin.from("request_items")
-        .select("id, ref, category, description, required, due_date, status, note, item_files(*)")
+        .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(*)")
         .eq("engagement_id", engagement_id).order("sort");
       return json({ engagement: eng, items: items ?? [] });
     }
@@ -142,6 +142,30 @@ Deno.serve(async (req) => {
       });
       await admin.from("request_items").update({ status: "submitted", note: "" }).eq("id", item_id);
       await admin.from("item_history").insert({ item_id, by: "Client", action: "Submitted" });
+      return json({ ok: true });
+    }
+
+    // ---- remove_file: client deletes one of their uploads (storage + row) ----
+    // Allowed while the item is not yet accepted (covers returned / reopened).
+    if (action === "remove_file") {
+      const item_id = String(body.item_id || "");
+      const file_id = String(body.file_id || "");
+      const { data: item } = await admin.from("request_items")
+        .select("id, status").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!item) return json({ error: "item not in this portal" }, 403);
+      if (item.status === "accepted") return json({ error: "item already accepted" }, 403);
+
+      const { data: file } = await admin.from("item_files")
+        .select("id, storage_path").eq("id", file_id).eq("item_id", item_id).maybeSingle();
+      if (!file) return json({ error: "file not found" }, 404);
+
+      await admin.storage.from("pbc").remove([file.storage_path]);
+      await admin.from("item_files").delete().eq("id", file_id);
+      // if that was the last file, send the item back to "outstanding"
+      const { count } = await admin.from("item_files")
+        .select("id", { count: "exact", head: true }).eq("item_id", item_id);
+      if (!count) await admin.from("request_items").update({ status: "outstanding" }).eq("id", item_id);
+      await admin.from("item_history").insert({ item_id, by: "Client", action: "Removed a file" });
       return json({ ok: true });
     }
 
