@@ -133,6 +133,8 @@
 .tk-x{background:none;border:0;color:var(--rust);font-size:12px;cursor:pointer;text-decoration:underline}
 .tk-dl-done{color:var(--pine);font-weight:700;font-size:13px;flex:none}
 .tk-note{width:100%;min-height:62px;font-family:'Inter';font-size:13px;border:1px solid var(--line);border-radius:8px;padding:9px;margin-top:10px;resize:vertical}
+.tk-return-reason{width:100%;font-family:'Inter';font-size:13px;border:1px solid var(--line);border-radius:8px;padding:9px 10px;margin-top:10px;background:var(--card);color:var(--ink)}
+.tk-return-reason:focus{outline:none;border-color:var(--pine)}
 .tk-note:focus{outline:none;border-color:var(--pine)}
 .tk-timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:11px}
 .tk-timeline li{display:flex;align-items:center;gap:10px;font-size:12.5px}

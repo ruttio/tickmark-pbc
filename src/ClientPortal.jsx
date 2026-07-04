@@ -29,6 +29,7 @@ const STATUS = {
   review: { label: "Under review", glyph: "◐", tone: "amberDeep" },
   accepted: { label: "Accepted", glyph: "✓", tone: "pine" },
   returned: { label: "Returned", glyph: "↩", tone: "rust" },
+  reopened: { label: "Reopened", glyph: "↻", tone: "amber" },
 };
 
 /* ---------- small helpers ---------------------------------------------- */

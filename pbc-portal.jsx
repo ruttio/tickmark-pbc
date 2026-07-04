@@ -23,8 +23,9 @@ const STATUS = {
   review:      { label: "Under review",    glyph: "◐", tone: "amberDeep" },
   accepted:    { label: "Accepted",        glyph: "✓", tone: "pine" },
   returned:    { label: "Returned",        glyph: "↩", tone: "rust" },
+  reopened:    { label: "Reopened",        glyph: "↻", tone: "amber" },
 };
-const STATUS_ORDER = ["outstanding", "submitted", "review", "accepted", "returned"];
+const STATUS_ORDER = ["outstanding", "submitted", "review", "accepted", "returned", "reopened"];
 
 /* ---------- PBC template libraries (the "PBC function") ----------------- */
 const TEMPLATES = [
@@ -514,6 +515,7 @@ export default function App() {
     run(() => firmApi.deleteItem(itemId), async () => { setOpenItem(null); await reloadDetail(); });
 
   const saveItemNote = (itemId, note) => run(() => firmApi.setItemNote(itemId, note), reloadDetail);
+  const updateItem = (itemId, patch) => run(() => firmApi.updateItem(itemId, patch), reloadDetail);
 
   const setEngPasscode = (id, code) => run(() => firmApi.setPortalCode(id, code));
   const setEngRetention = (id, days, autoDelete) =>
@@ -762,7 +764,8 @@ export default function App() {
       {/* Item drawer */}
       {drawerItem && (
         <Drawer key={drawerItem.id} item={drawerItem} role="firm" busy={busy} onClose={() => setOpenItem(null)}
-          onSetStatus={setStatus} onDelete={deleteItem} onDownload={downloadFile} onSaveNote={saveItemNote} />
+          onSetStatus={setStatus} onDelete={deleteItem} onDownload={downloadFile} onSaveNote={saveItemNote}
+          onUpdateItem={updateItem} />
       )}
 
       {/* Modals */}
@@ -1323,10 +1326,14 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   );
 }
 
-function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, busy }) {
+function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, onUpdateItem, busy }) {
   const fileRef = useRef(null);
   const [note, setNote] = useState(item.note || "");
+  const [reason, setReason] = useState("");
   const [firmNote, setFirmNote] = useState(item.firmNote || "");
+  const [editing, setEditing] = useState(false);
+  const [editDesc, setEditDesc] = useState(item.description || "");
+  const [editDue, setEditDue] = useState(item.dueDate ? new Date(item.dueDate).toISOString().slice(0, 10) : "");
   const s = STATUS[item.status];
   return (
     <>
@@ -1340,8 +1347,30 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
           <button className="tk-icon" onClick={onClose}>✕</button>
         </div>
 
-        <h3 className="tk-drawer-title">{item.description}</h3>
-        <p className="tk-drawer-meta">{item.category} · {item.required ? "Required" : "Optional"} · Due {fmtDate(item.dueDate)}{isOverdue(item) && <span className="tk-od"> (overdue)</span>}</p>
+        {editing && role === "firm" && onUpdateItem ? (
+          <div className="tk-block" style={{ marginBottom: 12 }}>
+            <p className="tk-block-h">แก้ไขรายการ</p>
+            <label className="tk-field"><span>ชื่อรายการ</span>
+              <input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} /></label>
+            <label className="tk-field"><span>กำหนดส่ง (due date)</span>
+              <input type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} /></label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="tk-btn primary" disabled={busy || !editDesc.trim()}
+                onClick={() => { onUpdateItem(item.id, { description: editDesc.trim(), dueDate: editDue ? new Date(editDue).getTime() : null }); setEditing(false); }}>บันทึก</button>
+              <button className="tk-btn ghost" onClick={() => { setEditing(false); setEditDesc(item.description || ""); }}>ยกเลิก</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <h3 className="tk-drawer-title">
+              {item.description}
+              {role === "firm" && onUpdateItem && (
+                <button type="button" className="tk-link" style={{ marginLeft: 8, fontSize: 12 }} onClick={() => setEditing(true)}>แก้ไข</button>
+              )}
+            </h3>
+            <p className="tk-drawer-meta">{item.category} · {item.required ? "Required" : "Optional"} · Due {fmtDate(item.dueDate)}{isOverdue(item) && <span className="tk-od"> (overdue)</span>}</p>
+          </>
+        )}
 
         {item.status === "returned" && item.note && (
           <div className="tk-callout rust"><b>Returned by firm:</b> {item.note}</div>
@@ -1394,20 +1423,29 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
         {role === "firm" && (
           <div className="tk-block">
             <p className="tk-block-h">Review</p>
-            {["submitted", "review"].includes(item.status) ? (
+            {item.status !== "accepted" ? (
               <>
                 {item.status === "submitted" && (
                   <button className="tk-btn full" onClick={() => onSetStatus(item.id, "review", "Firm", "Started review")}>Start review</button>
                 )}
-                <button className="tk-btn primary full" onClick={() => onSetStatus(item.id, "accepted", "Firm", "Accepted")}>{<Tick size={13} />} Accept</button>
-                <textarea className="tk-note" placeholder="Reason for return (sent to client)…" value={note} onChange={(e) => setNote(e.target.value)} />
+                <button className="tk-btn primary full" onClick={() => onSetStatus(item.id, "accepted", "Firm", "Accepted")}>
+                  <Tick size={13} /> Accept{item.files.length === 0 ? " (รับเอกสารจริง/ไม่มีไฟล์)" : ""}
+                </button>
+                <select className="tk-return-reason" value={reason}
+                  onChange={(e) => { setReason(e.target.value); if (e.target.value) setNote(e.target.value); }}>
+                  <option value="">— เลือกเหตุผลส่งกลับ (หรือพิมพ์เอง) —</option>
+                  <option value="เอกสารไม่ครบ">เอกสารไม่ครบ</option>
+                  <option value="เอกสารไม่ถูกต้อง">เอกสารไม่ถูกต้อง</option>
+                  <option value="เอกสารไม่ชัดเจน / อ่านไม่ออก">เอกสารไม่ชัดเจน / อ่านไม่ออก</option>
+                  <option value="ผิดงวด / ผิดปี">ผิดงวด / ผิดปี</option>
+                  <option value="ต้องการฉบับเซ็น / ประทับตรา">ต้องการฉบับเซ็น / ประทับตรา</option>
+                </select>
+                <textarea className="tk-note" placeholder="เหตุผลที่ส่งกลับ (ส่งถึงลูกค้า)…" value={note} onChange={(e) => setNote(e.target.value)} />
                 <button className="tk-btn rust full" disabled={!note.trim()}
-                  onClick={() => { onSetStatus(item.id, "returned", "Firm", "Returned", { note: note.trim() }); }}>↩ Return to client</button>
+                  onClick={() => onSetStatus(item.id, "returned", "Firm", "Returned", { note: note.trim() })}>↩ Return to client</button>
               </>
-            ) : item.status === "accepted" ? (
-              <button className="tk-btn ghost full" onClick={() => onSetStatus(item.id, "outstanding", "Firm", "Reopened", { note: "" })}>Reopen item</button>
             ) : (
-              <p className="tk-muted">Waiting on the client to upload a document.</p>
+              <button className="tk-btn ghost full" onClick={() => onSetStatus(item.id, "reopened", "Firm", "Reopened", { note: "" })}>Reopen item</button>
             )}
             <button className="tk-btn danger full" onClick={() => onDelete(item.id)}>Delete item</button>
           </div>

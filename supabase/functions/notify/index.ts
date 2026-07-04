@@ -81,14 +81,14 @@ Deno.serve(async (req) => {
 
   const portalUrl = `${APP_URL}/client.html?e=${eng.id}`;
   const replyTo = user.email || undefined;
-  const foot = "เข้าพอร์ทัลด้วยรหัส 16 หลักที่สำนักงานแจ้งให้ทางช่องทางอื่น · หากไม่ได้คาดหวังอีเมลนี้ โปรดละเว้น";
+  const foot = "เข้าเว็บไซต์ด้วยรหัส 16 หลักที่สำนักงานแจ้งให้ทางช่องทางอื่น · หากไม่ได้คาดหวังอีเมลนี้ โปรดละเว้น";
 
   let subject: string, html: string;
   if (kind === "invite") {
     subject = `เอกสารที่ต้องจัดเตรียม — ${eng.client}`;
     html = shell(`เรียน ${eng.client}`,
-      `สำนักงานได้เปิดพอร์ทัลสำหรับงาน <b>${eng.template}</b> และมีรายการเอกสารที่ต้องจัดเตรียม โปรดเข้าพอร์ทัลเพื่ออัปโหลดเอกสาร`,
-      portalUrl, "เข้าพอร์ทัลเพื่ออัปโหลด", foot);
+      `สำนักงานได้เปิดเว็บไซต์สำหรับงาน <b>${eng.template}</b> และมีรายการเอกสารที่ต้องจัดเตรียม โปรดเข้าเว็บไซต์เพื่ออัปโหลดเอกสาร`,
+      portalUrl, "เข้าเว็บไซต์เพื่ออัปโหลด", foot);
   } else if (kind === "returned" || kind === "reminder") {
     // One consolidated email summarising all items in the relevant state.
     const wantStatus = kind === "returned" ? "returned" : "outstanding";
@@ -102,13 +102,13 @@ Deno.serve(async (req) => {
     if (kind === "returned") {
       subject = `มีเอกสารที่ต้องแก้ไข (${its.length}) — ${eng.client}`;
       html = shell("มีเอกสารที่ต้องแก้ไข",
-        `สำนักงานได้ส่งกลับเอกสารต่อไปนี้เพื่อให้แก้ไข/ส่งใหม่:${listHtml}โปรดเข้าพอร์ทัลเพื่อดูหมายเหตุและอัปโหลดอีกครั้ง`,
+        `สำนักงานได้ส่งกลับเอกสารต่อไปนี้เพื่อให้แก้ไข/ส่งใหม่:${listHtml}โปรดเข้าเว็บไซต์เพื่อดูหมายเหตุและอัปโหลดอีกครั้ง`,
         portalUrl, "เปิดดูและแก้ไข", foot);
     } else {
       subject = `เอกสารที่ยังรอจัดเตรียม (${its.length}) — ${eng.client}`;
       html = shell("ยังมีเอกสารที่รอจัดเตรียม",
         `รายการต่อไปนี้ยังไม่ได้รับ โปรดจัดเตรียมและอัปโหลด:${listHtml}`,
-        portalUrl, "เข้าพอร์ทัลเพื่ออัปโหลด", foot);
+        portalUrl, "เข้าเว็บไซต์เพื่ออัปโหลด", foot);
     }
   } else {
     return json({ error: "unknown kind" }, 400);
