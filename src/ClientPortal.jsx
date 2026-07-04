@@ -431,6 +431,7 @@ function ClientRow({ item, token, onUploaded }) {
                   <b>{f.name}</b>
                   <i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i>
                 </span>
+                {f.rejected && <span className="tk-file-rejected">ต้องแก้ไข</span>}
                 {canUpload && (
                   <button className="tk-x" disabled={busy} onClick={() => remove(f.id)}>ลบ</button>
                 )}

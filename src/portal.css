@@ -132,6 +132,10 @@
 .tk-fileinfo i{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--ink-soft);font-style:normal}
 .tk-x{background:none;border:0;color:var(--rust);font-size:12px;cursor:pointer;text-decoration:underline}
 .tk-dl-done{color:var(--pine);font-weight:700;font-size:13px;flex:none}
+.tk-file-rejected{flex:none;font-family:'JetBrains Mono',monospace;font-size:10px;background:var(--rust);color:#fff;padding:2px 6px;border-radius:8px}
+.tk-reject{margin-top:10px;background:var(--rust-tint);border-radius:8px;padding:9px 11px}
+.tk-reject-h{font-size:11.5px;color:#7a2c22;margin:0 0 6px;font-weight:600}
+.tk-reject-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);padding:2px 0}
 .tk-note{width:100%;min-height:62px;font-family:'Inter';font-size:13px;border:1px solid var(--line);border-radius:8px;padding:9px;margin-top:10px;resize:vertical}
 .tk-return-reason{width:100%;font-family:'Inter';font-size:13px;border:1px solid var(--line);border-radius:8px;padding:9px 10px;margin-top:10px;background:var(--card);color:var(--ink)}
 .tk-return-reason:focus{outline:none;border-color:var(--pine)}

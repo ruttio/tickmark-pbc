@@ -470,12 +470,22 @@ export default function App() {
   const setStatus = (itemId, status, _by, action, extra = {}) =>
     run(() => firmApi.setItemStatus(itemId, status, action, extra.note), reloadDetail);
 
-  const generateEngagement = ({ tplKey, client, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite }) =>
+  // Return an item, optionally flagging specific files (partial return).
+  const returnItem = (itemId, note, rejectedIds, okIds) =>
     run(async () => {
-      const t = TEMPLATES.find((x) => x.key === tplKey);
+      if ((rejectedIds && rejectedIds.length) || (okIds && okIds.length))
+        await firmApi.setItemFileRejections(rejectedIds, okIds);
+      await firmApi.setItemStatus(itemId, "returned", "Returned", note);
+    }, reloadDetail);
+
+  const generateEngagement = ({ client, template, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite, items }) =>
+    run(async () => {
       const id = await firmApi.createEngagement(
-        { client, template: t.name, periodEnd, code, retentionDays: retDays, autoDelete, clientEmail },
-        buildItems(t, baseDue)
+        { client, template, periodEnd, code, retentionDays: retDays, autoDelete, clientEmail },
+        items.map((it, i) => ({
+          ref: String(i + 1).padStart(2, "0"), category: it.category || "General",
+          description: it.description, required: it.required ?? true, dueDate: baseDue, status: "outstanding", sort: i,
+        }))
       );
       setModal(null);
       await reloadList(id);
@@ -765,7 +775,7 @@ export default function App() {
       {drawerItem && (
         <Drawer key={drawerItem.id} item={drawerItem} role="firm" busy={busy} onClose={() => setOpenItem(null)}
           onSetStatus={setStatus} onDelete={deleteItem} onDownload={downloadFile} onSaveNote={saveItemNote}
-          onUpdateItem={updateItem} />
+          onUpdateItem={updateItem} onReturn={returnItem} />
       )}
 
       {/* Modals */}
@@ -1326,10 +1336,12 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   );
 }
 
-function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, onUpdateItem, busy }) {
+function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, onUpdateItem, onReturn, busy }) {
   const fileRef = useRef(null);
   const [note, setNote] = useState(item.note || "");
   const [reason, setReason] = useState("");
+  const [rejectedSet, setRejectedSet] = useState(() => new Set(item.files.filter((f) => f.rejected).map((f) => f.id)));
+  const toggleReject = (id) => setRejectedSet((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [firmNote, setFirmNote] = useState(item.firmNote || "");
   const [editing, setEditing] = useState(false);
   const [editDesc, setEditDesc] = useState(item.description || "");
@@ -1385,6 +1397,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
               <li key={i}>
                 <span className="tk-fileicon">▤</span>
                 <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
+                {f.rejected && <span className="tk-file-rejected">ต้องแก้ไข</span>}
                 {role === "firm" && f.downloadedAt && (
                   <span className="tk-dl-done" title={`โหลดแล้วเมื่อ ${fmtDate(f.downloadedAt)}`}>✓</span>
                 )}
@@ -1431,6 +1444,17 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
                 <button className="tk-btn primary full" onClick={() => onSetStatus(item.id, "accepted", "Firm", "Accepted")}>
                   <Tick size={13} /> Accept{item.files.length === 0 ? " (รับเอกสารจริง/ไม่มีไฟล์)" : ""}
                 </button>
+                {item.files.length > 0 && (
+                  <div className="tk-reject">
+                    <p className="tk-reject-h">เลือกไฟล์ที่ต้องแก้ไข (partial) — ไม่เลือก = ส่งกลับทั้งข้อ</p>
+                    {item.files.map((f) => (
+                      <label key={f.id} className="tk-reject-row">
+                        <input type="checkbox" checked={rejectedSet.has(f.id)} onChange={() => toggleReject(f.id)} />
+                        <span>{f.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
                 <select className="tk-return-reason" value={reason}
                   onChange={(e) => { setReason(e.target.value); if (e.target.value) setNote(e.target.value); }}>
                   <option value="">— เลือกเหตุผลส่งกลับ (หรือพิมพ์เอง) —</option>
@@ -1442,7 +1466,9 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
                 </select>
                 <textarea className="tk-note" placeholder="เหตุผลที่ส่งกลับ (ส่งถึงลูกค้า)…" value={note} onChange={(e) => setNote(e.target.value)} />
                 <button className="tk-btn rust full" disabled={!note.trim()}
-                  onClick={() => onSetStatus(item.id, "returned", "Firm", "Returned", { note: note.trim() })}>↩ Return to client</button>
+                  onClick={() => onReturn(item.id, note.trim(), [...rejectedSet], item.files.map((f) => f.id).filter((id) => !rejectedSet.has(id)))}>
+                  ↩ Return to client{rejectedSet.size > 0 ? ` (${rejectedSet.size} ไฟล์)` : ""}
+                </button>
               </>
             ) : (
               <button className="tk-btn ghost full" onClick={() => onSetStatus(item.id, "reopened", "Firm", "Reopened", { note: "" })}>Reopen item</button>
@@ -1466,7 +1492,10 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
 }
 
 function GenerateModal({ onClose, onCreate, busy }) {
+  const flatten = (t) => t.groups.flatMap(([category, rows]) =>
+    rows.map(([description, required]) => ({ id: uid(), category, description, required, include: true })));
   const [tplKey, setTplKey] = useState(TEMPLATES[0].key);
+  const [items, setItems] = useState(() => flatten(TEMPLATES[0]));
   const [client, setClient] = useState("");
   const [periodEnd, setPeriodEnd] = useState(new Date(new Date().getFullYear() - 1, 11, 31).toISOString().slice(0, 10));
   const [due, setDue] = useState(new Date(Date.now() + 14 * DAY).toISOString().slice(0, 10));
@@ -1475,42 +1504,83 @@ function GenerateModal({ onClose, onCreate, busy }) {
   const [sendInvite, setSendInvite] = useState(true);
   const [retDays, setRetDays] = useState(90);
   const [autoDelete, setAutoDelete] = useState(true);
+  const [newCat, setNewCat] = useState("");
+  const [newDesc, setNewDesc] = useState("");
   const tpl = TEMPLATES.find((t) => t.key === tplKey);
-  const count = tpl.groups.reduce((n, [, rows]) => n + rows.length, 0);
-  const ready = client.trim() && code.length === 16;
+  const included = items.filter((i) => i.include);
+  const ready = client.trim() && code.length === 16 && included.length > 0;
+
+  const changeTpl = (key) => { setTplKey(key); setItems(flatten(TEMPLATES.find((t) => t.key === key))); };
+  const toggle = (id) => setItems((p) => p.map((i) => (i.id === id ? { ...i, include: !i.include } : i)));
+  const editDesc = (id, description) => setItems((p) => p.map((i) => (i.id === id ? { ...i, description } : i)));
+  const removeCustom = (id) => setItems((p) => p.filter((i) => i.id !== id));
+  const addCustom = () => {
+    const d = newDesc.trim(); if (!d) return;
+    setItems((p) => [...p, { id: uid(), category: newCat.trim() || "อื่นๆ", description: d, required: true, include: true, custom: true }]);
+    setNewDesc("");
+  };
+  const groups = useMemo(() => {
+    const m = new Map();
+    items.forEach((it) => { if (!m.has(it.category)) m.set(it.category, []); m.get(it.category).push(it); });
+    return [...m.entries()];
+  }, [items]);
+
   const create = () => {
     if (!ready) return;
     onCreate({
-      tplKey, client: client.trim(),
+      client: client.trim(), template: tpl.name,
       periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(),
       code, retDays, autoDelete,   // raw code — the DB hashes it (create_engagement)
       clientEmail: clientEmail.trim(),
       sendInvite: sendInvite && !!clientEmail.trim(),
+      items: included.map((i) => ({ category: i.category, description: i.description, required: i.required })),
     });
   };
   return (
-    <Modal title="Generate request list" onClose={onClose}>
-      <label className="tk-field"><span>Template</span>
-        <select value={tplKey} onChange={(e) => setTplKey(e.target.value)}>
-          {TEMPLATES.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
-        </select>
-      </label>
-      <p className="tk-tplblurb">{tpl.blurb} <b>{count} items</b> across {tpl.groups.length} sections.</p>
-      <label className="tk-field"><span>Client name</span>
-        <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Northwind Trading Co." />
-      </label>
+    <Modal title="Generate request list" onClose={onClose} wide>
+      <div className="tk-field-row">
+        <label className="tk-field"><span>Template</span>
+          <select value={tplKey} onChange={(e) => changeTpl(e.target.value)}>
+            {TEMPLATES.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
+          </select>
+        </label>
+        <label className="tk-field"><span>Client name</span>
+          <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Northwind Trading Co." /></label>
+      </div>
+
+      <div className="imp-summary">เลือกไว้ <b>{included.length}</b> / {items.length} รายการ · {groups.length} หมวด — ติ๊กเลือก/เอาออก หรือแก้ข้อความได้</div>
+      <div className="imp-scroll">
+        {groups.map(([cat, rows]) => (
+          <div key={cat} className="imp-group">
+            <div className="imp-cat">{cat}</div>
+            {rows.map((it) => (
+              <div key={it.id} className={`imp-row ${it.include ? "" : "off"}`}>
+                <input type="checkbox" checked={it.include} onChange={() => toggle(it.id)} />
+                <input className="imp-text" value={it.description} onChange={(e) => editDesc(it.id, e.target.value)} />
+                {it.custom && <button className="tk-x" onClick={() => removeCustom(it.id)}>ลบ</button>}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="tk-field-row" style={{ marginTop: 10 }}>
+        <label className="tk-field"><span>เพิ่มข้อเอง — หมวด</span><input value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="เช่น อื่นๆ" /></label>
+        <label className="tk-field" style={{ flex: 2 }}><span>รายละเอียด</span>
+          <input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCustom()} placeholder="เอกสารที่ต้องการเพิ่ม…" /></label>
+        <button className="tk-btn" style={{ alignSelf: "flex-end", marginBottom: 13 }} disabled={!newDesc.trim()} onClick={addCustom}>+ เพิ่ม</button>
+      </div>
+
+      <div className="tk-field-row">
+        <label className="tk-field"><span>Period end</span><input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
+        <label className="tk-field"><span>Default due date</span><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+      </div>
       <label className="tk-field"><span>อีเมลลูกค้า (ไม่บังคับ · สำหรับแจ้งเตือน)</span>
-        <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@company.com" />
-      </label>
+        <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@company.com" /></label>
       {clientEmail.trim() && (
         <label className="tk-check" style={{ alignSelf: "flex-start", paddingBottom: 4 }}>
           <input type="checkbox" checked={sendInvite} onChange={(e) => setSendInvite(e.target.checked)} /> ส่งอีเมลแจ้งลูกค้าทันทีหลังสร้าง
         </label>
       )}
-      <div className="tk-field-row">
-        <label className="tk-field"><span>Period end</span><input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
-        <label className="tk-field"><span>Default due date</span><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
-      </div>
       <label className="tk-field"><span>รหัสเข้าพอร์ทัล (16 หลัก)</span>
         <PasscodeInput value={code} onChange={setCode} />
         <button type="button" className="tk-link" onClick={() => setCode(genCode())}>สุ่มรหัสให้</button>
@@ -1526,7 +1596,7 @@ function GenerateModal({ onClose, onCreate, busy }) {
       <div className="tk-modal-actions">
         <button className="tk-btn ghost" onClick={onClose}>Cancel</button>
         <button className="tk-btn primary" disabled={!ready || busy} onClick={create}>
-          {busy ? "กำลังสร้าง…" : `Generate ${count} items`}
+          {busy ? "กำลังสร้าง…" : `Generate ${included.length} items`}
         </button>
       </div>
     </Modal>
