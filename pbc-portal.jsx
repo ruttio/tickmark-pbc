@@ -526,6 +526,9 @@ export default function App() {
 
   const saveItemNote = (itemId, note) => run(() => firmApi.setItemNote(itemId, note), reloadDetail);
   const updateItem = (itemId, patch) => run(() => firmApi.updateItem(itemId, patch), reloadDetail);
+  const uploadSample = (itemId, fileList) =>
+    run(async () => { for (const f of Array.from(fileList)) await firmApi.uploadSample(eng.id, itemId, f); }, reloadDetail);
+  const removeSample = (f) => run(() => firmApi.removeSample(f.id, f.storagePath), reloadDetail);
 
   const setEngPasscode = (id, code) => run(() => firmApi.setPortalCode(id, code));
   const setEngRetention = (id, days, autoDelete) =>
@@ -775,7 +778,8 @@ export default function App() {
       {drawerItem && (
         <Drawer key={drawerItem.id} item={drawerItem} role="firm" busy={busy} onClose={() => setOpenItem(null)}
           onSetStatus={setStatus} onDelete={deleteItem} onDownload={downloadFile} onSaveNote={saveItemNote}
-          onUpdateItem={updateItem} onReturn={returnItem} />
+          onUpdateItem={updateItem} onReturn={returnItem}
+          onUploadSample={uploadSample} onRemoveSample={removeSample} />
       )}
 
       {/* Modals */}
@@ -1336,8 +1340,11 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   );
 }
 
-function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, onUpdateItem, onReturn, busy }) {
+function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, onUpdateItem, onReturn, onUploadSample, onRemoveSample, busy }) {
   const fileRef = useRef(null);
+  const sampleRef = useRef(null);
+  const clientFiles = item.files.filter((f) => !f.isSample);
+  const sampleFiles = item.files.filter((f) => f.isSample);
   const [note, setNote] = useState(item.note || "");
   const [reason, setReason] = useState("");
   const [rejectedSet, setRejectedSet] = useState(() => new Set(item.files.filter((f) => f.rejected).map((f) => f.id)));
@@ -1391,9 +1398,9 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
         {/* Files */}
         <div className="tk-block">
           <p className="tk-block-h">Documents</p>
-          {item.files.length === 0 && <p className="tk-muted">No files yet.</p>}
+          {clientFiles.length === 0 && <p className="tk-muted">No files yet.</p>}
           <ul className="tk-filelist">
-            {item.files.map((f, i) => (
+            {clientFiles.map((f, i) => (
               <li key={i}>
                 <span className="tk-fileicon">▤</span>
                 <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
@@ -1418,6 +1425,27 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
             </>
           )}
         </div>
+
+        {/* Sample / reference files (firm-uploaded, visible to the client) */}
+        {role === "firm" && onUploadSample && (
+          <div className="tk-block">
+            <p className="tk-block-h">📎 รายการที่เลือก / ตัวอย่าง · ลูกค้าเห็นได้</p>
+            {sampleFiles.length === 0 && <p className="tk-muted">ยังไม่มี — อัปโหลดไฟล์ที่ต้องการให้ลูกค้าเห็น (เช่น รายการสุ่มที่เลือก)</p>}
+            <ul className="tk-filelist">
+              {sampleFiles.map((f) => (
+                <li key={f.id}>
+                  <span className="tk-fileicon">📎</span>
+                  <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
+                  {onDownload && <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>download</button>}
+                  {onRemoveSample && <button className="tk-x" disabled={busy} onClick={() => onRemoveSample(f)}>remove</button>}
+                </li>
+              ))}
+            </ul>
+            <input ref={sampleRef} type="file" multiple style={{ display: "none" }}
+              onChange={(e) => { if (e.target.files.length) onUploadSample(item.id, e.target.files); e.target.value = ""; }} />
+            <button className="tk-btn full" disabled={busy} onClick={() => sampleRef.current?.click()}>↑ อัปโหลด sample</button>
+          </div>
+        )}
 
         {/* Firm-internal note (not shown to clients) */}
         {role === "firm" && onSaveNote && (

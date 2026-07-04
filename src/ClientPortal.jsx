@@ -393,6 +393,14 @@ function ClientRow({ item, token, onUploaded }) {
     }
   };
 
+  const clientFiles = item.files.filter((f) => !f.isSample);
+  const sampleFiles = item.files.filter((f) => f.isSample);
+
+  const openSample = async (fileId) => {
+    try { window.open(await clientApi.sampleUrl(token, fileId), "_blank"); }
+    catch (e) { setErr(e.message || "เปิดไฟล์ไม่สำเร็จ"); }
+  };
+
   return (
     <li className="tk-row" style={{ cursor: "default", flexWrap: "wrap" }}>
       <span className="tk-ref">{item.ref}</span>
@@ -402,9 +410,9 @@ function ClientRow({ item, token, onUploaded }) {
           {item.required && <i className="tk-req" title="Required">•</i>}
         </span>
         <span className="tk-desc-sub">
-          {item.files.length > 0 && (
+          {clientFiles.length > 0 && (
             <span className="tk-files-mini">
-              {item.files.length} file{item.files.length > 1 ? "s" : ""}
+              {clientFiles.length} file{clientFiles.length > 1 ? "s" : ""}
             </span>
           )}
           <span className={`tk-due ${isOverdue(item) ? "od" : ""}`}>Due {fmtDate(item.dueDate)}</span>
@@ -422,9 +430,24 @@ function ClientRow({ item, token, onUploaded }) {
           </div>
         )}
 
-        {item.files.length > 0 && (
+        {sampleFiles.length > 0 && (
+          <div className="tk-callout note" style={{ marginTop: 8 }}>
+            <b>📎 รายการที่สำนักงานเลือก / ตัวอย่าง:</b>
+            <ul className="tk-filelist" style={{ marginTop: 6 }}>
+              {sampleFiles.map((f) => (
+                <li key={f.id}>
+                  <span className="tk-fileicon">📎</span>
+                  <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
+                  <button className="tk-x" onClick={() => openSample(f.id)}>ดาวน์โหลด</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {clientFiles.length > 0 && (
           <ul className="tk-filelist" style={{ marginTop: 8 }}>
-            {item.files.map((f) => (
+            {clientFiles.map((f) => (
               <li key={f.id}>
                 <span className="tk-fileicon">▤</span>
                 <span className="tk-fileinfo">

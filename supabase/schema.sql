@@ -83,12 +83,14 @@ create table if not exists item_files (
   storage_path  text not null,                        -- e.g. {engagement_id}/{item_id}/{filename}
   uploaded_at   timestamptz not null default now(),
   firm_downloaded_at timestamptz,                      -- when the firm last downloaded this file
-  rejected      boolean not null default false         -- flagged by firm on a partial return
+  rejected      boolean not null default false,        -- flagged by firm on a partial return
+  is_sample     boolean not null default false         -- firm-uploaded sample/reference shown to the client
 );
 create index if not exists idx_files_item on item_files(item_id);
 -- for existing databases (idempotent):
 alter table item_files add column if not exists firm_downloaded_at timestamptz;
 alter table item_files add column if not exists rejected boolean not null default false;
+alter table item_files add column if not exists is_sample boolean not null default false;
 
 create table if not exists item_history (
   id       uuid primary key default gen_random_uuid(),
@@ -256,6 +258,25 @@ insert into storage.buckets (id, name, public)
 drop policy if exists firm_read_pbc on storage.objects;
 create policy firm_read_pbc on storage.objects
   for select using (
+    bucket_id = 'pbc'
+    and (storage.foldername(name))[1] in (
+      select id::text from engagements where firm_id = my_firm()
+    )
+  );
+
+-- Firm may upload (sample/reference files) and delete within their own folders.
+drop policy if exists firm_write_pbc on storage.objects;
+create policy firm_write_pbc on storage.objects
+  for insert with check (
+    bucket_id = 'pbc'
+    and (storage.foldername(name))[1] in (
+      select id::text from engagements where firm_id = my_firm()
+    )
+  );
+
+drop policy if exists firm_delete_pbc on storage.objects;
+create policy firm_delete_pbc on storage.objects
+  for delete using (
     bucket_id = 'pbc'
     and (storage.foldername(name))[1] in (
       select id::text from engagements where firm_id = my_firm()

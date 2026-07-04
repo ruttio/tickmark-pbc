@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
       const { data: eng } = await admin.from("engagements")
         .select("id, client, template, period_end, expires_at").eq("id", engagement_id).maybeSingle();
       const { data: items } = await admin.from("request_items")
-        .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(id, name, size, type, storage_path, uploaded_at, rejected)")
+        .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(id, name, size, type, storage_path, uploaded_at, rejected, is_sample)")
         .eq("engagement_id", engagement_id).order("sort");
       return json({ engagement: eng, items: items ?? [] });
     }
@@ -145,6 +145,17 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    // ---- sample_url: signed URL for a firm-provided sample file in this portal ----
+    if (action === "sample_url") {
+      const file_id = String(body.file_id || "");
+      const { data: file } = await admin.from("item_files")
+        .select("id, storage_path, is_sample").eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!file || !file.is_sample) return json({ error: "sample not found" }, 404);
+      const { data: signed, error } = await admin.storage.from("pbc").createSignedUrl(file.storage_path, 120);
+      if (error) return json({ error: "could not sign url" }, 500);
+      return json({ url: signed.signedUrl });
+    }
+
     // ---- remove_file: client deletes one of their uploads (storage + row) ----
     // Allowed while the item is not yet accepted (covers returned / reopened).
     if (action === "remove_file") {
@@ -156,14 +167,14 @@ Deno.serve(async (req) => {
       if (item.status === "accepted") return json({ error: "item already accepted" }, 403);
 
       const { data: file } = await admin.from("item_files")
-        .select("id, storage_path").eq("id", file_id).eq("item_id", item_id).maybeSingle();
-      if (!file) return json({ error: "file not found" }, 404);
+        .select("id, storage_path, is_sample").eq("id", file_id).eq("item_id", item_id).maybeSingle();
+      if (!file || file.is_sample) return json({ error: "file not found" }, 404);
 
       await admin.storage.from("pbc").remove([file.storage_path]);
       await admin.from("item_files").delete().eq("id", file_id);
       // if that was the last file, send the item back to "outstanding"
       const { count } = await admin.from("item_files")
-        .select("id", { count: "exact", head: true }).eq("item_id", item_id);
+        .select("id", { count: "exact", head: true }).eq("item_id", item_id).eq("is_sample", false);
       if (!count) await admin.from("request_items").update({ status: "outstanding" }).eq("id", item_id);
       await admin.from("item_history").insert({ item_id, by: "Client", action: "Removed a file" });
       return json({ ok: true });
