@@ -989,7 +989,7 @@ function timeAgo(ts) {
 const notifLabel = (a) => (/remove/i.test(a) ? "ลบไฟล์ที่อัปไว้" : /submit/i.test(a) ? "อัปโหลดเอกสาร" : a);
 const notifIcon = (a) => (/remove/i.test(a) ? "🗑" : "📤");
 
-const STORAGE_LIMIT = 1073741824; // 1 GB (Supabase free tier). Raise to 100*1024^3 on Pro.
+const STORAGE_LIMIT = 10 * 1073741824; // 10 GB — Cloudflare R2 free tier (beyond it: ~$0.015/GB/mo, egress free).
 
 function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) {
   const [q, setQ] = useState("");
@@ -1098,11 +1098,11 @@ function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) 
         return (
           <section className="tk-storage">
             <div className="tk-storage-row">
-              <span>💾 พื้นที่จัดเก็บ</span>
-              <span className={tone}>{fmtSize(storage)} / 1 GB · {pct}%</span>
+              <span>💾 พื้นที่จัดเก็บ · Cloudflare R2</span>
+              <span className={tone}>{fmtSize(storage)} / 10 GB (free) · {pct}%</span>
             </div>
             <div className={`tk-storage-bar ${tone}`}><span style={{ width: `${pct}%` }} /></div>
-            {pct >= 80 && <p className="tk-storage-warn">ใกล้เต็มแล้ว — ลบพอร์ทัลเก่า/ดาวน์โหลดไฟล์ออก หรืออัป Supabase Pro (100 GB)</p>}
+            {pct >= 80 && <p className="tk-storage-warn">ใกล้ครบ 10 GB (โควตาฟรีของ R2) — เกินจากนี้คิด ~$0.015/GB/เดือน (ดาวน์โหลดฟรี)</p>}
           </section>
         );
       })()}
