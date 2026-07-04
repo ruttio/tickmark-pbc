@@ -521,8 +521,9 @@ export default function App() {
       setModal(null);
     }, reloadDetail);
 
+  // "Delete" an item = move it to the Archived box (soft delete).
   const deleteItem = (itemId) =>
-    run(() => firmApi.deleteItem(itemId), async () => { setOpenItem(null); await reloadDetail(); });
+    run(() => firmApi.archiveItem(itemId), async () => { setOpenItem(null); await reloadDetail(); });
 
   const saveItemNote = (itemId, note) => run(() => firmApi.setItemNote(itemId, note), reloadDetail);
   const updateItem = (itemId, patch) => run(() => firmApi.updateItem(itemId, patch), reloadDetail);
@@ -738,6 +739,9 @@ export default function App() {
             {eng.myRole === "owner" && (
               <button className="tk-btn ghost" onClick={() => setModal("share")}>👥 แชร์</button>
             )}
+            {(eng.myRole === "owner" || eng.myCanDelete) && (
+              <button className="tk-btn ghost" onClick={() => setModal("archived")}>🗄 Archived</button>
+            )}
             <button className="tk-btn ghost" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
             {busy && <span className="tk-hint">กำลังบันทึก…</span>}
             <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
@@ -807,6 +811,10 @@ export default function App() {
       )}
       {modal === "share" && eng && (
         <ShareModal eng={eng} onClose={() => setModal(null)} />
+      )}
+      {modal === "archived" && eng && (
+        <ArchivedModal eng={eng} canManage={eng.myRole === "owner" || eng.myCanDelete}
+          onClose={() => setModal(null)} onChanged={reloadDetail} />
       )}
     </div>
   );
@@ -1517,7 +1525,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
             )}
             {canDelete && (
               <button className="tk-btn danger full"
-                onClick={() => { if (confirm("ลบรายการนี้อย่างถาวร? การลบไม่สามารถกู้คืนได้")) onDelete(item.id); }}>Delete item</button>
+                onClick={() => { if (confirm("ย้ายรายการนี้ไปกล่อง Archived? (กู้คืนได้ภายหลัง)")) onDelete(item.id); }}>ลบ (ย้ายไป Archived)</button>
             )}
           </div>
         )}
@@ -1758,6 +1766,50 @@ function ImportModal({ draft, onClose, onImport }) {
           ยืนยันสร้างลิสต์ ({included.length})
         </button>
       </div>
+    </Modal>
+  );
+}
+
+function ArchivedModal({ eng, canManage, onClose, onChanged }) {
+  const [items, setItems] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const reload = () => firmApi.listArchived(eng.id).then(setItems).catch((e) => { setErr(e.message || ""); setItems([]); });
+  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = async (fn) => {
+    setBusy(true); setErr("");
+    try { await fn(); await reload(); onChanged && onChanged(); } catch (e) { setErr(e.message || "ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal title="รายการที่ลบ (Archived)" onClose={onClose} wide>
+      <p className="tk-tplblurb" style={{ marginTop: 0 }}>รายการที่ถูกลบจะมาอยู่ที่นี่ — กู้คืน หรือลบถาวรได้</p>
+      {err && <p className="tk-lock-err">{err}</p>}
+      {items === null ? (
+        <p className="tk-muted">กำลังโหลด…</p>
+      ) : items.length === 0 ? (
+        <p className="tk-none">ไม่มีรายการที่ลบ</p>
+      ) : (
+        <ul className="tk-arch-list">
+          {items.map((it) => (
+            <li key={it.id}>
+              <div className="tk-arch-info">
+                <b>{it.ref} · {it.description}</b>
+                <i>{it.category} · {it.files.length} ไฟล์</i>
+              </div>
+              {canManage && (
+                <>
+                  <button className="tk-btn" disabled={busy} onClick={() => act(() => firmApi.restoreItem(it.id))}>กู้คืน</button>
+                  <button className="tk-btn danger" disabled={busy}
+                    onClick={() => { if (confirm("ลบถาวร? รวมไฟล์ทั้งหมด — กู้คืนไม่ได้อีก")) act(() => firmApi.purgeItem(it.id)); }}>ลบถาวร</button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </Modal>
   );
 }

@@ -64,12 +64,15 @@ create table if not exists request_items (
   description   text not null,
   required      boolean not null default true,
   due_date      date,
-  status        text not null default 'outstanding',  -- outstanding|submitted|review|accepted|returned
+  status        text not null default 'outstanding',  -- outstanding|submitted|review|accepted|returned|reopened
   note          text default '',                       -- return reason (shown to the client)
   firm_note     text not null default '',              -- firm's note/instruction for this item (shown to the client)
+  archived_at   timestamptz,                           -- soft-delete: non-null = in the Archived box
   sort          int  not null default 0
 );
 create index if not exists idx_items_engagement on request_items(engagement_id);
+-- for existing databases (idempotent):
+alter table request_items add column if not exists archived_at timestamptz;
 -- for existing databases (idempotent):
 alter table request_items add column if not exists firm_note text not null default '';
 
