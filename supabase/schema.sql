@@ -19,15 +19,10 @@ create extension if not exists pg_cron;    -- scheduled auto-delete
 --  Core tables
 -- ---------------------------------------------------------------------
 create table if not exists firms (
-  id             uuid primary key default gen_random_uuid(),
-  name           text not null,
-  line_target    text,                                 -- LINE userId/groupId to notify (once linked)
-  line_link_code text,                                 -- one-time code the firm sends the bot to link
-  created_at     timestamptz not null default now()
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  created_at  timestamptz not null default now()
 );
--- for existing databases (idempotent):
-alter table firms add column if not exists line_target text;
-alter table firms add column if not exists line_link_code text;
 
 -- One row per firm-staff user, linked to the Supabase Auth user.
 create table if not exists profiles (
@@ -35,10 +30,14 @@ create table if not exists profiles (
   firm_id     uuid not null references firms(id) on delete cascade,
   full_name   text,
   approved    boolean not null default false,   -- admin must approve before use
+  line_target text,                             -- this user's linked LINE userId/groupId
+  line_link_code text,                          -- one-time LINE linking code
   created_at  timestamptz not null default now()
 );
 -- for existing databases (idempotent):
 alter table profiles add column if not exists approved boolean not null default false;
+alter table profiles add column if not exists line_target text;
+alter table profiles add column if not exists line_link_code text;
 
 -- A portal = one engagement for one client.
 create table if not exists engagements (

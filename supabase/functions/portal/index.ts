@@ -144,17 +144,20 @@ Deno.serve(async (req) => {
       await admin.from("request_items").update({ status: "submitted", note: "" }).eq("id", item_id);
       await admin.from("item_history").insert({ item_id, by: "Client", action: "Submitted" });
 
-      // LINE notify the firm (fire-and-forget; skips if not linked)
+      // LINE notify every portal member who has linked LINE (fire-and-forget)
       try {
-        const { data: eng } = await admin.from("engagements")
-          .select("client, firm_id").eq("id", engagement_id).maybeSingle();
-        const { data: firm } = eng
-          ? await admin.from("firms").select("line_target").eq("id", eng.firm_id).maybeSingle()
-          : { data: null };
-        if (firm?.line_target) {
-          const { data: it } = await admin.from("request_items").select("description").eq("id", item_id).maybeSingle();
-          await linePush(firm.line_target,
-            `📤 ${eng?.client} อัปโหลดเอกสารใหม่\n• ${it?.description || ""}\n(${String(body.name || "")})`);
+        const { data: eng } = await admin.from("engagements").select("client").eq("id", engagement_id).maybeSingle();
+        const { data: members } = await admin.from("portal_members").select("user_id").eq("engagement_id", engagement_id);
+        const userIds = (members || []).map((m: any) => m.user_id);
+        if (userIds.length) {
+          const { data: profs } = await admin.from("profiles")
+            .select("line_target").in("id", userIds).not("line_target", "is", null);
+          const targets = [...new Set((profs || []).map((p: any) => p.line_target).filter(Boolean))];
+          if (targets.length) {
+            const { data: it } = await admin.from("request_items").select("description").eq("id", item_id).maybeSingle();
+            const msg = `📤 ${eng?.client} อัปโหลดเอกสารใหม่\n• ${it?.description || ""}\n(${String(body.name || "")})`;
+            await Promise.all(targets.map((t) => linePush(t as string, msg)));
+          }
         }
       } catch (_) { /* never block the upload on a notification */ }
 

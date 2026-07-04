@@ -29,10 +29,10 @@ Deno.serve(async (req) => {
     const target = src.groupId || src.roomId || src.userId;
     if (ev.type === "message" && ev.message?.type === "text") {
       const text = String(ev.message.text || "").trim();
-      const { data: firm } = await admin.from("firms").select("id").eq("line_link_code", text).maybeSingle();
-      if (firm && target) {
-        await admin.from("firms").update({ line_target: target, line_link_code: null }).eq("id", firm.id);
-        await lineReply(ev.replyToken, "✅ เชื่อมต่อ Tickmark สำเร็จ! จะแจ้งเตือนที่นี่เมื่อลูกค้าอัปโหลดเอกสาร");
+      const { data: prof } = await admin.from("profiles").select("id").eq("line_link_code", text).maybeSingle();
+      if (prof && target) {
+        await admin.from("profiles").update({ line_target: target, line_link_code: null }).eq("id", prof.id);
+        await lineReply(ev.replyToken, "✅ เชื่อมต่อ Tickmark สำเร็จ! จะแจ้งเตือนที่นี่เมื่อลูกค้าอัปโหลดเอกสารในพอร์ทัลของคุณ");
       } else if (/^(link|connect|เชื่อม|ผูก)/i.test(text)) {
         await lineReply(ev.replyToken, "ส่ง “รหัสเชื่อมต่อ” ที่ได้จากหน้าตั้งค่าในแอป Tickmark มาที่แชตนี้เพื่อผูกบัญชีครับ");
       }
