@@ -40,3 +40,13 @@ export async function presignPut(key: string, expiresIn = 600): Promise<string> 
 export async function deleteObjects(keys: string[]): Promise<void> {
   await Promise.all(keys.map((k) => aws.fetch(objUrl(k), { method: "DELETE" })));
 }
+
+// Upload bytes server-side (used by the one-time migration).
+export async function uploadObject(key: string, body: ArrayBuffer | Uint8Array | Blob, contentType?: string): Promise<void> {
+  const res = await aws.fetch(objUrl(key), {
+    method: "PUT",
+    body,
+    headers: contentType ? { "Content-Type": contentType } : {},
+  });
+  if (!res.ok) throw new Error(`R2 put ${key} failed (${res.status})`);
+}
