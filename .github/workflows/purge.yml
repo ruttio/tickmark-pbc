@@ -1,0 +1,26 @@
+name: Purge expired portals
+
+# Deletes expired auto-delete portals (R2 files + DB rows) once a day.
+# Replaces the old pg_cron job. The anon key below is public; the purge secret
+# is a repo secret (Settings -> Secrets and variables -> Actions -> PURGE_SECRET).
+
+on:
+  schedule:
+    - cron: "23 4 * * *" # daily ~04:23 UTC
+  workflow_dispatch: {}
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call purge Edge Function
+        env:
+          PURGE_SECRET: ${{ secrets.PURGE_SECRET }}
+        run: |
+          KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtZWtpaW5remZwbXJ6aWttaG1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3ODQwMDUsImV4cCI6MjA5ODM2MDAwNX0.9zsKl7HduPWtfSGs8d3OOJAwVgEw4DPYC7NVRdQs89E"
+          code=$(curl -sS -o /tmp/out -w "%{http_code}" -X POST \
+            -H "apikey: $KEY" -H "Content-Type: application/json" \
+            -d "{\"secret\":\"$PURGE_SECRET\"}" \
+            "https://pmekiinkzfpmrzikmhmo.supabase.co/functions/v1/purge")
+          echo "HTTP $code"; cat /tmp/out; echo
+          test "$code" = "200"
