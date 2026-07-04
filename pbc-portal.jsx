@@ -1273,10 +1273,12 @@ function ExpiredScreen({ eng, role, onExtend, onDelete }) {
               <button className="tk-btn" onClick={() => onExtend(60)}>+60 วัน</button>
               <button className="tk-btn" onClick={() => onExtend(90)}>+90 วัน</button>
             </div>
-            <button className="tk-btn danger full"
-              onClick={() => { if (confirm("ลบพอร์ทัลนี้และเอกสารทั้งหมดอย่างถาวร?")) onDelete(); }}>
-              ลบพอร์ทัลนี้ถาวร
-            </button>
+            {eng.myRole === "owner" && (
+              <button className="tk-btn danger full"
+                onClick={() => { if (confirm("ลบพอร์ทัลนี้และเอกสารทั้งหมดอย่างถาวร?")) onDelete(); }}>
+                ลบพอร์ทัลนี้ถาวร
+              </button>
+            )}
           </>
         ) : (
           <p className="tk-muted">โปรดติดต่อทางสำนักงาน (Firm) หากยังต้องการส่งเอกสารเพิ่มเติม</p>
@@ -1337,12 +1339,16 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
         </>
       )}
 
-      <div style={{ height: 18 }} />
-      <p className="tk-block-h">ลบพอร์ทัล</p>
-      <button className="tk-btn danger full"
-        onClick={() => { if (confirm(`ลบพอร์ทัลของ ${eng.client} และเอกสารทั้งหมดอย่างถาวร?`)) onDelete(); }}>
-        ลบพอร์ทัลนี้ถาวร
-      </button>
+      {eng.myRole === "owner" && (
+        <>
+          <div style={{ height: 18 }} />
+          <p className="tk-block-h">ลบพอร์ทัล</p>
+          <button className="tk-btn danger full"
+            onClick={() => { if (confirm(`ลบพอร์ทัลของ ${eng.client} และเอกสารทั้งหมดอย่างถาวร?`)) onDelete(); }}>
+            ลบพอร์ทัลนี้ถาวร
+          </button>
+        </>
+      )}
     </Modal>
   );
 }
@@ -1476,7 +1482,8 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
                 {item.status === "submitted" && (
                   <button className="tk-btn full" onClick={() => onSetStatus(item.id, "review", "Firm", "Started review")}>Start review</button>
                 )}
-                <button className="tk-btn primary full" onClick={() => onSetStatus(item.id, "accepted", "Firm", "Accepted")}>
+                <button className="tk-btn primary full"
+                  onClick={() => { if (confirm("ยืนยันรับ (Accept) เอกสารข้อนี้?")) onSetStatus(item.id, "accepted", "Firm", "Accepted"); }}>
                   <Tick size={13} /> Accept{item.files.length === 0 ? " (รับเอกสารจริง/ไม่มีไฟล์)" : ""}
                 </button>
                 {item.files.length > 0 && (

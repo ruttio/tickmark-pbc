@@ -44,8 +44,14 @@ $$;
 -- 4) replace firm-based policies with portal-membership ones -----------
 drop policy if exists firm_engagements on engagements;
 drop policy if exists portal_engagements on engagements;
-create policy portal_engagements on engagements for all
+drop policy if exists portal_engagements_select on engagements;
+drop policy if exists portal_engagements_update on engagements;
+drop policy if exists portal_engagements_delete on engagements;
+create policy portal_engagements_select on engagements for select using (id in (select my_portals()));
+create policy portal_engagements_update on engagements for update
   using (id in (select my_portals())) with check (id in (select my_portals()));
+-- delete a portal: owner only
+create policy portal_engagements_delete on engagements for delete using (my_portal_role(id) = 'owner');
 
 drop policy if exists firm_items on request_items;
 drop policy if exists portal_items on request_items;
