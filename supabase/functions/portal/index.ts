@@ -14,6 +14,7 @@
 //    confirm       { token, item_id, name, size, type, storage_path }
 // =====================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { presignGet, presignPut, deleteObjects } from "../_shared/r2.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -123,9 +124,8 @@ Deno.serve(async (req) => {
       if (!item) return json({ error: "item not in this portal" }, 403);
 
       const path = `${engagement_id}/${item_id}/${Date.now()}_${filename}`;
-      const { data: signed, error } = await admin.storage.from("pbc").createSignedUploadUrl(path);
-      if (error) return json({ error: "could not sign url" }, 500);
-      return json({ path, signed });   // client uploads via supabase.storage.from('pbc').uploadToSignedUrl(path, signed.token, file)
+      const put_url = await presignPut(path);   // client PUTs the file bytes to this R2 URL
+      return json({ path, put_url });
     }
 
     // ---- confirm: record the uploaded file + advance the item ----
@@ -151,9 +151,7 @@ Deno.serve(async (req) => {
       const { data: file } = await admin.from("item_files")
         .select("id, storage_path, is_sample").eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!file || !file.is_sample) return json({ error: "sample not found" }, 404);
-      const { data: signed, error } = await admin.storage.from("pbc").createSignedUrl(file.storage_path, 120);
-      if (error) return json({ error: "could not sign url" }, 500);
-      return json({ url: signed.signedUrl });
+      return json({ url: await presignGet(file.storage_path, 120) });
     }
 
     // ---- remove_file: client deletes one of their uploads (storage + row) ----
@@ -170,7 +168,7 @@ Deno.serve(async (req) => {
         .select("id, storage_path, is_sample").eq("id", file_id).eq("item_id", item_id).maybeSingle();
       if (!file || file.is_sample) return json({ error: "file not found" }, 404);
 
-      await admin.storage.from("pbc").remove([file.storage_path]);
+      await deleteObjects([file.storage_path]);
       await admin.from("item_files").delete().eq("id", file_id);
       // if that was the last file, send the item back to "outstanding"
       const { count } = await admin.from("item_files")
