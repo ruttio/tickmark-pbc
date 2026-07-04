@@ -735,6 +735,9 @@ export default function App() {
               alert("คัดลอกลิงก์สำหรับลูกค้าแล้ว (ส่งรหัส 16 หลักแยกช่องทาง):\n\n" + link);
             }}>🔗 ลิงก์ลูกค้า</button>
             <button className="tk-btn ghost" onClick={notifyClient}>📧 แจ้งลูกค้า</button>
+            {eng.myRole === "owner" && (
+              <button className="tk-btn ghost" onClick={() => setModal("share")}>👥 แชร์</button>
+            )}
             <button className="tk-btn ghost" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
             {busy && <span className="tk-hint">กำลังบันทึก…</span>}
             <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
@@ -779,7 +782,8 @@ export default function App() {
         <Drawer key={drawerItem.id} item={drawerItem} role="firm" busy={busy} onClose={() => setOpenItem(null)}
           onSetStatus={setStatus} onDelete={deleteItem} onDownload={downloadFile} onSaveNote={saveItemNote}
           onUpdateItem={updateItem} onReturn={returnItem}
-          onUploadSample={uploadSample} onRemoveSample={removeSample} />
+          onUploadSample={uploadSample} onRemoveSample={removeSample}
+          canDelete={eng.myRole === "owner" || eng.myCanDelete} />
       )}
 
       {/* Modals */}
@@ -800,6 +804,9 @@ export default function App() {
       )}
       {modal === "zip" && eng && (
         <ZipModal eng={eng} busy={busy} onClose={() => setModal(null)} onDownload={downloadZip} />
+      )}
+      {modal === "share" && eng && (
+        <ShareModal eng={eng} onClose={() => setModal(null)} />
       )}
     </div>
   );
@@ -1340,7 +1347,7 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   );
 }
 
-function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, onUpdateItem, onReturn, onUploadSample, onRemoveSample, busy }) {
+function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, onUpdateItem, onReturn, onUploadSample, onRemoveSample, canDelete, busy }) {
   const fileRef = useRef(null);
   const sampleRef = useRef(null);
   const clientFiles = item.files.filter((f) => !f.isSample);
@@ -1501,7 +1508,10 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
             ) : (
               <button className="tk-btn ghost full" onClick={() => onSetStatus(item.id, "reopened", "Firm", "Reopened", { note: "" })}>Reopen item</button>
             )}
-            <button className="tk-btn danger full" onClick={() => onDelete(item.id)}>Delete item</button>
+            {canDelete && (
+              <button className="tk-btn danger full"
+                onClick={() => { if (confirm("ลบรายการนี้อย่างถาวร? การลบไม่สามารถกู้คืนได้")) onDelete(item.id); }}>Delete item</button>
+            )}
           </div>
         )}
 
@@ -1741,6 +1751,63 @@ function ImportModal({ draft, onClose, onImport }) {
           ยืนยันสร้างลิสต์ ({included.length})
         </button>
       </div>
+    </Modal>
+  );
+}
+
+function ShareModal({ eng, onClose }) {
+  const [members, setMembers] = useState(null);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("member");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const reload = () => firmApi.listPortalMembers(eng.id).then(setMembers).catch((e) => { setErr(e.message || ""); setMembers([]); });
+  useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = async (fn) => {
+    setBusy(true); setErr("");
+    try { await fn(); await reload(); } catch (e) { setErr(e.message || "ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+  const add = () => { if (email.trim()) act(async () => { await firmApi.addPortalMember(eng.id, email.trim(), role); setEmail(""); }); };
+
+  return (
+    <Modal title="แชร์พอร์ทัล / จัดการสมาชิก" onClose={onClose}>
+      <p className="tk-tplblurb" style={{ marginTop: 0 }}>เพิ่มผู้ใช้ฝั่งสำนักงานเข้าพอร์ทัลนี้ · เจ้าของ = สิทธิ์เต็ม · สมาชิก = จำกัด (ลบ item ไม่ได้จนกว่าจะอนุญาต)</p>
+      <div className="tk-field-row">
+        <label className="tk-field" style={{ flex: 2 }}><span>อีเมลผู้ใช้ (ต้องมีบัญชีแล้ว)</span>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()} placeholder="colleague@firm.com" /></label>
+        <label className="tk-field"><span>บทบาท</span>
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="member">สมาชิก</option>
+            <option value="owner">เจ้าของ</option>
+          </select></label>
+        <button className="tk-btn primary" style={{ alignSelf: "flex-end", marginBottom: 13 }} disabled={busy || !email.trim()} onClick={add}>+ เพิ่ม</button>
+      </div>
+      {err && <p className="tk-lock-err">{err}</p>}
+
+      <p className="tk-block-h">สมาชิก ({members ? members.length : "…"})</p>
+      <ul className="tk-member-list">
+        {(members || []).map((m) => (
+          <li key={m.userId}>
+            <span className="tk-member-email">{m.email}</span>
+            <select value={m.role} disabled={busy}
+              onChange={(e) => act(() => firmApi.setPortalMember(eng.id, m.userId, e.target.value, m.canDelete))}>
+              <option value="member">สมาชิก</option>
+              <option value="owner">เจ้าของ</option>
+            </select>
+            {m.role !== "owner" && (
+              <label className="tk-check" style={{ fontSize: 12, padding: 0 }}>
+                <input type="checkbox" checked={m.canDelete} disabled={busy}
+                  onChange={(e) => act(() => firmApi.setPortalMember(eng.id, m.userId, m.role, e.target.checked))} /> ลบ item ได้
+              </label>
+            )}
+            <button className="tk-x" disabled={busy} onClick={() => act(() => firmApi.removePortalMember(eng.id, m.userId))}>เอาออก</button>
+          </li>
+        ))}
+      </ul>
+      <p className="tk-lock-foot" style={{ marginTop: 10 }}>ผู้ใช้ที่จะเพิ่มต้องสมัคร + ได้รับอนุมัติในระบบก่อน จึงเชิญเข้าได้</p>
     </Modal>
   );
 }

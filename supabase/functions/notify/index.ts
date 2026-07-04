@@ -71,12 +71,15 @@ Deno.serve(async (req) => {
   const engagement_id = String(body.engagement_id || "");
   const kind = String(body.kind || "");
 
-  // authorize: the engagement must belong to the caller's (approved) firm
-  const { data: prof } = await admin.from("profiles").select("firm_id, approved").eq("id", user.id).maybeSingle();
+  // authorize: caller must be an approved user AND a member of this portal
+  const { data: prof } = await admin.from("profiles").select("approved").eq("id", user.id).maybeSingle();
   if (!prof || !prof.approved) return json({ error: "not approved" }, 403);
+  const { data: mem } = await admin.from("portal_members")
+    .select("role").eq("engagement_id", engagement_id).eq("user_id", user.id).maybeSingle();
+  if (!mem) return json({ error: "not a member of this portal" }, 403);
   const { data: eng } = await admin.from("engagements")
-    .select("id, client, client_email, template, firm_id").eq("id", engagement_id).maybeSingle();
-  if (!eng || eng.firm_id !== prof.firm_id) return json({ error: "engagement not found" }, 404);
+    .select("id, client, client_email, template").eq("id", engagement_id).maybeSingle();
+  if (!eng) return json({ error: "engagement not found" }, 404);
   if (!eng.client_email) return json({ error: "no client email on this portal" }, 400);
 
   const portalUrl = `${APP_URL}/client.html?e=${eng.id}`;

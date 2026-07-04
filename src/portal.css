@@ -272,6 +272,12 @@
 .tk-storage-bar.od span{background:var(--rust)}
 .tk-storage-warn{font-size:11.5px;color:var(--rust);margin:6px 0 0}
 
+/* share portal — member list */
+.tk-member-list{list-style:none;margin:0 0 4px;padding:0;display:flex;flex-direction:column;gap:9px}
+.tk-member-list li{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+.tk-member-email{flex:1;min-width:130px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-member-list select{font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink)}
+
 /* notify-client chooser */
 .tk-notify-opt{display:flex;align-items:center;gap:12px;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:13px 14px;cursor:pointer;font-family:'Inter'}
 .tk-notify-opt:hover:not(:disabled){border-color:var(--pine);background:#f3f5ee}
