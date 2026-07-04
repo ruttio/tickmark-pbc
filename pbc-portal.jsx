@@ -994,6 +994,7 @@ const STORAGE_LIMIT = 10 * 1073741824; // 10 GB — Cloudflare R2 free tier (bey
 function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) {
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showLine, setShowLine] = useState(false);
 
   const filtered = useMemo(() => {
     const list = dash || [];
@@ -1082,9 +1083,12 @@ function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) 
               </div>
             )}
           </div>
+          <button className="tk-btn" onClick={() => setShowLine(true)}>🟢 LINE</button>
           <button className="tk-btn primary" onClick={onNew}><Tick size={13} /> New portal</button>
         </div>
       </section>
+
+      {showLine && <LineModal onClose={() => setShowLine(false)} />}
 
       <section className="tk-toolbar">
         <input className="tk-search" type="search" value={q} onChange={(e) => setQ(e.target.value)}
@@ -1766,6 +1770,48 @@ function ImportModal({ draft, onClose, onImport }) {
           ยืนยันสร้างลิสต์ ({included.length})
         </button>
       </div>
+    </Modal>
+  );
+}
+
+function LineModal({ onClose }) {
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = () => firmApi.lineStatus().then(setStatus).catch((e) => { setErr(e.message || ""); setStatus({ linked: false, code: null }); });
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const run = async (fn) => { setBusy(true); setErr(""); try { await fn(); await load(); } catch (e) { setErr(e.message || "ไม่สำเร็จ"); } finally { setBusy(false); } };
+
+  return (
+    <Modal title="แจ้งเตือนผ่าน LINE" onClose={onClose}>
+      {status === null ? (
+        <p className="tk-muted">กำลังโหลด…</p>
+      ) : status.linked ? (
+        <>
+          <div className="tk-callout note" style={{ marginBottom: 14 }}>✅ เชื่อมต่อ LINE แล้ว — เมื่อลูกค้าอัปโหลดเอกสาร ระบบจะแจ้งเตือนใน LINE ของคุณ</div>
+          <button className="tk-btn danger full" disabled={busy} onClick={() => { if (confirm("ยกเลิกการเชื่อม LINE?")) run(() => firmApi.lineUnlink()); }}>ยกเลิกการเชื่อม LINE</button>
+        </>
+      ) : (
+        <>
+          <p className="tk-tplblurb" style={{ marginTop: 0 }}>เชื่อม LINE เพื่อรับแจ้งเตือนเมื่อลูกค้าอัปโหลดเอกสาร</p>
+          <ol style={{ fontSize: 13, lineHeight: 1.9, paddingLeft: 18, margin: "0 0 12px" }}>
+            <li>เพิ่มเพื่อนบอท <b>Tickmark</b> ใน LINE (หรือเชิญเข้ากลุ่ม)</li>
+            <li>กด “สร้างรหัส” แล้ว<b>ส่งรหัสนั้นในแชต</b>กับบอท</li>
+            <li>บอทตอบ “เชื่อมต่อสำเร็จ” = เสร็จ</li>
+          </ol>
+          {status.code && (
+            <div className="tk-callout note" style={{ textAlign: "center", marginBottom: 12 }}>
+              ส่งรหัสนี้ให้บอทใน LINE:<br />
+              <b style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, letterSpacing: 2 }}>{status.code}</b>
+            </div>
+          )}
+          <button className="tk-btn primary full" disabled={busy} onClick={() => run(() => firmApi.lineGenerateCode())}>
+            {busy ? "…" : status.code ? "สร้างรหัสใหม่" : "สร้างรหัสเชื่อมต่อ"}
+          </button>
+        </>
+      )}
+      {err && <p className="tk-lock-err">{err}</p>}
     </Modal>
   );
 }

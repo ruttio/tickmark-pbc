@@ -15,6 +15,7 @@
 // =====================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { presignGet, presignPut, deleteObjects } from "../_shared/r2.ts";
+import { linePush } from "../_shared/line.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -142,6 +143,21 @@ Deno.serve(async (req) => {
       });
       await admin.from("request_items").update({ status: "submitted", note: "" }).eq("id", item_id);
       await admin.from("item_history").insert({ item_id, by: "Client", action: "Submitted" });
+
+      // LINE notify the firm (fire-and-forget; skips if not linked)
+      try {
+        const { data: eng } = await admin.from("engagements")
+          .select("client, firm_id").eq("id", engagement_id).maybeSingle();
+        const { data: firm } = eng
+          ? await admin.from("firms").select("line_target").eq("id", eng.firm_id).maybeSingle()
+          : { data: null };
+        if (firm?.line_target) {
+          const { data: it } = await admin.from("request_items").select("description").eq("id", item_id).maybeSingle();
+          await linePush(firm.line_target,
+            `📤 ${eng?.client} อัปโหลดเอกสารใหม่\n• ${it?.description || ""}\n(${String(body.name || "")})`);
+        }
+      } catch (_) { /* never block the upload on a notification */ }
+
       return json({ ok: true });
     }
 
