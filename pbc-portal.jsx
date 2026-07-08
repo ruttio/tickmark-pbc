@@ -117,6 +117,41 @@ const TEMPLATES = [
       ]],
     ],
   },
+  {
+    key: "bookkeeping",
+    name: "ทำบัญชี + ยื่นภาษีรายเดือน",
+    blurb: "เอกสารสำหรับบันทึกบัญชีและยื่นภาษีประจำเดือน (ประเทศไทย)",
+    groups: [
+      ["รายได้ / ขาย", [
+        ["ใบกำกับภาษีขาย (ทุกใบในเดือน)", true],
+        ["รายงานภาษีขาย", true],
+        ["ใบเสร็จรับเงิน / ใบแจ้งหนี้", false],
+      ]],
+      ["ค่าใช้จ่าย / ซื้อ", [
+        ["ใบกำกับภาษีซื้อ (ทุกใบในเดือน)", true],
+        ["รายงานภาษีซื้อ", true],
+        ["บิล / ใบเสร็จค่าใช้จ่ายอื่นๆ", true],
+      ]],
+      ["ธนาคาร", [
+        ["Bank statement ทุกบัญชี (ทั้งเดือน)", true],
+        ["หลักฐานการโอน / ชำระเงิน", false],
+      ]],
+      ["เงินเดือน / พนักงาน", [
+        ["รายการจ่ายเงินเดือน (payroll)", true],
+        ["หนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ)", false],
+      ]],
+      ["ภาษี", [
+        ["ภ.พ.30 (VAT) เดือนก่อน", false],
+        ["ภ.ง.ด.1 (หัก ณ ที่จ่ายเงินเดือน)", false],
+        ["ภ.ง.ด.3 / ภ.ง.ด.53 (หัก ณ ที่จ่าย)", false],
+        ["ใบเสร็จการชำระภาษี", false],
+      ]],
+      ["อื่นๆ", [
+        ["สต็อกสินค้าคงเหลือ (ถ้ามี)", false],
+        ["ใบสำคัญรับ / จ่าย", false],
+      ]],
+    ],
+  },
 ];
 
 /* ---------- Small helpers ---------------------------------------------- */
@@ -608,7 +643,8 @@ export default function App() {
   }, [eng]);
 
   const grouped = useMemo(() => {
-    const items = (eng?.items || []).filter((it) => filter === "all" || it.status === filter);
+    const items = (eng?.items || []).filter((it) =>
+      filter === "all" ? true : filter === "overdue" ? isOverdue(it) : it.status === filter);
     const map = new Map();
     items.forEach((it) => { if (!map.has(it.category)) map.set(it.category, []); map.get(it.category).push(it); });
     return [...map.entries()];
@@ -714,6 +750,12 @@ export default function App() {
             </div>
           </section>
 
+          {stats.overdue > 0 && (
+            <div className="tk-alert" onClick={() => setFilter("overdue")}>
+              ⚠ มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง (overdue) — คลิกเพื่อดู
+            </div>
+          )}
+
           {/* Dashboard chips / filter */}
           <section className="tk-chips">
             <Chip active={filter === "all"} onClick={() => setFilter("all")} label="All" n={stats.total} tone="neutral" />
@@ -721,6 +763,8 @@ export default function App() {
               <Chip key={s} active={filter === s} onClick={() => setFilter(filter === s ? "all" : s)}
                 label={STATUS[s].label} n={stats.by[s]} tone={STATUS[s].tone} glyph={STATUS[s].glyph} />
             ))}
+            <Chip active={filter === "overdue"} onClick={() => setFilter(filter === "overdue" ? "all" : "overdue")}
+              label="Overdue" n={stats.overdue} tone="rust" glyph="⚠" />
           </section>
 
           {/* Toolbar */}

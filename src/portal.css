@@ -47,6 +47,11 @@
 .tk-ledger .cell.done{background:var(--pine);border-color:var(--pine)}
 .tk-progress-cap{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ink-soft);text-align:right;margin:0}
 
+/* overdue alert banner */
+.tk-alert{background:var(--rust-tint);color:#7a2c22;border-radius:9px;padding:10px 14px;margin-bottom:14px;font-size:13px;cursor:pointer;font-weight:500}
+.tk-alert:hover{filter:brightness(.97)}
+.tk-alert b{font-weight:700}
+
 /* chips */
 .tk-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
 .tk-chip{display:inline-flex;align-items:center;gap:6px;font-family:'Inter';font-size:12.5px;font-weight:500;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:6px 11px;cursor:pointer;color:var(--ink-soft)}

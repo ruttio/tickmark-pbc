@@ -31,6 +31,7 @@ const STATUS = {
   returned: { label: "Returned", glyph: "↩", tone: "rust" },
   reopened: { label: "Reopened", glyph: "↻", tone: "amber" },
 };
+const STATUS_ORDER = ["outstanding", "submitted", "review", "accepted", "returned", "reopened"];
 
 /* ---------- small helpers ---------------------------------------------- */
 const onlyDigits = (s) => s.replace(/\D+/g, "").slice(0, 16);
@@ -275,14 +276,24 @@ function LockScreen({ onUnlock }) {
 
 /* ---------- the request list + uploads --------------------------------- */
 function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
+  const [filter, setFilter] = useState("all");
+
+  const stats = useMemo(() => {
+    const by = Object.fromEntries(STATUS_ORDER.map((s) => [s, 0]));
+    items.forEach((it) => { by[it.status] = (by[it.status] || 0) + 1; });
+    return { by, overdue: items.filter(isOverdue).length };
+  }, [items]);
+
   const grouped = useMemo(() => {
+    const filtered = items.filter((it) =>
+      filter === "all" ? true : filter === "overdue" ? isOverdue(it) : it.status === filter);
     const m = new Map();
-    items.forEach((it) => {
+    filtered.forEach((it) => {
       if (!m.has(it.category)) m.set(it.category, []);
       m.get(it.category).push(it);
     });
     return [...m.entries()];
-  }, [items]);
+  }, [items, filter]);
 
   const accepted = items.filter((i) => i.status === "accepted").length;
   const pct = items.length ? Math.round((accepted / items.length) * 100) : 0;
@@ -324,10 +335,32 @@ function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
         </p>
       </section>
 
+      {stats.overdue > 0 && (
+        <div className="tk-alert" onClick={() => setFilter("overdue")}>
+          ⚠ มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง — โปรดรีบอัปโหลด (คลิกเพื่อดู)
+        </div>
+      )}
+
+      <section className="tk-chips">
+        <button className={`tk-chip neutral ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All<b>{items.length}</b></button>
+        {STATUS_ORDER.map((s) => (
+          <button key={s} className={`tk-chip ${STATUS[s].tone} ${filter === s ? "active" : ""}`}
+            onClick={() => setFilter(filter === s ? "all" : s)}>
+            <span className="g">{STATUS[s].glyph}</span>{STATUS[s].label}<b>{stats.by[s]}</b>
+          </button>
+        ))}
+        <button className={`tk-chip rust ${filter === "overdue" ? "active" : ""}`}
+          onClick={() => setFilter(filter === "overdue" ? "all" : "overdue")}>
+          <span className="g">⚠</span>Overdue<b>{stats.overdue}</b>
+        </button>
+      </section>
+
       {loadErr && <p className="tk-lock-err" style={{ textAlign: "center" }}>{loadErr}</p>}
 
-      {grouped.length === 0 ? (
+      {items.length === 0 ? (
         <p className="tk-none">ยังไม่มีรายการเอกสารในพอร์ทัลนี้</p>
+      ) : grouped.length === 0 ? (
+        <p className="tk-none">ไม่มีรายการที่ตรงกับตัวกรองนี้</p>
       ) : (
         grouped.map(([cat, rows]) => (
           <section key={cat} className="tk-group">
