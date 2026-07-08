@@ -85,6 +85,38 @@ function Pill({ status }) {
   );
 }
 
+function AuthBrandPanel() {
+  return (
+    <aside className="tk-auth-brand">
+      <div className="tk-auth-brand-mark">
+        <Tick size={22} />
+        <span>Tickmark</span>
+      </div>
+      <p className="tk-auth-kicker">Tickmark PBC · Secure Link</p>
+      <h1>ส่งเอกสารตรวจสอบบัญชีในที่เดียว ปลอดภัย</h1>
+      <p className="tk-auth-copy">
+        พอร์ทัลเฉพาะสำหรับรับส่งเอกสาร PBC พร้อมสถานะที่ชัดเจนและการเข้าถึงที่ควบคุมได้
+      </p>
+      <ul className="tk-auth-points">
+        <li><b>Secure document submission</b><span>ไฟล์อยู่ในพอร์ทัลที่ผูกกับลิงก์และรหัสของคุณ</span></li>
+        <li><b>Real-time audit request tracking</b><span>เห็นทันทีว่าอะไรส่งแล้ว อะไรยังรออัปโหลด</span></li>
+        <li><b>Clear status visibility</b><span>ติดตามสถานะตรวจรับหรือส่งกลับได้ในหน้าเดียว</span></li>
+      </ul>
+    </aside>
+  );
+}
+
+function AuthFrame({ children }) {
+  return (
+    <main className="tk-auth-page">
+      <AuthBrandPanel />
+      <section className="tk-auth-form-panel">
+        {children}
+      </section>
+    </main>
+  );
+}
+
 /* ======================================================================= */
 export default function ClientPortal() {
   const engagementId = useMemo(() => new URLSearchParams(location.search).get("e") || "", []);
@@ -154,14 +186,16 @@ export default function ClientPortal() {
   /* ---- render ---- */
   if (phase === "nolink")
     return (
-      <Shell>
-        <div className="tk-lock">
-          <div className="tk-lock-card">
-            <div className="tk-lock-icon">🔗</div>
-            <h2>ลิงก์ไม่สมบูรณ์</h2>
-            <p className="tk-muted">ลิงก์เข้าพอร์ทัลไม่ถูกต้อง — โปรดเปิดจากลิงก์ที่สำนักงานส่งให้ (ต้องมีรหัสพอร์ทัลใน URL)</p>
+      <Shell auth>
+        <AuthFrame>
+          <div className="tk-lock">
+            <div className="tk-lock-card tk-auth-card">
+              <div className="tk-lock-icon">🔗</div>
+              <h2>ลิงก์ไม่สมบูรณ์</h2>
+              <p className="tk-muted">ลิงก์เข้าพอร์ทัลไม่ถูกต้อง — โปรดเปิดจากลิงก์ที่สำนักงานส่งให้ (ต้องมีรหัสพอร์ทัลใน URL)</p>
+            </div>
           </div>
-        </div>
+        </AuthFrame>
       </Shell>
     );
 
@@ -174,7 +208,7 @@ export default function ClientPortal() {
 
   if (phase === "locked")
     return (
-      <Shell>
+      <Shell auth>
         <LockScreen onUnlock={handleUnlock} />
       </Shell>
     );
@@ -194,9 +228,9 @@ export default function ClientPortal() {
 }
 
 /* ---------- chrome ----------------------------------------------------- */
-function Shell({ children, onLock }) {
+function Shell({ children, onLock, auth = false }) {
   return (
-    <div className="tk-root">
+    <div className={`tk-root ${auth ? "tk-auth-root" : ""}`}>
       <header className="tk-top">
         <div className="tk-brand">
           <Tick size={20} />
@@ -239,38 +273,40 @@ function LockScreen({ onUnlock }) {
   };
 
   return (
-    <div className="tk-lock">
-      <div className="tk-lock-card">
-        <div className="tk-lock-icon">🔒</div>
-        <p className="tk-lock-eyebrow">เอกสารที่ต้องจัดเตรียม</p>
-        <h2>เข้าสู่พอร์ทัล</h2>
-        <p className="tk-muted">กรอกรหัส 16 หลักที่สำนักงานส่งให้เพื่อเข้าพอร์ทัลของคุณ</p>
-        <input
-          className="tk-code-input"
-          inputMode="numeric"
-          autoComplete="off"
-          autoFocus
-          value={groupDigits(code)}
-          placeholder="0000 0000 0000 0000"
-          onChange={(e) => {
-            setCode(onlyDigits(e.target.value));
-            setErr("");
-          }}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-        />
-        {err && <p className="tk-lock-err">{err}</p>}
-        <button className="tk-btn primary full" disabled={code.length !== 16 || busy} onClick={submit}>
-          {busy ? "กำลังตรวจสอบ…" : "ปลดล็อกเข้าพอร์ทัล"}
-        </button>
-        {!SUPABASE_CONFIGURED && (
-          <p className="tk-lock-demo">
-            ⚠ ยังไม่ได้ตั้งค่า backend — คัดลอก <b>.env.example</b> เป็น <b>.env.local</b> แล้วใส่ค่าจาก Supabase
-            (การกดปลดล็อกจะยัง fail จนกว่าจะตั้งค่า + deploy Edge Function)
-          </p>
-        )}
-        <p className="tk-lock-foot">รหัสนี้ใช้ได้เฉพาะพอร์ทัลของคุณเท่านั้น</p>
+    <AuthFrame>
+      <div className="tk-lock">
+        <div className="tk-lock-card tk-auth-card">
+          <div className="tk-lock-icon">🔒</div>
+          <p className="tk-lock-eyebrow">เอกสารที่ต้องจัดเตรียม</p>
+          <h2>เข้าสู่พอร์ทัล</h2>
+          <p className="tk-muted">กรอกรหัส 16 หลักที่สำนักงานส่งให้เพื่อปลดล็อกพอร์ทัลเอกสารของคุณ</p>
+          <input
+            className="tk-code-input tk-code-input-grouped"
+            inputMode="numeric"
+            autoComplete="off"
+            autoFocus
+            value={groupDigits(code)}
+            placeholder="0000 0000 0000 0000"
+            onChange={(e) => {
+              setCode(onlyDigits(e.target.value));
+              setErr("");
+            }}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+          {err && <p className="tk-lock-err">{err}</p>}
+          <button className="tk-btn primary full" disabled={code.length !== 16 || busy} onClick={submit}>
+            {busy ? "กำลังตรวจสอบ…" : "ปลดล็อกเข้าพอร์ทัล"}
+          </button>
+          {!SUPABASE_CONFIGURED && (
+            <p className="tk-lock-demo">
+              ⚠ ยังไม่ได้ตั้งค่า backend — คัดลอก <b>.env.example</b> เป็น <b>.env.local</b> แล้วใส่ค่าจาก Supabase
+              (การกดปลดล็อกจะยัง fail จนกว่าจะตั้งค่า + deploy Edge Function)
+            </p>
+          )}
+          <p className="tk-lock-foot">รหัสนี้ใช้ได้เฉพาะพอร์ทัลของคุณเท่านั้น — ไม่ต้องสมัครสมาชิก</p>
+        </div>
       </div>
-    </div>
+    </AuthFrame>
   );
 }
 

@@ -864,6 +864,42 @@ export default function App() {
   );
 }
 
+/* ---------- Auth surfaces ---------------------------------------------- */
+function AuthBrandPanel({ role = "firm" }) {
+  const isFirm = role === "firm";
+  return (
+    <aside className="tk-auth-brand">
+      <div className="tk-auth-brand-mark">
+        <Tick size={22} />
+        <span>Tickmark</span>
+      </div>
+      <p className="tk-auth-kicker">Tickmark PBC · {isFirm ? "Firm Workspace" : "Secure Link"}</p>
+      <h1>{isFirm ? "จัดการพอร์ทัลลูกค้าและคำขอเอกสารตรวจสอบบัญชี" : "ส่งเอกสารตรวจสอบบัญชีในที่เดียว ปลอดภัย"}</h1>
+      <p className="tk-auth-copy">
+        {isFirm
+          ? "พื้นที่ทำงานสำหรับทีม audit เพื่อติดตามคำขอเอกสาร ลูกค้า และสถานะการตรวจรับในระบบเดียว"
+          : "พอร์ทัลเฉพาะสำหรับรับส่งเอกสาร PBC พร้อมสถานะที่ชัดเจนและการเข้าถึงที่ควบคุมได้"}
+      </p>
+      <ul className="tk-auth-points">
+        <li><b>{isFirm ? "Client portal control" : "Secure document submission"}</b><span>{isFirm ? "เห็นความคืบหน้าและสถานะของแต่ละพอร์ทัล" : "ไฟล์อยู่ในพอร์ทัลที่ผูกกับลิงก์และรหัสของคุณ"}</span></li>
+        <li><b>{isFirm ? "Real-time request tracking" : "Real-time audit request tracking"}</b><span>{isFirm ? "ติดตามการอัปโหลด ตรวจรับ และส่งกลับโดยไม่หลุด workflow" : "เห็นทันทีว่าอะไรส่งแล้ว อะไรยังรออัปโหลด"}</span></li>
+        <li><b>Clear status visibility</b><span>{isFirm ? "ทุกงานใช้ status และ token เดียวกันทั้งระบบ" : "ติดตามสถานะตรวจรับหรือส่งกลับได้ในหน้าเดียว"}</span></li>
+      </ul>
+    </aside>
+  );
+}
+
+function AuthFrame({ children, role = "firm" }) {
+  return (
+    <main className="tk-auth-page">
+      <AuthBrandPanel role={role} />
+      <section className="tk-auth-form-panel">
+        {children}
+      </section>
+    </main>
+  );
+}
+
 /* ---------- Firm auth (Supabase Auth: email + password) ---------------- */
 function AuthScreen() {
   const [mode, setMode] = useState("signin"); // 'signin' | 'signup'
@@ -900,60 +936,55 @@ function AuthScreen() {
   };
 
   return (
-    <div className="tk-root">
-      <header className="tk-top">
-        <div className="tk-brand">
-          <Tick size={20} />
-          <span className="tk-word">Tickmark</span>
-          <span className="tk-tag">PBC portal · firm</span>
+    <div className="tk-root tk-auth-root">
+      <AuthFrame role="firm">
+        <div className="tk-lock">
+          <div className="tk-lock-card tk-auth-card" style={{ textAlign: "left" }}>
+            <div className="tk-lock-icon" style={{ textAlign: "center" }}>🏢</div>
+            <h2 style={{ textAlign: "center" }}>{mode === "signin" ? "เข้าสู่ระบบสำนักงาน" : mode === "signup" ? "สมัครสำนักงานใหม่" : "รีเซ็ตรหัสผ่าน"}</h2>
+            <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>
+              {mode === "signin" ? "สำหรับพนักงานสำนักงาน — เห็นเฉพาะงานของสำนักงานคุณ"
+                : mode === "signup" ? "สร้างบัญชีสำนักงานของคุณเพื่อเริ่มสร้างพอร์ทัล"
+                : "ใส่อีเมลที่ใช้สมัคร เราจะส่งลิงก์ตั้งรหัสผ่านใหม่ให้"}
+            </p>
+
+            {mode === "signup" && (
+              <>
+                <label className="tk-field"><span>ชื่อสำนักงาน (Firm)</span>
+                  <input value={firmName} onChange={(e) => setFirmName(e.target.value)} placeholder="เช่น Tickmark & Co." /></label>
+                <label className="tk-field"><span>ชื่อผู้ใช้ (ไม่บังคับ)</span>
+                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="เช่น Jane CPA" /></label>
+              </>
+            )}
+            <label className="tk-field"><span>อีเมล</span>
+              <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@firm.com" /></label>
+            {mode !== "reset" && (
+              <label className="tk-field"><span>รหัสผ่าน (≥ 6 ตัว)</span>
+                <input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" /></label>
+            )}
+
+            {err && <p className="tk-lock-err">{err}</p>}
+            {info && <p className="tk-lock-demo">{info}</p>}
+
+            <button className="tk-btn primary full" disabled={!ready || busy} onClick={submit}>
+              {busy ? "กำลังดำเนินการ…" : mode === "signin" ? "เข้าสู่ระบบ" : mode === "signup" ? "สมัครและเริ่มใช้งาน" : "ส่งลิงก์รีเซ็ตรหัสผ่าน"}
+            </button>
+            {mode === "signin" && (
+              <button type="button" className="tk-link" style={{ display: "block", margin: "12px auto 0" }}
+                onClick={() => { setMode("reset"); setErr(""); setInfo(""); }}>ลืมรหัสผ่าน?</button>
+            )}
+            <button type="button" className="tk-link" style={{ display: "block", margin: "8px auto 0" }}
+              onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setErr(""); setInfo(""); }}>
+              {mode === "signin" ? "ยังไม่มีบัญชี? สมัครสำนักงานใหม่" : mode === "signup" ? "มีบัญชีแล้ว? เข้าสู่ระบบ" : "← กลับเข้าสู่ระบบ"}
+            </button>
+            {!SUPABASE_CONFIGURED && (
+              <p className="tk-lock-demo" style={{ marginTop: 12 }}>⚠ ยังไม่ได้ตั้งค่า backend (.env.local)</p>
+            )}
+          </div>
         </div>
-      </header>
-      <div className="tk-lock">
-        <div className="tk-lock-card" style={{ textAlign: "left" }}>
-          <div className="tk-lock-icon" style={{ textAlign: "center" }}>🏢</div>
-          <h2 style={{ textAlign: "center" }}>{mode === "signin" ? "เข้าสู่ระบบสำนักงาน" : mode === "signup" ? "สมัครสำนักงานใหม่" : "รีเซ็ตรหัสผ่าน"}</h2>
-          <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>
-            {mode === "signin" ? "สำหรับพนักงานสำนักงาน — เห็นเฉพาะงานของสำนักงานคุณ"
-              : mode === "signup" ? "สร้างบัญชีสำนักงานของคุณเพื่อเริ่มสร้างพอร์ทัล"
-              : "ใส่อีเมลที่ใช้สมัคร เราจะส่งลิงก์ตั้งรหัสผ่านใหม่ให้"}
-          </p>
-
-          {mode === "signup" && (
-            <>
-              <label className="tk-field"><span>ชื่อสำนักงาน (Firm)</span>
-                <input value={firmName} onChange={(e) => setFirmName(e.target.value)} placeholder="เช่น Tickmark & Co." /></label>
-              <label className="tk-field"><span>ชื่อผู้ใช้ (ไม่บังคับ)</span>
-                <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="เช่น Jane CPA" /></label>
-            </>
-          )}
-          <label className="tk-field"><span>อีเมล</span>
-            <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@firm.com" /></label>
-          {mode !== "reset" && (
-            <label className="tk-field"><span>รหัสผ่าน (≥ 6 ตัว)</span>
-              <input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                value={password} onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" /></label>
-          )}
-
-          {err && <p className="tk-lock-err">{err}</p>}
-          {info && <p className="tk-lock-demo">{info}</p>}
-
-          <button className="tk-btn primary full" disabled={!ready || busy} onClick={submit}>
-            {busy ? "กำลังดำเนินการ…" : mode === "signin" ? "เข้าสู่ระบบ" : mode === "signup" ? "สมัครและเริ่มใช้งาน" : "ส่งลิงก์รีเซ็ตรหัสผ่าน"}
-          </button>
-          {mode === "signin" && (
-            <button type="button" className="tk-link" style={{ display: "block", margin: "12px auto 0" }}
-              onClick={() => { setMode("reset"); setErr(""); setInfo(""); }}>ลืมรหัสผ่าน?</button>
-          )}
-          <button type="button" className="tk-link" style={{ display: "block", margin: "8px auto 0" }}
-            onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setErr(""); setInfo(""); }}>
-            {mode === "signin" ? "ยังไม่มีบัญชี? สมัครสำนักงานใหม่" : mode === "signup" ? "มีบัญชีแล้ว? เข้าสู่ระบบ" : "← กลับเข้าสู่ระบบ"}
-          </button>
-          {!SUPABASE_CONFIGURED && (
-            <p className="tk-lock-demo" style={{ marginTop: 12 }}>⚠ ยังไม่ได้ตั้งค่า backend (.env.local)</p>
-          )}
-        </div>
-      </div>
+      </AuthFrame>
     </div>
   );
 }
@@ -964,29 +995,26 @@ function SetNewPasswordScreen({ busy, onSave, onSignOut }) {
   const [pw2, setPw2] = useState("");
   const ok = pw.length >= 6 && pw === pw2;
   return (
-    <div className="tk-root">
-      <header className="tk-top">
-        <div className="tk-brand">
-          <Tick size={20} /><span className="tk-word">Tickmark</span><span className="tk-tag">PBC portal · firm</span>
+    <div className="tk-root tk-auth-root">
+      <AuthFrame role="firm">
+        <div className="tk-lock">
+          <div className="tk-lock-card tk-auth-card" style={{ textAlign: "left" }}>
+            <div className="tk-lock-icon" style={{ textAlign: "center" }}>🔑</div>
+            <h2 style={{ textAlign: "center" }}>ตั้งรหัสผ่านใหม่</h2>
+            <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>กรอกรหัสผ่านใหม่สำหรับบัญชีของคุณ</p>
+            <label className="tk-field"><span>รหัสผ่านใหม่ (≥ 6 ตัว)</span>
+              <input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" /></label>
+            <label className="tk-field"><span>ยืนยันรหัสผ่านใหม่</span>
+              <input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && ok && onSave(pw)} placeholder="••••••••" /></label>
+            {pw2 && pw !== pw2 && <p className="tk-lock-err">รหัสผ่านไม่ตรงกัน</p>}
+            <button className="tk-btn primary full" disabled={!ok || busy} onClick={() => onSave(pw)}>
+              {busy ? "กำลังบันทึก…" : "บันทึกรหัสผ่านใหม่"}
+            </button>
+            <button type="button" className="tk-link" style={{ display: "block", margin: "12px auto 0" }} onClick={onSignOut}>ยกเลิก / ออกจากระบบ</button>
+          </div>
         </div>
-      </header>
-      <div className="tk-lock">
-        <div className="tk-lock-card" style={{ textAlign: "left" }}>
-          <div className="tk-lock-icon" style={{ textAlign: "center" }}>🔑</div>
-          <h2 style={{ textAlign: "center" }}>ตั้งรหัสผ่านใหม่</h2>
-          <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>กรอกรหัสผ่านใหม่สำหรับบัญชีของคุณ</p>
-          <label className="tk-field"><span>รหัสผ่านใหม่ (≥ 6 ตัว)</span>
-            <input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" /></label>
-          <label className="tk-field"><span>ยืนยันรหัสผ่านใหม่</span>
-            <input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && ok && onSave(pw)} placeholder="••••••••" /></label>
-          {pw2 && pw !== pw2 && <p className="tk-lock-err">รหัสผ่านไม่ตรงกัน</p>}
-          <button className="tk-btn primary full" disabled={!ok || busy} onClick={() => onSave(pw)}>
-            {busy ? "กำลังบันทึก…" : "บันทึกรหัสผ่านใหม่"}
-          </button>
-          <button type="button" className="tk-link" style={{ display: "block", margin: "12px auto 0" }} onClick={onSignOut}>ยกเลิก / ออกจากระบบ</button>
-        </div>
-      </div>
+      </AuthFrame>
     </div>
   );
 }
@@ -994,29 +1022,21 @@ function SetNewPasswordScreen({ busy, onSave, onSignOut }) {
 /* ---------- Account pending approval ----------------------------------- */
 function PendingApprovalScreen({ email, onSignOut }) {
   return (
-    <div className="tk-root">
-      <header className="tk-top">
-        <div className="tk-brand">
-          <Tick size={20} />
-          <span className="tk-word">Tickmark</span>
-          <span className="tk-tag">PBC portal · firm</span>
+    <div className="tk-root tk-auth-root">
+      <AuthFrame role="firm">
+        <div className="tk-lock">
+          <div className="tk-lock-card tk-auth-card">
+            <div className="tk-lock-icon">⏳</div>
+            <h2>บัญชีรอการอนุมัติ</h2>
+            <p className="tk-muted">
+              สมัครสำเร็จแล้ว — บัญชี <b>{email}</b> กำลังรอผู้ดูแลระบบอนุมัติ
+              เมื่อได้รับอนุมัติแล้วจึงจะเริ่มสร้างพอร์ทัลได้
+            </p>
+            <p className="tk-lock-foot">โปรดติดต่อผู้ดูแลระบบ หรือลองเข้าสู่ระบบใหม่อีกครั้งภายหลัง</p>
+            <button className="tk-btn full" onClick={onSignOut}>ออกจากระบบ</button>
+          </div>
         </div>
-        <div className="tk-top-right">
-          <button className="tk-icon" title="ออกจากระบบ" onClick={onSignOut}>⎋</button>
-        </div>
-      </header>
-      <div className="tk-lock">
-        <div className="tk-lock-card">
-          <div className="tk-lock-icon">⏳</div>
-          <h2>บัญชีรอการอนุมัติ</h2>
-          <p className="tk-muted">
-            สมัครสำเร็จแล้ว — บัญชี <b>{email}</b> กำลังรอผู้ดูแลระบบอนุมัติ
-            เมื่อได้รับอนุมัติแล้วจึงจะเริ่มสร้างพอร์ทัลได้
-          </p>
-          <p className="tk-lock-foot">โปรดติดต่อผู้ดูแลระบบ หรือลองเข้าสู่ระบบใหม่อีกครั้งภายหลัง</p>
-          <button className="tk-btn full" onClick={onSignOut}>ออกจากระบบ</button>
-        </div>
-      </div>
+      </AuthFrame>
     </div>
   );
 }
