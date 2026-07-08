@@ -95,12 +95,12 @@ function AuthBrandPanel() {
       <p className="tk-auth-kicker">Tickmark PBC · Secure Link</p>
       <h1>ส่งเอกสารตรวจสอบบัญชีในที่เดียว ปลอดภัย</h1>
       <p className="tk-auth-copy">
-        พอร์ทัลเฉพาะสำหรับรับส่งเอกสาร PBC พร้อมสถานะที่ชัดเจนและการเข้าถึงที่ควบคุมได้
+        พอร์ทัลเฉพาะสำหรับรับส่งเอกสาร PBC พร้อมสถานะชัดเจนและการเข้าถึงที่ควบคุมได้
       </p>
       <ul className="tk-auth-points">
-        <li><b>Secure document submission</b><span>ไฟล์อยู่ในพอร์ทัลที่ผูกกับลิงก์และรหัสของคุณ</span></li>
-        <li><b>Real-time audit request tracking</b><span>เห็นทันทีว่าอะไรส่งแล้ว อะไรยังรออัปโหลด</span></li>
-        <li><b>Clear status visibility</b><span>ติดตามสถานะตรวจรับหรือส่งกลับได้ในหน้าเดียว</span></li>
+        <li><b>ส่งเอกสารอย่างปลอดภัย</b><span>ไฟล์ผูกกับลิงก์และรหัสเฉพาะของคุณ</span></li>
+        <li><b>ติดตามคำขอแบบเรียลไทม์</b><span>เห็นทันทีว่าอะไรส่งแล้วหรือยังรออัปโหลด</span></li>
+        <li><b>สถานะชัดเจนในหน้าเดียว</b><span>ตรวจรับ ส่งกลับ และความคืบหน้าอ่านได้ง่าย</span></li>
       </ul>
     </aside>
   );
