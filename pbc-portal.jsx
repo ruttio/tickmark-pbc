@@ -401,9 +401,9 @@ export default function App() {
   const [modal, setModal] = useState(null);           // 'generate' | 'add' | 'import' | 'settings'
   const [importDraft, setImportDraft] = useState(null);
   const importRef = useRef(null);
-  const [filter, setFilter] = useState("all");
+  const [statusSel, setStatusSel] = useState([]);     // engagement-detail status filters (empty = all; may include "overdue")
   const [itemQ, setItemQ] = useState("");             // engagement-detail text search
-  const [catFilter, setCatFilter] = useState(null);   // engagement-detail category filter (null = all)
+  const [catSel, setCatSel] = useState([]);           // engagement-detail category filters (empty = all)
   const [busy, setBusy] = useState(false);            // a backend mutation is in flight
   const [err, setErr] = useState("");
   const [view, setView] = useState("dashboard");      // 'dashboard' | 'engagement'
@@ -648,11 +648,11 @@ export default function App() {
 
   const grouped = useMemo(() => {
     const items = (eng?.items || []).filter((it) =>
-      filter === "all" ? true : filter === "overdue" ? isOverdue(it) : it.status === filter);
+      statusSel.length === 0 ? true : statusSel.some((s) => (s === "overdue" ? isOverdue(it) : it.status === s)));
     const map = new Map();
     items.forEach((it) => { if (!map.has(it.category)) map.set(it.category, []); map.get(it.category).push(it); });
     return [...map.entries()];
-  }, [eng, filter]);
+  }, [eng, statusSel]);
 
   // Engagement-detail (3e) left panel: category list (all items) + the grouped
   // list further narrowed by the category filter and the text search.
@@ -668,10 +668,10 @@ export default function App() {
   const viewGroups = useMemo(() => {
     const q = itemQ.trim().toLowerCase();
     return grouped
-      .filter(([cat]) => !catFilter || cat === catFilter)
+      .filter(([cat]) => catSel.length === 0 || catSel.includes(cat))
       .map(([cat, items]) => [cat, items.filter((it) => !q || `${it.ref} ${it.description}`.toLowerCase().includes(q))])
       .filter(([, items]) => items.length > 0);
-  }, [grouped, catFilter, itemQ]);
+  }, [grouped, catSel, itemQ]);
 
   const exportCSV = () => {
     if (!eng) return;
@@ -770,27 +770,19 @@ export default function App() {
               <aside className="nv-aside">
                 <div className="nv-isearch"><span>⌕</span><input value={itemQ} onChange={(e) => setItemQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
                 {stats.overdue > 0 && (
-                  <div className="nv-alert" onClick={() => { setFilter("overdue"); setCatFilter(null); }}>
+                  <div className="nv-alert" onClick={() => { setStatusSel(["overdue"]); setCatSel([]); }}>
                     <span className="ic">⚠</span>
                     <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{(() => { const f = eng.items.find(isOverdue); return f ? ` — ${f.description}` : ""; })()} · คลิกเพื่อดู</span>
                   </div>
                 )}
-                <div className="nv-asf">
-                  <label className="nv-asf-l">สถานะ</label>
-                  <select className="nv-fb-sel nv-asf-sel" value={filter} onChange={(e) => setFilter(e.target.value)}>
-                    <option value="all">ทุกสถานะ · {stats.total}</option>
-                    {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label} · {stats.by[s]}</option>)}
-                    <option value="overdue">⚠ Overdue · {stats.overdue}</option>
-                  </select>
-                </div>
+                <MultiFilter label="สถานะ" placeholder={`ทุกสถานะ · ${stats.total}`} selected={statusSel} onChange={setStatusSel}
+                  options={[
+                    ...STATUS_ORDER.map((s) => ({ value: s, label: STATUS[s].label, count: stats.by[s], dot: STATUS_DOT[s] })),
+                    { value: "overdue", label: "Overdue", count: stats.overdue, dot: "#EF4444" },
+                  ]} />
                 {detailCats.length > 0 && (
-                  <div className="nv-asf">
-                    <label className="nv-asf-l">หมวดเอกสาร</label>
-                    <select className="nv-fb-sel nv-asf-sel" value={catFilter || ""} onChange={(e) => setCatFilter(e.target.value || null)}>
-                      <option value="">ทุกหมวด · {stats.total}</option>
-                      {detailCats.map((c) => <option key={c.cat} value={c.cat}>{c.cat} · {c.count}</option>)}
-                    </select>
-                  </div>
+                  <MultiFilter label="หมวดเอกสาร" placeholder={`ทุกหมวด · ${stats.total}`} selected={catSel} onChange={setCatSel}
+                    options={detailCats.map((c) => ({ value: c.cat, label: c.cat, count: c.count }))} />
                 )}
               </aside>
 
@@ -1118,6 +1110,49 @@ function NvMenu({ label, variant = "dark", align = "left", children }) {
           <div className={`nv-menu ${align === "right" ? "right" : ""}`} onClick={() => setOpen(false)}>{children}</div>
         </>
       )}
+    </div>
+  );
+}
+
+// Multi-select filter card (status / category) with a clear button in its header.
+function MultiFilter({ label, placeholder, options, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const has = selected.length > 0;
+  const summary = !has ? placeholder
+    : selected.length === 1 ? (options.find((o) => o.value === selected[0])?.label || "1 รายการ")
+      : `เลือก ${selected.length} รายการ`;
+  const toggle = (v) => {
+    const s = new Set(selected);
+    if (s.has(v)) s.delete(v); else s.add(v);
+    onChange([...s]);
+  };
+  return (
+    <div className="nv-asf">
+      <div className="nv-asf-h">
+        <label className="nv-asf-l">{label}</label>
+        {has && <button className="nv-asf-clear" onClick={() => onChange([])}>ล้าง ✕</button>}
+      </div>
+      <div className="nv-msf">
+        <button className={`nv-msf-btn ${has ? "on" : ""}`} onClick={() => setOpen((o) => !o)}>
+          <span className="nv-msf-val">{summary}</span>
+          <span className="nv-msf-cv">▾</span>
+        </button>
+        {open && (
+          <>
+            <div className="nv-backdrop" onClick={() => setOpen(false)} />
+            <div className="nv-msf-panel">
+              {options.map((o) => (
+                <button key={o.value} className={`nv-msf-opt ${selected.includes(o.value) ? "on" : ""}`} onClick={() => toggle(o.value)}>
+                  <span className="nv-msf-ck">{selected.includes(o.value) ? "✓" : ""}</span>
+                  {o.dot && <span className="nv-msf-dot" style={{ background: o.dot }} />}
+                  <span className="nv-msf-opt-lb">{o.label}</span>
+                  <span className="nv-msf-opt-ct">{o.count}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

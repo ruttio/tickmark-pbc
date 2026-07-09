@@ -301,10 +301,53 @@ function LockScreen({ onUnlock }) {
   );
 }
 
+/* ---------- multi-select filter card (status / category) --------------- */
+function MultiFilter({ label, placeholder, options, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const has = selected.length > 0;
+  const summary = !has ? placeholder
+    : selected.length === 1 ? (options.find((o) => o.value === selected[0])?.label || "1 รายการ")
+      : `เลือก ${selected.length} รายการ`;
+  const toggle = (v) => {
+    const s = new Set(selected);
+    if (s.has(v)) s.delete(v); else s.add(v);
+    onChange([...s]);
+  };
+  return (
+    <div className="nv-asf">
+      <div className="nv-asf-h">
+        <label className="nv-asf-l">{label}</label>
+        {has && <button className="nv-asf-clear" onClick={() => onChange([])}>ล้าง ✕</button>}
+      </div>
+      <div className="nv-msf">
+        <button className={`nv-msf-btn ${has ? "on" : ""}`} onClick={() => setOpen((o) => !o)}>
+          <span className="nv-msf-val">{summary}</span>
+          <span className="nv-msf-cv">▾</span>
+        </button>
+        {open && (
+          <>
+            <div className="nv-backdrop" onClick={() => setOpen(false)} />
+            <div className="nv-msf-panel">
+              {options.map((o) => (
+                <button key={o.value} className={`nv-msf-opt ${selected.includes(o.value) ? "on" : ""}`} onClick={() => toggle(o.value)}>
+                  <span className="nv-msf-ck">{selected.includes(o.value) ? "✓" : ""}</span>
+                  {o.dot && <span className="nv-msf-dot" style={{ background: o.dot }} />}
+                  <span className="nv-msf-opt-lb">{o.label}</span>
+                  <span className="nv-msf-opt-ct">{o.count}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- the request list + uploads (3c) ---------------------------- */
 function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
-  const [filter, setFilter] = useState("all");
-  const [catFilter, setCatFilter] = useState(null);
+  const [statusSel, setStatusSel] = useState([]);   // status filters (empty = all; may include "action"/"overdue")
+  const [catSel, setCatSel] = useState([]);          // category filters (empty = all)
   const [q, setQ] = useState("");
 
   const stats = useMemo(() => {
@@ -327,12 +370,9 @@ function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
   const grouped = useMemo(() => {
     const s = q.trim().toLowerCase();
     const filtered = items.filter((it) => {
-      const passStatus =
-        filter === "all" ? true
-          : filter === "overdue" ? isOverdue(it)
-            : filter === "action" ? needsAction(it)
-              : it.status === filter;
-      const passCat = !catFilter || it.category === catFilter;
+      const passStatus = statusSel.length === 0 || statusSel.some((f) =>
+        f === "overdue" ? isOverdue(it) : f === "action" ? needsAction(it) : it.status === f);
+      const passCat = catSel.length === 0 || catSel.includes(it.category);
       const passText = !s || `${it.ref} ${it.description}`.toLowerCase().includes(s);
       return passStatus && passCat && passText;
     });
@@ -342,7 +382,7 @@ function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
       m.get(it.category).push(it);
     });
     return [...m.entries()];
-  }, [items, filter, catFilter, q]);
+  }, [items, statusSel, catSel, q]);
 
   const accepted = items.filter((i) => i.status === "accepted").length;
   const pending = items.filter((i) => i.status === "submitted" || i.status === "review").length;
@@ -383,28 +423,20 @@ function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
           <aside className="nv-aside">
             <div className="nv-isearch"><span>⌕</span><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
             {stats.overdue > 0 && (
-              <div className="nv-alert" onClick={() => { setFilter("overdue"); setCatFilter(null); }}>
+              <div className="nv-alert" onClick={() => { setStatusSel(["overdue"]); setCatSel([]); }}>
                 <span className="ic">⚠</span>
                 <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{firstOverdue && ` — ${firstOverdue.description}`} · คลิกเพื่อดู</span>
               </div>
             )}
-            <div className="nv-asf">
-              <label className="nv-asf-l">สถานะ</label>
-              <select className="nv-fb-sel nv-asf-sel" value={filter} onChange={(e) => setFilter(e.target.value)}>
-                <option value="all">ทุกสถานะ · {items.length}</option>
-                {stats.action > 0 && <option value="action">⚠ ต้องดำเนินการ · {stats.action}</option>}
-                {STATUS_ORDER.map((s) => <option key={s} value={s}>{TH[s]} · {stats.by[s]}</option>)}
-                <option value="overdue">เกินกำหนด · {stats.overdue}</option>
-              </select>
-            </div>
+            <MultiFilter label="สถานะ" placeholder={`ทุกสถานะ · ${items.length}`} selected={statusSel} onChange={setStatusSel}
+              options={[
+                ...(stats.action > 0 ? [{ value: "action", label: "⚠ ต้องดำเนินการ", count: stats.action, dot: "#EF4444" }] : []),
+                ...STATUS_ORDER.map((s) => ({ value: s, label: TH[s], count: stats.by[s], dot: DOT[s] })),
+                { value: "overdue", label: "เกินกำหนด", count: stats.overdue, dot: "#EF4444" },
+              ]} />
             {cats.length > 0 && (
-              <div className="nv-asf">
-                <label className="nv-asf-l">หมวดเอกสาร</label>
-                <select className="nv-fb-sel nv-asf-sel" value={catFilter || ""} onChange={(e) => setCatFilter(e.target.value || null)}>
-                  <option value="">ทุกหมวด · {items.length}</option>
-                  {cats.map((c) => <option key={c.cat} value={c.cat}>{c.cat} · {c.count}</option>)}
-                </select>
-              </div>
+              <MultiFilter label="หมวดเอกสาร" placeholder={`ทุกหมวด · ${items.length}`} selected={catSel} onChange={setCatSel}
+                options={cats.map((c) => ({ value: c.cat, label: c.cat, count: c.count }))} />
             )}
           </aside>
 
