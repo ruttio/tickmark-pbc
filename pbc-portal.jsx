@@ -764,51 +764,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* two-column: filter panel + document management */}
-            <div className="nv-work">
-              {/* LEFT: search, alert, status filters, category groups */}
-              <aside className="nv-aside">
-                <div className="nv-isearch"><span>⌕</span><input value={itemQ} onChange={(e) => setItemQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
-                {stats.overdue > 0 && (
-                  <div className="nv-alert" onClick={() => { setFilter("overdue"); setCatFilter(null); }}>
-                    <span className="ic">⚠</span>
-                    <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{(() => { const f = eng.items.find(isOverdue); return f ? ` — ${f.description}` : ""; })()} · คลิกเพื่อดู</span>
-                  </div>
-                )}
-                <div className="nv-fcard">
-                  <div className="nv-fcard-t">สถานะ</div>
-                  <button className={`nv-frow ${filter === "all" ? "on" : ""}`} onClick={() => setFilter("all")}>
-                    <span className="lb">All</span><span className="ct">{stats.total}</span>
-                  </button>
-                  {STATUS_ORDER.map((s) => (
-                    <button key={s} className={`nv-frow ${filter === s ? "on" : ""}`} onClick={() => setFilter(filter === s ? "all" : s)}>
-                      <span className="lb"><span className="dot" style={{ background: STATUS_DOT[s] }} />{STATUS[s].label}</span>
-                      <span className="ct">{stats.by[s]}</span>
-                    </button>
-                  ))}
-                  <button className={`nv-frow ${filter === "overdue" ? "on" : ""}`} onClick={() => setFilter(filter === "overdue" ? "all" : "overdue")}>
-                    <span className="lb" style={filter === "overdue" ? undefined : { color: "#EF4444" }}><span className="dot" style={{ background: "#EF4444" }} />Overdue</span>
-                    <span className="ct" style={{ background: "rgba(239,68,68,.12)", color: "#EF4444" }}>{stats.overdue}</span>
-                  </button>
-                </div>
-                {detailCats.length > 0 && (
-                  <div className="nv-fcard">
-                    <div className="nv-fcard-t">หมวดเอกสาร</div>
-                    <button className={`nv-grow ${!catFilter ? "on" : ""}`} onClick={() => setCatFilter(null)}>
-                      <span className="gl">ทั้งหมด</span><span className="gr"><span className="gc">{stats.total}</span></span>
-                    </button>
-                    {detailCats.map((c) => (
-                      <button key={c.cat} className={`nv-grow ${catFilter === c.cat ? "on" : ""}`} onClick={() => setCatFilter(catFilter === c.cat ? null : c.cat)}>
-                        <span className="gl">{c.cat}</span>
-                        <span className="gr">{c.overdue > 0 && <span className="rd" />}<span className="gc">{c.count}</span></span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </aside>
-
-              {/* RIGHT: toolbar + grouped document list */}
-              <div>
+            {/* single column: toolbar + compact filter bar + document list */}
+            <div>
                 <div className="nv-tools">
                   <NvMenu label="+ เพิ่มรายการ" variant="mint">
                     <button className="nv-mitem" onClick={() => setModal("generate")}>✓ สร้างรายการคำขอ</button>
@@ -837,6 +794,32 @@ export default function App() {
                   <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
                     onChange={(e) => { const f = e.target.files[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
                 </div>
+
+                {/* compact filters: search + status + category dropdowns */}
+                <div className="nv-filterbar">
+                  <div className="nv-fb-search"><span>⌕</span><input value={itemQ} onChange={(e) => setItemQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
+                  <select className="nv-fb-sel" value={filter} onChange={(e) => setFilter(e.target.value)}>
+                    <option value="all">ทุกสถานะ · {stats.total}</option>
+                    {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label} · {stats.by[s]}</option>)}
+                    <option value="overdue">⚠ Overdue · {stats.overdue}</option>
+                  </select>
+                  {detailCats.length > 0 && (
+                    <select className="nv-fb-sel" value={catFilter || ""} onChange={(e) => setCatFilter(e.target.value || null)}>
+                      <option value="">ทุกหมวด · {stats.total}</option>
+                      {detailCats.map((c) => <option key={c.cat} value={c.cat}>{c.cat} · {c.count}</option>)}
+                    </select>
+                  )}
+                  {(filter !== "all" || catFilter || itemQ) && (
+                    <button className="nv-fb-clear" onClick={() => { setFilter("all"); setCatFilter(null); setItemQ(""); }}>ล้างตัวกรอง ✕</button>
+                  )}
+                </div>
+
+                {stats.overdue > 0 && (
+                  <div className="nv-alert" style={{ marginBottom: 16 }} onClick={() => { setFilter("overdue"); setCatFilter(null); }}>
+                    <span className="ic">⚠</span>
+                    <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{(() => { const f = eng.items.find(isOverdue); return f ? ` — ${f.description}` : ""; })()} · คลิกเพื่อดู</span>
+                  </div>
+                )}
 
                 {viewGroups.length === 0 ? (
                   <div className="nv-list"><div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ไม่พบรายการที่ตรงกับตัวกรอง</div></div>
@@ -869,7 +852,6 @@ export default function App() {
                   </div>
                 ))}
                 <p className="nv-foot">Firm workspace · {eng.items.length} items · backed by Supabase (RLS-scoped)</p>
-              </div>
             </div>
           </div>
         </div>
