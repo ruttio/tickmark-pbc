@@ -1297,11 +1297,14 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
             </div>
             <div className="nv-rail">
               {storage != null && (
-                <div className="nv-panel">
-                  <div className="nv-panel-head"><span className="ic">◱</span><span className="t">พื้นที่จัดเก็บ · R2</span></div>
-                  <div className="nv-store-row"><b>{fmtSize(storage)}</b><span className="u">/ 10 GB</span><span className={`p ${stTone}`}>{stPct}%</span></div>
+                <div className="nv-panel nv-store-c">
+                  <div className="nv-store-c-top">
+                    <span className="ic">◱</span>
+                    <span className="t">พื้นที่จัดเก็บ · R2</span>
+                    <span className={`p ${stTone}`}>{stPct}%</span>
+                  </div>
                   <div className={`nv-bar ${stTone === "over" ? "red" : stTone === "soon" ? "amber" : ""}`}><span style={{ width: `${stPct}%` }} /></div>
-                  <p className="nv-store-note">เหลือ {fmtSize(Math.max(0, STORAGE_LIMIT - storage))} · ไฟล์เก่าลบอัตโนมัติหลัง 90 วัน</p>
+                  <div className="nv-store-c-sub">{fmtSize(storage)} / 10 GB · เหลือ {fmtSize(Math.max(0, STORAGE_LIMIT - storage))}</div>
                 </div>
               )}
               <div className="nv-panel">

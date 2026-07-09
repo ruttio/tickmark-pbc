@@ -514,6 +514,14 @@
 .nv-store-row .p.soon{color:#F59E0B} .nv-store-row .p.over{color:#EF4444}
 .nv-bar.amber span{background:#F59E0B} .nv-bar.red span{background:#EF4444}
 .nv-store-note{font-size:11.5px;color:#64748B;margin:10px 0 0}
+/* compact storage box */
+.nv-store-c{padding:14px 16px}
+.nv-store-c-top{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.nv-store-c-top .ic{width:26px;height:26px;border-radius:8px;background:rgba(18,179,154,.12);color:#12B39A;display:flex;align-items:center;justify-content:center;font-size:13px;flex:none}
+.nv-store-c-top .t{font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A}
+.nv-store-c-top .p{margin-left:auto;font:700 12px 'Inter',sans-serif;color:#12B39A}
+.nv-store-c-top .p.soon{color:#F59E0B} .nv-store-c-top .p.over{color:#EF4444}
+.nv-store-c-sub{font:400 11px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin-top:7px}
 .nv-act-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:16px}
 .nv-act-list li{display:flex;gap:12px;align-items:flex-start;cursor:pointer}
 .nv-act-ic{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex:none}
