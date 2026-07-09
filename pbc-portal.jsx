@@ -152,6 +152,12 @@ const TEMPLATES = [
       ]],
     ],
   },
+  {
+    key: "blank",
+    name: "กำหนดรายการเอง (เริ่มจากศูนย์)",
+    blurb: "เริ่มจากรายการว่าง แล้วเพิ่มรายการเอกสารที่ต้องการเองทั้งหมด",
+    groups: [],
+  },
 ];
 
 /* ---------- Small helpers ---------------------------------------------- */
@@ -1895,6 +1901,8 @@ function GenerateModal({ onClose, onCreate, busy }) {
 
   const changeTpl = (key) => { setTplKey(key); setItems(flatten(TEMPLATES.find((t) => t.key === key))); };
   const toggle = (id) => setItems((p) => p.map((i) => (i.id === id ? { ...i, include: !i.include } : i)));
+  const allOn = items.length > 0 && items.every((i) => i.include);
+  const toggleAll = () => setItems((p) => p.map((i) => ({ ...i, include: !allOn })));
   const editDesc = (id, description) => setItems((p) => p.map((i) => (i.id === id ? { ...i, description } : i)));
   const removeCustom = (id) => setItems((p) => p.filter((i) => i.id !== id));
   const addCustom = () => {
@@ -1931,8 +1939,20 @@ function GenerateModal({ onClose, onCreate, busy }) {
           <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Northwind Trading Co." /></label>
       </div>
 
-      <div className="imp-summary">เลือกไว้ <b>{included.length}</b> / {items.length} รายการ · {groups.length} หมวด — ติ๊กเลือก/เอาออก หรือแก้ข้อความได้</div>
+      <div className="imp-summary" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <span>เลือกไว้ <b>{included.length}</b> / {items.length} รายการ · {groups.length} หมวด — ติ๊กเลือก/เอาออก หรือแก้ข้อความได้</span>
+        {items.length > 0 && (
+          <button type="button" className="tk-link" style={{ whiteSpace: "nowrap" }} onClick={toggleAll}>
+            {allOn ? "ยกเลิกทั้งหมด" : "เลือกทั้งหมด"}
+          </button>
+        )}
+      </div>
       <div className="imp-scroll">
+        {groups.length === 0 && (
+          <p className="tk-muted" style={{ textAlign: "center", padding: "24px 12px", margin: 0 }}>
+            ยังไม่มีรายการ — เพิ่มรายการเอกสารที่ต้องการด้านล่าง
+          </p>
+        )}
         {groups.map(([cat, rows]) => (
           <div key={cat} className="imp-group">
             <div className="imp-cat">{cat}</div>
