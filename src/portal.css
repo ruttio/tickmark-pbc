@@ -206,7 +206,7 @@
 .imp-scroll{max-height:44vh;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--card)}
 .imp-group{border-bottom:1px solid var(--line)}
 .imp-group:last-child{border-bottom:0}
-.imp-cat{font-family:'Inter',system-ui,sans-serif;font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--pine);background:var(--pine-tint);padding:6px 12px;position:sticky;top:0}
+.imp-cat{font-family:'Inter',system-ui,sans-serif;font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--pine);background-color:var(--card);background-image:linear-gradient(var(--pine-tint),var(--pine-tint));padding:6px 12px;position:sticky;top:0;z-index:2;box-shadow:0 1px 0 var(--line)}
 .imp-row{display:flex;align-items:center;gap:10px;padding:7px 12px;border-top:1px solid var(--line)}
 .imp-row:first-of-type{border-top:0}
 .imp-row.off{opacity:.4}
