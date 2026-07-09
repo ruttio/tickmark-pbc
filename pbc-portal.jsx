@@ -1139,7 +1139,6 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);   // avatar dropdown
   const [sortBy, setSortBy] = useState("recent");     // recent | name | progress
   const [viewMode, setViewMode] = useState("grid");   // grid | list
 
@@ -1256,20 +1255,8 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
               </div>
             )}
           </div>
-          <a className="nv-icon" href="https://tickmark-pbc.com" target="_blank" rel="noreferrer" title="ศูนย์ช่วยเหลือ">?</a>
-          <div style={{ position: "relative" }}>
-            <button className="nv-avatar" title={email} onClick={() => setShowMenu((s) => !s)}>{initials}</button>
-            {showMenu && (
-              <>
-                <div className="nv-backdrop" onClick={() => setShowMenu(false)} />
-                <div className="nv-menu right" style={{ minWidth: 210 }}>
-                  <div className="nv-menu-email">{email}</div>
-                  <div className="nv-msep" />
-                  <button className="nv-mitem" onClick={onSignOut}>⎋ ออกจากระบบ</button>
-                </div>
-              </>
-            )}
-          </div>
+          <button className="nv-tbtn" onClick={onSignOut}>ออกจากระบบ</button>
+          <span className="nv-avatar" title={email}>{initials}</span>
         </div>
       </div>
 
@@ -1379,7 +1366,7 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
                     {follow.overdue.length > 0 && (
                       <div className="nv-fu-sec">
                         <span className="nv-fu-h red">เกินกำหนด ({follow.overdue.length})</span>
-                        {follow.overdue.slice(0, 4).map((it) => (
+                        {follow.overdue.slice(0, 3).map((it) => (
                           <div key={it.id} className="nv-fu-row" onClick={() => onOpen(it.engagementId)}>
                             <span className="nv-fu-ic red">▤</span>
                             <div className="nv-fu-main"><b>{it.client}</b><span>{it.description}</span></div>
@@ -1387,13 +1374,13 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
                             <span className="nv-fu-chev">›</span>
                           </div>
                         ))}
-                        {follow.overdue.length > 4 && <p className="nv-fu-more">+ อีก {follow.overdue.length - 4} รายการ</p>}
+                        {follow.overdue.length > 3 && <p className="nv-fu-more">+ อีก {follow.overdue.length - 3} รายการ</p>}
                       </div>
                     )}
                     {follow.soon.length > 0 && (
                       <div className="nv-fu-sec">
                         <span className="nv-fu-h amber">ใกล้ครบกำหนด ({follow.soon.length})</span>
-                        {follow.soon.slice(0, 4).map((it) => (
+                        {follow.soon.slice(0, 3).map((it) => (
                           <div key={it.id} className="nv-fu-row" onClick={() => onOpen(it.engagementId)}>
                             <span className="nv-fu-ic amber">◷</span>
                             <div className="nv-fu-main"><b>{it.client}</b><span>{it.description}</span></div>
@@ -1401,20 +1388,20 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
                             <span className="nv-fu-chev">›</span>
                           </div>
                         ))}
-                        {follow.soon.length > 4 && <p className="nv-fu-more">+ อีก {follow.soon.length - 4} รายการ</p>}
+                        {follow.soon.length > 3 && <p className="nv-fu-more">+ อีก {follow.soon.length - 3} รายการ</p>}
                       </div>
                     )}
                     {follow.review.length > 0 && (
                       <div className="nv-fu-sec">
                         <span className="nv-fu-h info">รอตรวจ ({follow.reviewTotal})</span>
-                        {follow.review.slice(0, 4).map((g) => (
+                        {follow.review.slice(0, 3).map((g) => (
                           <div key={g.engagementId} className="nv-fu-row" onClick={() => onOpen(g.engagementId)}>
                             <span className="nv-fu-ic info">▤</span>
                             <div className="nv-fu-main"><b>{g.client}</b><span>รอตรวจ {g.count} รายการ</span></div>
                             <span className="nv-fu-chev">›</span>
                           </div>
                         ))}
-                        {follow.review.length > 4 && <p className="nv-fu-more">+ อีก {follow.review.length - 4} พอร์ทัล</p>}
+                        {follow.review.length > 3 && <p className="nv-fu-more">+ อีก {follow.review.length - 3} พอร์ทัล</p>}
                       </div>
                     )}
                   </>
