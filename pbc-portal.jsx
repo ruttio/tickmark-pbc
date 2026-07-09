@@ -807,7 +807,6 @@ export default function App() {
                       alert("คัดลอกลิงก์สำหรับลูกค้าแล้ว (ส่งรหัส 16 หลักแยกช่องทาง):\n\n" + link);
                     }}>🔗 คัดลอกลิงก์ลูกค้า</button>
                     <button className="nv-mitem" onClick={notifyClient}>📧 แจ้งลูกค้า</button>
-                    {eng.myRole === "owner" && <button className="nv-mitem" onClick={() => setModal("share")}>＋ เชิญสมาชิก / แชร์</button>}
                   </NvMenu>
                   <button className="nv-btn" onClick={() => setModal("zip")}>↓ โหลดไฟล์ (.zip)</button>
                   {busy && <span className="nv-search-note">กำลังบันทึก…</span>}
@@ -816,6 +815,7 @@ export default function App() {
                       <button className="nv-mitem" onClick={exportCSV}>↓ Export CSV</button>
                       {(eng.myRole === "owner" || eng.myCanDelete) && <button className="nv-mitem" onClick={() => setModal("archived")}>🗄 Archived</button>}
                       <div className="nv-msep" />
+                      {eng.myRole === "owner" && <button className="nv-mitem" onClick={() => setModal("share")}>＋ เชิญสมาชิก / แชร์</button>}
                       <button className="nv-mitem" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
                     </NvMenu>
                   </div>
