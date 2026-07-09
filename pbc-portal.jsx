@@ -1139,13 +1139,20 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);   // avatar dropdown
+  const [sortBy, setSortBy] = useState("recent");     // recent | name | progress
+  const [viewMode, setViewMode] = useState("grid");   // grid | list
 
   const filtered = useMemo(() => {
     const list = dash || [];
     const s = q.trim().toLowerCase();
-    if (!s) return list;
-    return list.filter((e) => `${e.client} ${e.template}`.toLowerCase().includes(s));
-  }, [dash, q]);
+    const base = !s ? list : list.filter((e) => `${e.client} ${e.template}`.toLowerCase().includes(s));
+    const arr = [...base];
+    if (sortBy === "name") arr.sort((a, b) => (a.client || "").localeCompare(b.client || ""));
+    else if (sortBy === "progress") arr.sort((a, b) => (b.pct || 0) - (a.pct || 0));
+    else arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); // recent
+    return arr;
+  }, [dash, q, sortBy]);
 
   const kpi = useMemo(() => {
     const list = dash || [];
@@ -1249,8 +1256,20 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
               </div>
             )}
           </div>
-          <button className="nv-tbtn" onClick={onSignOut}>ออกจากระบบ</button>
-          <span className="nv-avatar" title={email}>{initials}</span>
+          <a className="nv-icon" href="https://tickmark-pbc.com" target="_blank" rel="noreferrer" title="ศูนย์ช่วยเหลือ">?</a>
+          <div style={{ position: "relative" }}>
+            <button className="nv-avatar" title={email} onClick={() => setShowMenu((s) => !s)}>{initials}</button>
+            {showMenu && (
+              <>
+                <div className="nv-backdrop" onClick={() => setShowMenu(false)} />
+                <div className="nv-menu right" style={{ minWidth: 210 }}>
+                  <div className="nv-menu-email">{email}</div>
+                  <div className="nv-msep" />
+                  <button className="nv-mitem" onClick={onSignOut}>⎋ ออกจากระบบ</button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1265,11 +1284,39 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
           <button className="nv-cta" onClick={onNew}>+ สร้างพอร์ทัลใหม่</button>
         </div>
 
-        <div className="nv-kpis">
-          <KpiCard tone="navy" icon="▦" label="พอร์ทัลทั้งหมด" num={kpi.portals} sub="ทั้งหมด" />
-          <KpiCard tone="info" icon="↑" label="รออัปโหลด" num={kpi.awaiting} sub="ทั่วทุก engagement" />
-          <KpiCard tone="mint" icon="✓" label="ตรวจรับแล้ว" num={kpi.accepted} numTone="mint" sub="สะสม" />
-          <KpiCard tone="red" icon="!" label="เกินกำหนด" num={kpi.overdue} numTone="red" sub="ต้องติดตาม" subTone="red" />
+        <div className="nv-today">
+          <div className="nv-today-head">
+            <div>
+              <h3>สิ่งที่ต้องจัดการวันนี้</h3>
+              <div className="sub">สรุปรายการสำคัญที่ควรติดตามในวันนี้</div>
+            </div>
+            <div className="nv-today-acts">
+              <button className="nv-obtn mint" disabled={!follow.overdue.length && !follow.soon.length}
+                onClick={() => { const t = (follow.overdue[0] || follow.soon[0] || {}).engagementId; if (t) onOpen(t); }}>✈ ส่ง reminder</button>
+              <button className="nv-obtn" onClick={() => document.getElementById("nv-followup")?.scrollIntoView({ behavior: "smooth", block: "center" })}>ดูรายการทั้งหมด</button>
+            </div>
+          </div>
+          {(() => {
+            const uniq = (a) => [...new Set(a)];
+            const join = (a) => a.slice(0, 2).join(" · ") + (a.length > 2 ? ` +${a.length - 2}` : "");
+            const card = (tone, ic, label, count, names, target) => (
+              <button className={`nv-tc ${tone}`} onClick={() => target && onOpen(target)}>
+                <span className="nv-tc-ic">{ic}</span>
+                <div className="nv-tc-main">
+                  <div className="nv-tc-t">{label} <b>{count}</b></div>
+                  <div className="nv-tc-sub">{names.length ? join(names) : "ไม่มี"}</div>
+                </div>
+                <span className="nv-tc-chev">›</span>
+              </button>
+            );
+            return (
+              <div className="nv-today-cards">
+                {card("red", "!", "เกินกำหนด", follow.overdue.length, uniq(follow.overdue.map((x) => x.client)), follow.overdue[0]?.engagementId)}
+                {card("amber", "◷", "ใกล้ครบกำหนด", follow.soon.length, uniq(follow.soon.map((x) => x.client)), follow.soon[0]?.engagementId)}
+                {card("mint", "✓", "รอตรวจ", follow.reviewTotal, follow.review.map((g) => g.client), follow.review[0]?.engagementId)}
+              </div>
+            );
+          })()}
         </div>
 
         {dash.length === 0 ? (
@@ -1284,15 +1331,31 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
             <div>
               <div className="nv-colhead">
                 <span className="t">Engagement ที่กำลังดำเนินการ <span>· {filtered.length}</span></span>
+                <div className="nv-colhead-r">
+                  <label className="nv-sortsel-w">จัดเรียง:
+                    <select className="nv-sortsel" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                      <option value="recent">ล่าสุด</option>
+                      <option value="name">ชื่อลูกค้า</option>
+                      <option value="progress">ความคืบหน้า</option>
+                    </select>
+                  </label>
+                  <div className="nv-vtoggle">
+                    <button className={viewMode === "grid" ? "on" : ""} title="ตาราง" onClick={() => setViewMode("grid")}>▦</button>
+                    <button className={viewMode === "list" ? "on" : ""} title="รายการ" onClick={() => setViewMode("list")}>☰</button>
+                  </div>
+                </div>
               </div>
               {filtered.length === 0 ? (
                 <p className="tk-none" style={{ color: "#64748B" }}>ไม่พบพอร์ทัลที่ตรงกับ “{q}”</p>
               ) : (
-                <div className="nv-eng-grid">
-                  {filtered.map((e) => (
-                    <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
-                  ))}
-                </div>
+                <>
+                  <div className={`nv-eng-grid ${viewMode === "list" ? "list" : ""}`}>
+                    {filtered.map((e) => (
+                      <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
+                    ))}
+                  </div>
+                  <p className="nv-grid-foot">แสดง {filtered.length} จาก {dash.length} รายการ</p>
+                </>
               )}
             </div>
             <div className="nv-rail">
@@ -1307,7 +1370,7 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
                   <div className="nv-store-c-sub">{fmtSize(storage)} / 10 GB · เหลือ {fmtSize(Math.max(0, STORAGE_LIMIT - storage))}</div>
                 </div>
               )}
-              <div className="nv-panel">
+              <div className="nv-panel" id="nv-followup">
                 <div className="nv-panel-head"><span className="ic">✓</span><span className="t">สิ่งที่ต้องติดตาม</span></div>
                 {follow.empty ? (
                   <p className="nv-fu-empty">ไม่มีสิ่งที่ต้องติดตามตอนนี้ 🎉</p>
@@ -1360,6 +1423,10 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
             </div>
           </div>
         )}
+
+        <footer className="nv-pagefoot">
+          © 2025 Tickmark, Inc. All rights reserved. <span>·</span> นโยบายความเป็นส่วนตัว <span>·</span> ข้อกำหนดการให้บริการ <span>·</span> ศูนย์ช่วยเหลือ
+        </footer>
       </div>
     </div>
   );
