@@ -1249,7 +1249,7 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
               </div>
             )}
           </div>
-          <span className="nv-icon" title="ออกจากระบบ" onClick={onSignOut}>⎋</span>
+          <button className="nv-tbtn" onClick={onSignOut}>ออกจากระบบ</button>
           <span className="nv-avatar" title={email}>{initials}</span>
         </div>
       </div>
