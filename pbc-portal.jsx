@@ -1180,6 +1180,7 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
+  const [showReminder, setShowReminder] = useState(false);
   const [sortBy, setSortBy] = useState("recent");     // recent | name | progress
   const [viewMode, setViewMode] = useState("grid");   // grid | list
 
@@ -1232,6 +1233,23 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
     const reviewTotal = review.reduce((n, g) => n + g.count, 0);
     return { overdue, soon, review, reviewTotal, empty: !overdue.length && !soon.length && !review.length };
   }, [followups, dash]);
+
+  // Bulk-reminder candidates: per-engagement counts of items the CLIENT still
+  // has to upload (status "outstanding"), split by overdue / due-soon, plus the
+  // client email so the modal can flag portals with no email on file.
+  const reminderCandidates = useMemo(() => {
+    const now = Date.now(); const SOON = 7 * 86400000;
+    const od = {}, sn = {};
+    (followups || []).forEach((it) => {
+      if (it.status !== "outstanding" || it.dueDate == null) return;
+      if (it.dueDate < now) od[it.engagementId] = (od[it.engagementId] || 0) + 1;
+      else if (it.dueDate - now <= SOON) sn[it.engagementId] = (sn[it.engagementId] || 0) + 1;
+    });
+    return (dash || [])
+      .map((e) => ({ id: e.id, client: e.client, clientEmail: e.clientEmail || "",
+        outstanding: e.by?.outstanding || 0, overdue: od[e.id] || 0, soon: sn[e.id] || 0 }))
+      .filter((c) => c.outstanding > 0);
+  }, [dash, followups]);
 
   const groups = useMemo(() => {
     const byEng = new Map();
@@ -1302,6 +1320,7 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
       </div>
 
       {showLine && <LineModal onClose={() => setShowLine(false)} />}
+      {showReminder && <ReminderModal candidates={reminderCandidates} onClose={() => setShowReminder(false)} />}
 
       <div className="nv-page">
         <div className="nv-phead">
@@ -1319,8 +1338,8 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
               <div className="sub">สรุปรายการสำคัญที่ควรติดตามในวันนี้</div>
             </div>
             <div className="nv-today-acts">
-              <button className="nv-obtn mint" disabled={!follow.overdue.length && !follow.soon.length}
-                onClick={() => { const t = (follow.overdue[0] || follow.soon[0] || {}).engagementId; if (t) onOpen(t); }}>✈ ส่ง reminder</button>
+              <button className="nv-obtn mint" disabled={reminderCandidates.length === 0}
+                onClick={() => setShowReminder(true)}>✈ ส่ง reminder</button>
               <button className="nv-obtn" onClick={() => document.getElementById("nv-followup")?.scrollIntoView({ behavior: "smooth", block: "center" })}>ดูรายการทั้งหมด</button>
             </div>
           </div>
@@ -2116,6 +2135,124 @@ function ImportModal({ draft, onClose, onImport }) {
           ยืนยันสร้างลิสต์ ({included.length})
         </button>
       </div>
+    </Modal>
+  );
+}
+
+// Bulk reminder: pick categories, pick which portals (that have an email),
+// and send one "outstanding docs" reminder email to each — no per-engagement
+// visits. Portals without an email on file are listed but can't be sent.
+function ReminderModal({ candidates, onClose }) {
+  const CATS = [
+    { key: "overdue", label: "เกินกำหนด", dot: "#EF4444" },
+    { key: "soon", label: "ใกล้ครบกำหนด", dot: "#F59E0B" },
+    { key: "outstanding", label: "รออัปโหลด (ทั้งหมด)", dot: "#64748B" },
+  ];
+  const [cats, setCats] = useState(() => new Set(["overdue", "soon", "outstanding"]));
+  const [sel, setSel] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+
+  const matches = useMemo(() => candidates.filter((c) => [...cats].some((k) => c[k] > 0)), [candidates, cats]);
+  const withEmail = matches.filter((c) => c.clientEmail);
+  const noEmail = matches.filter((c) => !c.clientEmail);
+
+  // Re-select every matching portal with an email whenever the categories change.
+  useEffect(() => {
+    setSel(new Set(candidates.filter((c) => c.clientEmail && [...cats].some((k) => c[k] > 0)).map((c) => c.id)));
+  }, [cats, candidates]);
+
+  const toggleCat = (k) => setCats((p) => { const s = new Set(p); if (s.has(k)) s.delete(k); else s.add(k); return s.size ? s : p; });
+  const toggleOne = (id) => setSel((p) => { const s = new Set(p); if (s.has(id)) s.delete(id); else s.add(id); return s; });
+  const allSel = withEmail.length > 0 && withEmail.every((c) => sel.has(c.id));
+  const toggleAll = () => setSel(allSel ? new Set() : new Set(withEmail.map((c) => c.id)));
+
+  const send = async () => {
+    if (!sel.size || busy) return;
+    setBusy(true);
+    let ok = 0, fail = 0;
+    for (const id of sel) {
+      try { await firmApi.notify(id, "reminder"); ok++; } catch { fail++; }
+    }
+    setBusy(false); setDone({ ok, fail });
+  };
+
+  const chip = (on) => ({
+    display: "inline-flex", alignItems: "center", gap: 7, padding: "6px 12px", borderRadius: 20,
+    cursor: "pointer", fontSize: 13, fontWeight: 600, border: "1px solid",
+    borderColor: on ? "var(--pine)" : "var(--line)", background: on ? "var(--pine-tint)" : "#fff",
+    color: on ? "var(--pine)" : "var(--ink-soft)",
+  });
+
+  return (
+    <Modal title="ส่ง reminder ให้ลูกค้า" onClose={onClose} wide>
+      {done ? (
+        <div style={{ textAlign: "center", padding: "16px 8px" }}>
+          <div style={{ fontSize: 40 }}>✅</div>
+          <p style={{ fontSize: 15, margin: "8px 0 4px" }}>ส่งอีเมลเตือนแล้ว <b>{done.ok}</b> ฉบับ{done.fail > 0 && <> · ล้มเหลว <b style={{ color: "#EF4444" }}>{done.fail}</b></>}</p>
+          <button className="tk-btn primary" style={{ marginTop: 12 }} onClick={onClose}>เสร็จสิ้น</button>
+        </div>
+      ) : (
+        <>
+          <p className="tk-tplblurb" style={{ marginTop: 0 }}>เลือกหมวดที่จะเตือน แล้วเลือกพอร์ทัลที่จะส่ง — แต่ละพอร์ทัลจะได้อีเมลรวมรายการเอกสารที่ยังไม่ได้อัปโหลด 1 ฉบับ (ไม่ต้องเข้าทีละงาน)</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {CATS.map((c) => (
+              <button key={c.key} type="button" onClick={() => toggleCat(c.key)} style={chip(cats.has(c.key))}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.dot }} />{c.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="imp-summary" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>จะส่งถึง <b>{sel.size}</b> / {withEmail.length} พอร์ทัล</span>
+            {withEmail.length > 0 && <button type="button" className="tk-link" onClick={toggleAll}>{allSel ? "ไม่เลือกทั้งหมด" : "เลือกทั้งหมด"}</button>}
+          </div>
+
+          <div className="imp-scroll" style={{ maxHeight: "36vh" }}>
+            {withEmail.length === 0 && (
+              <p className="tk-muted" style={{ textAlign: "center", padding: 20, margin: 0 }}>
+                {noEmail.length ? "พอร์ทัลที่ตรงกับหมวดที่เลือกยังไม่ระบุอีเมล (ดูด้านล่าง)" : "ไม่มีพอร์ทัลที่ตรงกับหมวดที่เลือก"}
+              </p>
+            )}
+            {withEmail.map((c) => (
+              <label key={c.id} className="imp-row" style={{ cursor: "pointer" }}>
+                <input type="checkbox" checked={sel.has(c.id)} onChange={() => toggleOne(c.id)} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{c.client}</div>
+                  <div style={{ fontSize: 12, color: "var(--ink-soft)" }}>
+                    {c.overdue > 0 && <span style={{ color: "#EF4444", fontWeight: 600 }}>เกินกำหนด {c.overdue} · </span>}
+                    {c.soon > 0 && <span style={{ color: "#b4791b", fontWeight: 600 }}>ใกล้ครบ {c.soon} · </span>}
+                    รออัปโหลด {c.outstanding} · {c.clientEmail}
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {noEmail.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: "#b4791b", marginBottom: 6 }}>⚠ ยังไม่ระบุอีเมล ({noEmail.length}) — ส่งไม่ได้ ต้องเพิ่มอีเมลที่ ⚙ ตั้งค่าพอร์ทัลของงานนั้นก่อน</div>
+              <div className="imp-scroll" style={{ maxHeight: "16vh", background: "rgba(245,158,11,.05)" }}>
+                {noEmail.map((c) => (
+                  <div key={c.id} className="imp-row" style={{ opacity: 0.9 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{c.client}</div>
+                      <div style={{ fontSize: 12, color: "var(--ink-soft)" }}>รออัปโหลด {c.outstanding} รายการ</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="tk-modal-actions" style={{ marginTop: 16 }}>
+            <button className="tk-btn" onClick={onClose}>ยกเลิก</button>
+            <button className="tk-btn primary" disabled={!sel.size || busy} onClick={send}>
+              {busy ? "กำลังส่ง…" : `ส่ง reminder (${sel.size})`}
+            </button>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }
