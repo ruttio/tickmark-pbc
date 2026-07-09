@@ -677,7 +677,8 @@ export default function App() {
 
   return (
     <div className="tk-root">
-      {/* Top bar */}
+      {/* Top bar (engagement view only; the dashboard renders its own navy top bar) */}
+      {view !== "dashboard" && (
       <header className="tk-top">
         <div className="tk-brand">
           <Tick size={20} />
@@ -702,14 +703,15 @@ export default function App() {
           <button className="tk-icon" title="ออกจากระบบ" onClick={signOut}>⎋</button>
         </div>
       </header>
+      )}
 
       {err && (
         <div className="tk-purge">{err}<button onClick={() => setErr("")}>✕</button></div>
       )}
 
       {view === "dashboard" ? (
-        <FirmDashboard dash={dash} notifs={notifs} storage={storage} onOpen={openEngagement}
-          onNew={() => setModal("generate")} onMarkAllRead={markAllRead} />
+        <FirmDashboard dash={dash} notifs={notifs} storage={storage} session={session} onOpen={openEngagement}
+          onNew={() => setModal("generate")} onMarkAllRead={markAllRead} onSignOut={signOut} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
       ) : engExpiry(eng).state === "expired" ? (
@@ -873,7 +875,7 @@ function AuthBrandPanel({ role = "firm" }) {
         <Tick size={22} />
         <span>Tickmark</span>
       </div>
-      <p className="tk-auth-kicker">Tickmark PBC · {isFirm ? "Firm Workspace" : "Secure Link"}</p>
+      <p className="tk-auth-kicker">PBC Portal {isFirm ? "· Firm" : ""}</p>
       <h1>{isFirm ? "จัดการพอร์ทัลลูกค้าและคำขอเอกสารตรวจสอบบัญชี" : "ส่งเอกสารตรวจสอบบัญชีในที่เดียว ปลอดภัย"}</h1>
       <p className="tk-auth-copy">
         {isFirm
@@ -885,13 +887,14 @@ function AuthBrandPanel({ role = "firm" }) {
         <li><b>{isFirm ? "ติดตามคำขอแบบเรียลไทม์" : "ติดตามคำขอแบบเรียลไทม์"}</b><span>{isFirm ? "ติดตามอัปโหลด ตรวจรับ และส่งกลับโดยไม่หลุด workflow" : "เห็นทันทีว่าอะไรส่งแล้วหรือยังรออัปโหลด"}</span></li>
         <li><b>สถานะชัดเจนในหน้าเดียว</b><span>{isFirm ? "ทุกงานใช้ status และ token เดียวกันทั้งระบบ" : "ตรวจรับ ส่งกลับ และความคืบหน้าอ่านได้ง่าย"}</span></li>
       </ul>
+      <p className="tk-auth-brand-foot">TICKMARK PBC · {isFirm ? "FIRM WORKSPACE" : "SECURE LINK"}</p>
     </aside>
   );
 }
 
 function AuthFrame({ children, role = "firm" }) {
   return (
-    <main className="tk-auth-page">
+    <main className={`tk-auth-page tk-auth-${role}`}>
       <AuthBrandPanel role={role} />
       <section className="tk-auth-form-panel">
         {children}
@@ -939,7 +942,7 @@ function AuthScreen() {
     <div className="tk-root tk-auth-root">
       <AuthFrame role="firm">
         <div className="tk-lock">
-          <div className="tk-lock-card tk-auth-card" style={{ textAlign: "left" }}>
+          <div className="tk-lock-card tk-auth-card tk-auth-firm-card" style={{ textAlign: "left" }}>
             <div className="tk-lock-icon" style={{ textAlign: "center" }}>🏢</div>
             <h2 style={{ textAlign: "center" }}>{mode === "signin" ? "เข้าสู่ระบบสำนักงาน" : mode === "signup" ? "สมัครสำนักงานใหม่" : "รีเซ็ตรหัสผ่าน"}</h2>
             <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>
@@ -998,7 +1001,7 @@ function SetNewPasswordScreen({ busy, onSave, onSignOut }) {
     <div className="tk-root tk-auth-root">
       <AuthFrame role="firm">
         <div className="tk-lock">
-          <div className="tk-lock-card tk-auth-card" style={{ textAlign: "left" }}>
+          <div className="tk-lock-card tk-auth-card tk-auth-firm-card" style={{ textAlign: "left" }}>
             <div className="tk-lock-icon" style={{ textAlign: "center" }}>🔑</div>
             <h2 style={{ textAlign: "center" }}>ตั้งรหัสผ่านใหม่</h2>
             <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>กรอกรหัสผ่านใหม่สำหรับบัญชีของคุณ</p>
@@ -1025,7 +1028,7 @@ function PendingApprovalScreen({ email, onSignOut }) {
     <div className="tk-root tk-auth-root">
       <AuthFrame role="firm">
         <div className="tk-lock">
-          <div className="tk-lock-card tk-auth-card">
+          <div className="tk-lock-card tk-auth-card tk-auth-firm-card">
             <div className="tk-lock-icon">⏳</div>
             <h2>บัญชีรอการอนุมัติ</h2>
             <p className="tk-muted">
@@ -1055,7 +1058,20 @@ const notifIcon = (a) => (/remove/i.test(a) ? "🗑" : "📤");
 
 const STORAGE_LIMIT = 10 * 1073741824; // 10 GB — Cloudflare R2 free tier (beyond it: ~$0.015/GB/mo, egress free).
 
-function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) {
+function KpiCard({ tone, icon, label, num, sub, numTone, subTone }) {
+  return (
+    <div className="nv-kpi">
+      <span className={`nv-kpi-ic ${tone}`}>{icon}</span>
+      <div style={{ minWidth: 0 }}>
+        <div className="nv-kpi-label">{label}</div>
+        <div className={`nv-kpi-num ${numTone || ""}`}>{num}</div>
+        <div className={`nv-kpi-delta ${subTone || ""}`}>{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+function FirmDashboard({ dash, notifs, storage, session, onOpen, onNew, onMarkAllRead, onSignOut }) {
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
@@ -1067,11 +1083,14 @@ function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) 
     return list.filter((e) => `${e.client} ${e.template}`.toLowerCase().includes(s));
   }, [dash, q]);
 
-  const totals = useMemo(() => {
+  const kpi = useMemo(() => {
     const list = dash || [];
-    const items = list.reduce((n, e) => n + (e.total || 0), 0);
-    const accepted = list.reduce((n, e) => n + (e.accepted || 0), 0);
-    return { count: list.length, items, accepted, pct: items ? Math.round((accepted / items) * 100) : 0 };
+    return {
+      portals: list.length,
+      awaiting: list.reduce((n, e) => n + (e.by?.outstanding || 0) + (e.by?.reopened || 0), 0),
+      accepted: list.reduce((n, e) => n + (e.accepted || 0), 0),
+      overdue: list.reduce((n, e) => n + (e.overdue || 0), 0),
+    };
   }, [dash]);
 
   const unreadByEng = useMemo(() => {
@@ -1081,7 +1100,6 @@ function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) 
   }, [notifs]);
   const totalUnread = useMemo(() => (notifs || []).filter((n) => n.unread).length, [notifs]);
 
-  // Group notifications by company (engagement); unread groups first, newest first.
   const groups = useMemo(() => {
     const byEng = new Map();
     (notifs || []).forEach((n) => {
@@ -1094,23 +1112,23 @@ function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) 
     return [...byEng.values()].sort((a, b) => (b.unread > 0) - (a.unread > 0) || b.latest - a.latest);
   }, [notifs]);
 
-  if (dash === null) return <div className="tk-boot">กำลังโหลดภาพรวม…</div>;
+  if (dash === null) return <div className="nv"><div className="tk-boot" style={{ color: "#64748B" }}>กำลังโหลดภาพรวม…</div></div>;
+
+  const email = session?.user?.email || "";
+  const initials = (email.slice(0, 2) || "NF").toUpperCase();
+  const stPct = storage != null ? Math.min(100, Math.round((storage / STORAGE_LIMIT) * 100)) : 0;
+  const stTone = stPct >= 90 ? "over" : stPct >= 70 ? "soon" : "";
 
   return (
-    <main className="tk-main">
-      <section className="tk-head">
-        <div>
-          <p className="tk-eyebrow">ภาพรวมทั้งหมด</p>
-          <h1 className="tk-client">Engagements</h1>
-          <p className="tk-meta">
-            {totals.count} พอร์ทัล · <b>{totals.accepted}</b>/{totals.items} รายการรับแล้ว · {totals.pct}%
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <div className="tk-notif-wrap">
-            <button className="tk-btn" onClick={() => setShowNotifs((s) => !s)}>
-              🔔 แจ้งเตือน{totalUnread > 0 && <b className="tk-notif-count">{totalUnread}</b>}
-            </button>
+    <div className="nv">
+      {/* navy top bar */}
+      <div className="nv-top">
+        <div className="nv-brand"><span className="mk"><Tick size={17} /></span><span className="wd">Tickmark</span><span className="nv-pill">PBC Portal · Firm</span></div>
+        <div className="nv-search"><span>⌕</span><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาลูกค้า / engagement…" /></div>
+        <div className="nv-top-right">
+          <button className="nv-tbtn" onClick={() => setShowLine(true)}>🟢 LINE</button>
+          <div style={{ position: "relative" }}>
+            <span className="nv-icon" onClick={() => setShowNotifs((s) => !s)}>🔔{totalUnread > 0 && <span className="nv-cbadge">{totalUnread}</span>}</span>
             {showNotifs && (
               <div className="tk-notif-panel">
                 <div className="tk-notif-head">
@@ -1136,9 +1154,7 @@ function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) 
                               <span>{notifLabel(n.action)} · <i>{n.itemDescription}</i></span>
                             </li>
                           ))}
-                          {g.items.length > 3 && (
-                            <li className="tk-notif-more">+ อีก {g.items.length - 3} รายการ</li>
-                          )}
+                          {g.items.length > 3 && <li className="tk-notif-more">+ อีก {g.items.length - 3} รายการ</li>}
                         </ul>
                       </li>
                     ))}
@@ -1147,82 +1163,118 @@ function FirmDashboard({ dash, notifs, storage, onOpen, onNew, onMarkAllRead }) 
               </div>
             )}
           </div>
-          <button className="tk-btn" onClick={() => setShowLine(true)}>🟢 LINE</button>
-          <button className="tk-btn primary" onClick={onNew}><Tick size={13} /> New portal</button>
+          <span className="nv-icon" title="ออกจากระบบ" onClick={onSignOut}>⎋</span>
+          <span className="nv-avatar" title={email}>{initials}</span>
         </div>
-      </section>
+      </div>
 
       {showLine && <LineModal onClose={() => setShowLine(false)} />}
 
-      <section className="tk-toolbar">
-        <input className="tk-search" type="search" value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder="🔍 ค้นหาชื่อลูกค้า หรือ template…" />
-        {q && <span className="tk-hint">พบ {filtered.length} จาก {dash.length}</span>}
-      </section>
+      <div className="nv-page">
+        <div className="nv-phead">
+          <div>
+            <h2>Engagements</h2>
+            <div className="sub">ภาพรวมพอร์ทัล คำขอเอกสาร และสถานะล่าสุดของลูกค้า{q && ` · พบ ${filtered.length} จาก ${dash.length}`}</div>
+          </div>
+          <button className="nv-cta" onClick={onNew}>+ สร้างพอร์ทัลใหม่</button>
+        </div>
 
-      {storage != null && (() => {
-        const pct = Math.min(100, Math.round((storage / STORAGE_LIMIT) * 100));
-        const tone = pct >= 90 ? "od" : pct >= 70 ? "soon" : "";
-        return (
-          <section className="tk-storage">
-            <div className="tk-storage-row">
-              <span>💾 พื้นที่จัดเก็บ · Cloudflare R2</span>
-              <span className={tone}>{fmtSize(storage)} / 10 GB (free) · {pct}%</span>
+        <div className="nv-kpis">
+          <KpiCard tone="navy" icon="▦" label="พอร์ทัลทั้งหมด" num={kpi.portals} sub="ทั้งหมด" />
+          <KpiCard tone="info" icon="↑" label="รออัปโหลด" num={kpi.awaiting} sub="ทั่วทุก engagement" />
+          <KpiCard tone="mint" icon="✓" label="ตรวจรับแล้ว" num={kpi.accepted} numTone="mint" sub="สะสม" />
+          <KpiCard tone="red" icon="!" label="เกินกำหนด" num={kpi.overdue} numTone="red" sub="ต้องติดตาม" subTone="red" />
+        </div>
+
+        {dash.length === 0 ? (
+          <div className="nv-empty">
+            <Tick size={40} />
+            <h3>ยังไม่มีพอร์ทัล</h3>
+            <p>สร้างพอร์ทัลแรกจาก template เพื่อเริ่มงาน</p>
+            <button className="nv-cta" style={{ marginTop: 12 }} onClick={onNew}>+ สร้างพอร์ทัลใหม่</button>
+          </div>
+        ) : (
+          <div className="nv-cols">
+            <div>
+              <div className="nv-colhead">
+                <span className="t">Engagement ที่กำลังดำเนินการ <span>· {filtered.length}</span></span>
+              </div>
+              {filtered.length === 0 ? (
+                <p className="tk-none" style={{ color: "#64748B" }}>ไม่พบพอร์ทัลที่ตรงกับ “{q}”</p>
+              ) : (
+                <div className="nv-eng-grid">
+                  {filtered.map((e) => (
+                    <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
+                  ))}
+                </div>
+              )}
             </div>
-            <div className={`tk-storage-bar ${tone}`}><span style={{ width: `${pct}%` }} /></div>
-            {pct >= 80 && <p className="tk-storage-warn">ใกล้ครบ 10 GB (โควตาฟรีของ R2) — เกินจากนี้คิด ~$0.015/GB/เดือน (ดาวน์โหลดฟรี)</p>}
-          </section>
-        );
-      })()}
-
-      {dash.length === 0 ? (
-        <div className="tk-empty">
-          <Tick size={40} />
-          <h2>ยังไม่มีพอร์ทัล</h2>
-          <p>สร้างพอร์ทัลแรกจาก template เพื่อเริ่มงาน</p>
-          <button className="tk-btn primary" onClick={onNew}>Generate request list</button>
-        </div>
-      ) : filtered.length === 0 ? (
-        <p className="tk-none">ไม่พบพอร์ทัลที่ตรงกับ “{q}”</p>
-      ) : (
-        <div className="tk-dash-grid">
-          {filtered.map((e) => (
-            <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
-          ))}
-        </div>
-      )}
-    </main>
+            <div className="nv-rail">
+              {storage != null && (
+                <div className="nv-panel">
+                  <div className="nv-panel-head"><span className="ic">◱</span><span className="t">พื้นที่จัดเก็บ · R2</span></div>
+                  <div className="nv-store-row"><b>{fmtSize(storage)}</b><span className="u">/ 10 GB</span><span className={`p ${stTone}`}>{stPct}%</span></div>
+                  <div className={`nv-bar ${stTone === "over" ? "red" : stTone === "soon" ? "amber" : ""}`}><span style={{ width: `${stPct}%` }} /></div>
+                  <p className="nv-store-note">เหลือ {fmtSize(Math.max(0, STORAGE_LIMIT - storage))} · ไฟล์เก่าลบอัตโนมัติหลัง 90 วัน</p>
+                </div>
+              )}
+              <div className="nv-panel">
+                <div className="nv-panel-head"><span className="t">กิจกรรมล่าสุด</span>{totalUnread > 0 && <span className="more" onClick={onMarkAllRead}>อ่านทั้งหมด</span>}</div>
+                {!notifs || notifs.length === 0 ? (
+                  <p className="tk-muted" style={{ margin: 0, color: "#64748B" }}>ยังไม่มีกิจกรรม</p>
+                ) : (
+                  <ul className="nv-act-list">
+                    {notifs.slice(0, 8).map((n) => (
+                      <li key={n.id} onClick={() => onOpen(n.engagementId)}>
+                        <span className={`nv-act-ic ${/remove/i.test(n.action) ? "slate" : "info"}`}>{/remove/i.test(n.action) ? "🗑" : "↑"}</span>
+                        <div className="nv-act-body">
+                          <div className="tx"><b>{n.client}</b> {notifLabel(n.action)}{n.itemDescription && <span style={{ color: "#64748B" }}> · {n.itemDescription}</span>}</div>
+                          <div className="ts">{timeAgo(n.at)}</div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
 function EngagementCard({ e, onOpen, unread }) {
   const x = engExpiry(e);
-  const tone = e.pct >= 100 ? "done" : e.pct > 0 ? "wip" : "";
+  const tags = [];
+  if (e.overdue > 0) tags.push({ tone: "red", txt: `⚠ เกินกำหนด ${e.overdue}` });
+  const rev = (e.by?.review || 0) + (e.by?.submitted || 0);
+  if (rev > 0) tags.push({ tone: "amber", txt: `รอตรวจ ${rev}` });
+  if (e.accepted > 0) tags.push({ tone: "mint", txt: `ตรวจรับ ${e.accepted}` });
+  const awaiting = (e.by?.outstanding || 0) + (e.by?.reopened || 0);
+  if (awaiting > 0) tags.push({ tone: "slate", txt: `รออัปโหลด ${awaiting}` });
+  const done = e.pct >= 100 && e.total > 0;
   return (
-    <button className="tk-dash-card" onClick={onOpen}>
-      {unread > 0 && <span className="tk-card-bang" title={`${unread} การแจ้งเตือนใหม่`}>!</span>}
-      <div className="tk-dash-top">
-        <div className="tk-dash-titles">
-          <p className="tk-eyebrow" style={{ margin: 0 }}>{e.template}</p>
-          <h3>{e.client}</h3>
+    <button className="nv-card" onClick={onOpen}>
+      {(unread > 0 || e.overdue > 0) && <span className="nv-card-bang" title={unread > 0 ? `${unread} การแจ้งเตือนใหม่` : "มีรายการเกินกำหนด"}>!</span>}
+      <div>
+        <div className="nv-card-top">
+          <div style={{ minWidth: 0 }}>
+            <div className="nv-card-type">{e.template}</div>
+            <div className="nv-card-name">{e.client}</div>
+          </div>
+          <div className={`nv-card-pct ${done ? "done" : ""}`}><b>{e.pct}</b><i>%</i></div>
         </div>
-        <span className="tk-dash-pct"><b>{e.pct}</b><i>%</i></span>
+        <div className="nv-card-sub">งวดสิ้นสุด {fmtDate(e.periodEnd)}{x.state !== "none" && ` · ${x.state === "expired" ? "หมดอายุ" : `เหลือ ${x.daysLeft} วัน`}`}</div>
       </div>
-      <div className={`tk-dash-bar ${tone}`}><span style={{ width: `${e.pct}%` }} /></div>
-      <p className="tk-dash-sub">
-        <span>{e.accepted}/{e.total} รับแล้ว</span>
-        {x.state !== "none" && (
-          <span className={x.state === "expired" ? "od" : x.state === "soon" ? "soon" : ""}>
-            {" · "}{x.state === "expired" ? "หมดอายุ" : `เหลือ ${x.daysLeft} วัน`}
-          </span>
-        )}
-      </p>
-      <div className="tk-dash-chips">
-        {STATUS_ORDER.filter((s) => e.by?.[s]).map((s) => (
-          <span key={s} className={`tk-pill ${STATUS[s].tone}`}>
-            <span className="g">{STATUS[s].glyph}</span>{e.by[s]}
-          </span>
-        ))}
+      <div className="nv-bar"><span style={{ width: `${e.pct}%` }} /></div>
+      <div className="nv-tags">
+        {tags.length ? tags.map((t, i) => <span key={i} className={`nv-tag2 ${t.tone}`}>{t.txt}</span>)
+          : done ? <span className="nv-tag2 mint">✓ ตรวจรับครบทุกรายการ</span> : <span className="nv-tag2 slate">ยังไม่มีรายการ</span>}
+      </div>
+      <div className="nv-card-foot">
+        <span className="open">เปิดพอร์ทัล →</span>
+        <span style={{ width: 26, height: 26, borderRadius: 8, border: "1px solid #E5E7EB", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>⋯</span>
       </div>
     </button>
   );
