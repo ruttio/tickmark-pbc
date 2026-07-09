@@ -33,6 +33,18 @@ const STATUS = {
 };
 const STATUS_ORDER = ["outstanding", "submitted", "review", "accepted", "returned", "reopened"];
 
+// Thai labels + navy/mint chip tones + filter dots for the client view.
+const TH = { outstanding: "รออัปโหลด", submitted: "รอตรวจ", review: "กำลังตรวจ", accepted: "ตรวจรับแล้ว", returned: "ส่งกลับแก้ไข", reopened: "เปิดใหม่" };
+const CST = { outstanding: "slate", submitted: "amber", review: "amber", accepted: "mint", returned: "amber", reopened: "slate" };
+const DOT = { outstanding: "#64748B", submitted: "#F59E0B", review: "#F59E0B", accepted: "#12B39A", returned: "#F59E0B", reopened: "#64748B" };
+// Items the CLIENT still has to act on (upload / fix / re-send).
+const needsAction = (it) => ["outstanding", "returned", "reopened"].includes(it.status) || isOverdue(it);
+// Navy/mint status pill (accounts for overdue).
+function clientChip(it) {
+  if (isOverdue(it)) return { tone: "red", label: "⚠ เกินกำหนด" };
+  return { tone: CST[it.status], label: `${STATUS[it.status].glyph} ${TH[it.status]}` };
+}
+
 /* ---------- small helpers ---------------------------------------------- */
 const onlyDigits = (s) => s.replace(/\D+/g, "").slice(0, 16);
 const groupDigits = (s) => s.replace(/(.{4})/g, "$1 ").trim();
@@ -41,6 +53,7 @@ const fmtDate = (ts) =>
 const fmtSize = (b) =>
   b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0) + " KB" : (b / 1048576).toFixed(1) + " MB";
 const isOverdue = (it) => it.status !== "accepted" && it.dueDate && it.dueDate < Date.now();
+const fileExt = (name) => (name.includes(".") ? name.split(".").pop().slice(0, 4).toUpperCase() : "ไฟล์");
 
 // Session token cache (per engagement, this tab only). Survives a refresh
 // within the 8h window so the client isn't re-prompted on every reload.
@@ -73,47 +86,6 @@ function Tick({ size = 16 }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className="tk-glyph">
       <path d="M3 13.5l5.2 5.5L21 4.5" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
-  );
-}
-function Pill({ status }) {
-  const s = STATUS[status] || STATUS.outstanding;
-  return (
-    <span className={`tk-pill ${s.tone}`}>
-      <span className="g">{s.glyph}</span>
-      {s.label}
-    </span>
-  );
-}
-
-function AuthBrandPanel() {
-  return (
-    <aside className="tk-auth-brand">
-      <div className="tk-auth-brand-mark">
-        <Tick size={22} />
-        <span>Tickmark</span>
-      </div>
-      <p className="tk-auth-kicker">Tickmark PBC · Secure Link</p>
-      <h1>ส่งเอกสารตรวจสอบบัญชีในที่เดียว ปลอดภัย</h1>
-      <p className="tk-auth-copy">
-        พอร์ทัลเฉพาะสำหรับรับส่งเอกสาร PBC พร้อมสถานะชัดเจนและการเข้าถึงที่ควบคุมได้
-      </p>
-      <ul className="tk-auth-points">
-        <li><b>ส่งเอกสารอย่างปลอดภัย</b><span>ไฟล์ผูกกับลิงก์และรหัสเฉพาะของคุณ</span></li>
-        <li><b>ติดตามคำขอแบบเรียลไทม์</b><span>เห็นทันทีว่าอะไรส่งแล้วหรือยังรออัปโหลด</span></li>
-        <li><b>สถานะชัดเจนในหน้าเดียว</b><span>ตรวจรับ ส่งกลับ และความคืบหน้าอ่านได้ง่าย</span></li>
-      </ul>
-    </aside>
-  );
-}
-
-function AuthFrame({ children }) {
-  return (
-    <main className="tk-auth-page">
-      <AuthBrandPanel />
-      <section className="tk-auth-form-panel">
-        {children}
-      </section>
-    </main>
   );
 }
 
@@ -186,29 +158,32 @@ export default function ClientPortal() {
   /* ---- render ---- */
   if (phase === "nolink")
     return (
-      <Shell auth>
-        <AuthFrame>
-          <div className="tk-lock">
-            <div className="tk-lock-card tk-auth-card">
-              <div className="tk-lock-icon">🔗</div>
-              <h2>ลิงก์ไม่สมบูรณ์</h2>
-              <p className="tk-muted">ลิงก์เข้าพอร์ทัลไม่ถูกต้อง — โปรดเปิดจากลิงก์ที่สำนักงานส่งให้ (ต้องมีรหัสพอร์ทัลใน URL)</p>
+      <Shell secure>
+        <div className="nv-lockwrap">
+          <div className="nv-lockcard">
+            <div className="nv-lock-hd">
+              <span className="nv-lock-ic">🔗</span>
+              <div className="nv-lock-eyebrow">Secure document access</div>
+              <div className="nv-lock-title">ลิงก์ไม่สมบูรณ์</div>
+            </div>
+            <div className="nv-lock-body">
+              <p className="nv-lock-lead">ลิงก์เข้าพอร์ทัลไม่ถูกต้อง — โปรดเปิดจากลิงก์ที่สำนักงานส่งให้ (ต้องมีรหัสพอร์ทัลใน URL)</p>
             </div>
           </div>
-        </AuthFrame>
+        </div>
       </Shell>
     );
 
   if (phase === "init")
     return (
       <Shell>
-        <div className="tk-boot">Loading…</div>
+        <div className="tk-boot" style={{ color: "#64748B" }}>Loading…</div>
       </Shell>
     );
 
   if (phase === "locked")
     return (
-      <Shell auth>
+      <Shell secure>
         <LockScreen onUnlock={handleUnlock} />
       </Shell>
     );
@@ -227,30 +202,29 @@ export default function ClientPortal() {
   );
 }
 
-/* ---------- chrome ----------------------------------------------------- */
-function Shell({ children, onLock, auth = false }) {
+/* ---------- chrome (navy top bar) -------------------------------------- */
+function Shell({ children, onLock, secure = false }) {
   return (
-    <div className={`tk-root ${auth ? "tk-auth-root" : ""}`}>
-      <header className="tk-top">
-        <div className="tk-brand">
-          <Tick size={20} />
-          <span className="tk-word">Tickmark</span>
-          <span className="tk-tag">PBC portal</span>
+    <div className="tk-root nv">
+      <div className="nv-top">
+        <div className="nv-brand">
+          <span className="mk"><Tick size={17} /></span>
+          <span className="wd">Tickmark</span>
+          <span className="nv-pill">PBC Portal</span>
         </div>
-        <div className="tk-top-right">
+        <div className="nv-top-right">
+          {secure && <span className="nv-secure"><span className="lk">🔒</span>การเชื่อมต่อปลอดภัย</span>}
           {onLock && (
-            <button className="tk-icon" title="ออกจากพอร์ทัล" onClick={onLock}>
-              🔒
-            </button>
+            <span className="nv-icon" title="ออกจากพอร์ทัล" onClick={onLock}>⎋</span>
           )}
         </div>
-      </header>
+      </div>
       {children}
     </div>
   );
 }
 
-/* ---------- lock screen ------------------------------------------------ */
+/* ---------- lock screen (3a) ------------------------------------------- */
 function LockScreen({ onUnlock }) {
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
@@ -272,159 +246,218 @@ function LockScreen({ onUnlock }) {
     }
   };
 
+  const codeDisplayGroups = Array.from({ length: 4 }, (_, i) => {
+    const part = code.slice(i * 4, i * 4 + 4);
+    return part ? part.padEnd(4, "0") : "0000";
+  });
+
   return (
-    <AuthFrame>
-      <div className="tk-lock">
-        <div className="tk-lock-card tk-auth-card">
-          <div className="tk-lock-icon">🔒</div>
-          <p className="tk-lock-eyebrow">เอกสารที่ต้องจัดเตรียม</p>
-          <h2>เข้าสู่พอร์ทัล</h2>
-          <p className="tk-muted">กรอกรหัส 16 หลักที่สำนักงานส่งให้เพื่อปลดล็อกพอร์ทัลเอกสารของคุณ</p>
-          <input
-            className="tk-code-input tk-code-input-grouped"
-            inputMode="numeric"
-            autoComplete="off"
-            autoFocus
-            value={groupDigits(code)}
-            placeholder="0000 0000 0000 0000"
-            onChange={(e) => {
-              setCode(onlyDigits(e.target.value));
-              setErr("");
-            }}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-          />
-          {err && <p className="tk-lock-err">{err}</p>}
-          <button className="tk-btn primary full" disabled={code.length !== 16 || busy} onClick={submit}>
-            {busy ? "กำลังตรวจสอบ…" : "ปลดล็อกเข้าพอร์ทัล"}
+    <div className="nv-lockwrap">
+      <div className="nv-lockcard">
+        <div className="nv-lock-hd">
+          <span className="nv-lock-ic">🔒</span>
+          <div className="nv-lock-eyebrow">Secure document access</div>
+          <div className="nv-lock-title">เอกสารที่ต้องจัดเตรียม</div>
+        </div>
+        <div className="nv-lock-body">
+          <p className="nv-lock-lead">กรอกรหัส 16 หลักที่สำนักงานส่งให้ทางอีเมลเพื่อปลดล็อกพอร์ทัลเอกสารของคุณ</p>
+          <label className="nv-otp-entry">
+            <input
+              className="nv-otp-native"
+              inputMode="numeric"
+              autoComplete="off"
+              autoFocus
+              value={groupDigits(code)}
+              aria-label="รหัสเข้าพอร์ทัล 16 หลัก"
+              onChange={(e) => {
+                setCode(onlyDigits(e.target.value));
+                setErr("");
+              }}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+            />
+            <span className="nv-otp" aria-hidden="true">
+              {codeDisplayGroups.map((part, i) => (
+                <span className={`nv-otp-box ${code.length > i * 4 ? "on" : ""}`} key={i}>{part}</span>
+              ))}
+            </span>
+          </label>
+          {err && <p className="nv-lock-err">{err}</p>}
+          <button className="nv-lock-cta" disabled={code.length !== 16 || busy} onClick={submit}>
+            {busy ? "กำลังตรวจสอบ…" : <>เข้าสู่พอร์ทัล →</>}
           </button>
+          <p className="nv-lock-note">
+            <span style={{ flex: "none" }}>🔒</span>
+            รหัสนี้ใช้ได้เฉพาะพอร์ทัลของคุณเท่านั้น — ไม่ต้องสมัครสมาชิก
+          </p>
           {!SUPABASE_CONFIGURED && (
-            <p className="tk-lock-demo">
+            <p className="nv-lock-demo">
               ⚠ ยังไม่ได้ตั้งค่า backend — คัดลอก <b>.env.example</b> เป็น <b>.env.local</b> แล้วใส่ค่าจาก Supabase
               (การกดปลดล็อกจะยัง fail จนกว่าจะตั้งค่า + deploy Edge Function)
             </p>
           )}
-          <p className="tk-lock-foot">รหัสนี้ใช้ได้เฉพาะพอร์ทัลของคุณเท่านั้น — ไม่ต้องสมัครสมาชิก</p>
         </div>
       </div>
-    </AuthFrame>
+    </div>
   );
 }
 
-/* ---------- the request list + uploads --------------------------------- */
+/* ---------- the request list + uploads (3c) ---------------------------- */
 function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
   const [filter, setFilter] = useState("all");
+  const [catFilter, setCatFilter] = useState(null);
+  const [q, setQ] = useState("");
 
   const stats = useMemo(() => {
     const by = Object.fromEntries(STATUS_ORDER.map((s) => [s, 0]));
     items.forEach((it) => { by[it.status] = (by[it.status] || 0) + 1; });
-    return { by, overdue: items.filter(isOverdue).length };
+    return { by, overdue: items.filter(isOverdue).length, action: items.filter(needsAction).length };
+  }, [items]);
+
+  // Category list (all items) with count + a worst-status dot for the left panel.
+  const cats = useMemo(() => {
+    const arr = []; const m = new Map();
+    items.forEach((it) => {
+      let c = m.get(it.category);
+      if (!c) { c = { cat: it.category, count: 0, overdue: 0, action: 0 }; m.set(it.category, c); arr.push(c); }
+      c.count++; if (isOverdue(it)) c.overdue++; if (needsAction(it)) c.action++;
+    });
+    return arr;
   }, [items]);
 
   const grouped = useMemo(() => {
-    const filtered = items.filter((it) =>
-      filter === "all" ? true : filter === "overdue" ? isOverdue(it) : it.status === filter);
+    const s = q.trim().toLowerCase();
+    const filtered = items.filter((it) => {
+      const passStatus =
+        filter === "all" ? true
+          : filter === "overdue" ? isOverdue(it)
+            : filter === "action" ? needsAction(it)
+              : it.status === filter;
+      const passCat = !catFilter || it.category === catFilter;
+      const passText = !s || `${it.ref} ${it.description}`.toLowerCase().includes(s);
+      return passStatus && passCat && passText;
+    });
     const m = new Map();
     filtered.forEach((it) => {
       if (!m.has(it.category)) m.set(it.category, []);
       m.get(it.category).push(it);
     });
     return [...m.entries()];
-  }, [items, filter]);
+  }, [items, filter, catFilter, q]);
 
   const accepted = items.filter((i) => i.status === "accepted").length;
+  const pending = items.filter((i) => i.status === "submitted" || i.status === "review").length;
   const pct = items.length ? Math.round((accepted / items.length) * 100) : 0;
+  const firstOverdue = items.find(isOverdue);
 
   if (phase === "loading" && !eng)
-    return (
-      <main className="tk-main">
-        <div className="tk-boot">กำลังโหลดรายการเอกสาร…</div>
-      </main>
-    );
+    return <div className="nv-page"><div className="tk-boot" style={{ color: "#64748B" }}>กำลังโหลดรายการเอกสาร…</div></div>;
 
   return (
-    <main className="tk-main">
+    <div className="nv-page">
       {eng && (
-        <section className="tk-head">
-          <div>
-            <p className="tk-eyebrow">{eng.template}</p>
-            <h1 className="tk-client">{eng.client}</h1>
-            <p className="tk-meta">
-              Period end <b>{fmtDate(eng.periodEnd)}</b> · {items.length} items
-            </p>
+        <div className="nv-chead">
+          <div className="nv-chead-l">
+            <span className="nv-chead-name">{eng.client}</span>
+            <span className="nv-chead-type">{eng.template}</span>
+            <span className="nv-chead-meta">งวดสิ้นสุด {fmtDate(eng.periodEnd)} · {items.length} รายการ</span>
           </div>
-          <div className="tk-progress">
-            <div className="tk-pct">
-              <span>{pct}</span>
-              <i>%</i>
+          {items.length > 0 && (
+            <div className="nv-chead-prog">
+              <div className="bar">
+                <span className="a" style={{ width: `${pct}%` }} />
+                <span className="p" style={{ width: `${Math.round((pending / items.length) * 100)}%` }} />
+              </div>
+              <span className="pc">{pct}%</span>
             </div>
-            <p className="tk-progress-cap">
-              {accepted} of {items.length} accepted
-            </p>
-          </div>
-        </section>
-      )}
-
-      <section className="tk-toolbar">
-        <p className="tk-hint">
-          อัปโหลดเอกสารตามรายการด้านล่าง — แต่ละรายการจะเปลี่ยนเป็น <b>Submitted</b> เมื่อแนบไฟล์
-          จากนั้นสำนักงานจะตรวจรับหรือส่งกลับพร้อมหมายเหตุ
-        </p>
-      </section>
-
-      {stats.overdue > 0 && (
-        <div className="tk-alert" onClick={() => setFilter("overdue")}>
-          ⚠ มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง — โปรดรีบอัปโหลด (คลิกเพื่อดู)
+          )}
         </div>
       )}
 
-      <section className="tk-chips">
-        <button className={`tk-chip neutral ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>All<b>{items.length}</b></button>
-        {STATUS_ORDER.map((s) => (
-          <button key={s} className={`tk-chip ${STATUS[s].tone} ${filter === s ? "active" : ""}`}
-            onClick={() => setFilter(filter === s ? "all" : s)}>
-            <span className="g">{STATUS[s].glyph}</span>{STATUS[s].label}<b>{stats.by[s]}</b>
-          </button>
-        ))}
-        <button className={`tk-chip rust ${filter === "overdue" ? "active" : ""}`}
-          onClick={() => setFilter(filter === "overdue" ? "all" : "overdue")}>
-          <span className="g">⚠</span>Overdue<b>{stats.overdue}</b>
-        </button>
-      </section>
-
-      {loadErr && <p className="tk-lock-err" style={{ textAlign: "center" }}>{loadErr}</p>}
+      {loadErr && <p className="nv-lock-err" style={{ textAlign: "center" }}>{loadErr}</p>}
 
       {items.length === 0 ? (
-        <p className="tk-none">ยังไม่มีรายการเอกสารในพอร์ทัลนี้</p>
-      ) : grouped.length === 0 ? (
-        <p className="tk-none">ไม่มีรายการที่ตรงกับตัวกรองนี้</p>
+        <div className="nv-list"><div style={{ padding: "40px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ยังไม่มีรายการเอกสารในพอร์ทัลนี้</div></div>
       ) : (
-        grouped.map(([cat, rows]) => (
-          <section key={cat} className="tk-group">
-            <div className="tk-group-head">
-              <span className="tk-cat">{cat}</span>
-              <span className="tk-rule" />
-              <span className="tk-count">
-                {rows.filter((i) => i.status === "accepted").length}/{rows.length}
-              </span>
-            </div>
-            <ul className="tk-rows">
-              {rows.map((it) => (
-                <ClientRow key={it.id} item={it} token={token} onUploaded={onUploaded} />
+        <div className="nv-work">
+          {/* LEFT: search, alert, status filters, category groups */}
+          <aside className="nv-aside">
+            <div className="nv-isearch"><span>⌕</span><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
+            {stats.overdue > 0 && (
+              <div className="nv-alert" onClick={() => { setFilter("overdue"); setCatFilter(null); }}>
+                <span className="ic">⚠</span>
+                <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{firstOverdue && ` — ${firstOverdue.description}`} · คลิกเพื่อดู</span>
+              </div>
+            )}
+            <div className="nv-fcard">
+              <div className="nv-fcard-t">สถานะ</div>
+              <button className={`nv-frow ${filter === "all" ? "on" : ""}`} onClick={() => setFilter("all")}>
+                <span className="lb">ทั้งหมด</span><span className="ct">{items.length}</span>
+              </button>
+              {STATUS_ORDER.map((s) => (
+                <button key={s} className={`nv-frow ${filter === s ? "on" : ""}`} onClick={() => setFilter(filter === s ? "all" : s)}>
+                  <span className="lb"><span className="dot" style={{ background: DOT[s] }} />{TH[s]}</span>
+                  <span className="ct">{stats.by[s]}</span>
+                </button>
               ))}
-            </ul>
-          </section>
-        ))
-      )}
+              <button className={`nv-frow ${filter === "overdue" ? "on" : ""}`} onClick={() => setFilter(filter === "overdue" ? "all" : "overdue")}>
+                <span className="lb" style={filter === "overdue" ? undefined : { color: "#EF4444" }}><span className="dot" style={{ background: "#EF4444" }} />เกินกำหนด</span>
+                <span className="ct" style={{ background: "rgba(239,68,68,.12)", color: "#EF4444" }}>{stats.overdue}</span>
+              </button>
+            </div>
+            <div className="nv-fcard">
+              <div className="nv-fcard-t">หมวดเอกสาร</div>
+              {stats.action > 0 && (
+                <button className="nv-cataction" onClick={() => { setFilter("action"); setCatFilter(null); }}>
+                  <span className="l">⚠ ต้องดำเนินการ</span><span className="n">{stats.action}</span>
+                </button>
+              )}
+              <button className={`nv-grow ${!catFilter ? "on" : ""}`} onClick={() => setCatFilter(null)}>
+                <span className="gl">ทั้งหมด</span><span className="gr"><span className="gc">{items.length}</span></span>
+              </button>
+              {cats.map((c) => (
+                <button key={c.cat} className={`nv-grow ${catFilter === c.cat ? "on" : ""}`} onClick={() => setCatFilter(catFilter === c.cat ? null : c.cat)}>
+                  <span className="gl">{c.cat}</span>
+                  <span className="gr">
+                    {c.overdue > 0 ? <span className="rd" /> : c.action > 0 ? <span className="rd" style={{ background: "#F59E0B" }} /> : null}
+                    <span className="gc">{c.count}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </aside>
 
-      <footer className="tk-foot">เอกสารถูกเก็บอย่างปลอดภัย · เข้าถึงได้เฉพาะพอร์ทัลของคุณ</footer>
-    </main>
+          {/* RIGHT: document request list */}
+          <div>
+            {grouped.length === 0 ? (
+              <div className="nv-list"><div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ไม่มีรายการที่ตรงกับตัวกรองนี้</div></div>
+            ) : (
+              grouped.map(([cat, rows]) => (
+                <div key={cat}>
+                  <div className="nv-ghead">
+                    <span className="gt">{cat}</span><span className="gline" />
+                    <span className="gn">{rows.filter((i) => i.status === "accepted").length}/{rows.length}</span>
+                  </div>
+                  <div className="nv-list">
+                    {rows.map((it, idx) => (
+                      <ClientRow key={it.id} item={it} index={idx + 1} token={token} onUploaded={onUploaded} />
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+            <p className="nv-cfoot">เอกสารถูกเก็บอย่างปลอดภัย · เข้าถึงได้เฉพาะพอร์ทัลของคุณ</p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
-function ClientRow({ item, token, onUploaded }) {
+function ClientRow({ item, index, token, onUploaded }) {
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [drag, setDrag] = useState(false);
   const canUpload = item.status !== "accepted";
 
   const upload = async (fileList) => {
@@ -464,50 +497,49 @@ function ClientRow({ item, token, onUploaded }) {
 
   const clientFiles = item.files.filter((f) => !f.isSample);
   const sampleFiles = item.files.filter((f) => f.isSample);
+  const od = isOverdue(item);
+  const chip = clientChip(item);
+  const rowCls = item.status === "accepted" ? "acc" : od ? "od" : "";
 
   const openSample = async (fileId) => {
     try { window.open(await clientApi.sampleUrl(token, fileId), "_blank"); }
     catch (e) { setErr(e.message || "เปิดไฟล์ไม่สำเร็จ"); }
   };
 
+  const onDrop = (e) => {
+    e.preventDefault(); setDrag(false);
+    if (canUpload && e.dataTransfer.files?.length) upload(e.dataTransfer.files);
+  };
+
   return (
-    <li className="tk-row" style={{ cursor: "default", flexWrap: "wrap" }}>
-      <span className="tk-ref">{item.ref}</span>
-      <div className="tk-desc">
-        <span className="tk-desc-main">
-          {item.description}
-          {item.required && <i className="tk-req" title="Required">•</i>}
-        </span>
-        <span className="tk-desc-sub">
-          {clientFiles.length > 0 && (
-            <span className="tk-files-mini">
-              {clientFiles.length} file{clientFiles.length > 1 ? "s" : ""}
-            </span>
-          )}
-          <span className={`tk-due ${isOverdue(item) ? "od" : ""}`}>Due {fmtDate(item.dueDate)}</span>
-        </span>
+    <div className={`nv-crow ${rowCls}`}>
+      <span className="nv-crow-no">{index}</span>
+      <div className="nv-crow-main">
+        <div className="nv-crow-name">{item.description}{item.required && <span className="req" title="Required">•</span>}</div>
+        <div className="nv-crow-sub">
+          {clientFiles.length > 0 && <span className="f">{clientFiles.length} ไฟล์</span>}
+          <span className={`due ${od ? "od" : ""}`}>
+            กำหนดส่ง {fmtDate(item.dueDate)}
+            {od && item.dueDate && ` · เกิน ${Math.max(1, Math.floor((Date.now() - item.dueDate) / 86400000))} วัน`}
+          </span>
+        </div>
 
         {item.status === "returned" && item.note && (
-          <div className="tk-callout rust" style={{ marginTop: 8 }}>
-            <b>ส่งกลับจากสำนักงาน:</b> {item.note}
-          </div>
+          <div className="nv-cnote rust"><b>ส่งกลับจากสำนักงาน:</b> {item.note}</div>
         )}
-
         {item.firmNote && (
-          <div className="tk-callout note" style={{ marginTop: 8 }}>
-            <b>📝 หมายเหตุจากสำนักงาน:</b> {item.firmNote}
-          </div>
+          <div className="nv-cnote note"><b>📝 หมายเหตุจากสำนักงาน:</b> {item.firmNote}</div>
         )}
 
         {sampleFiles.length > 0 && (
-          <div className="tk-callout note" style={{ marginTop: 8 }}>
+          <div className="nv-cnote note">
             <b>📎 รายการที่สำนักงานเลือก / ตัวอย่าง:</b>
-            <ul className="tk-filelist" style={{ marginTop: 6 }}>
+            <ul className="nv-fchips">
               {sampleFiles.map((f) => (
-                <li key={f.id}>
-                  <span className="tk-fileicon">📎</span>
-                  <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
-                  <button className="tk-x" onClick={() => openSample(f.id)}>ดาวน์โหลด</button>
+                <li key={f.id} className="nv-fchip">
+                  <span className="nv-ftype">{fileExt(f.name)}</span>
+                  <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
+                  <button className="nv-fx" onClick={() => openSample(f.id)}>ดาวน์โหลด</button>
                 </li>
               ))}
             </ul>
@@ -515,18 +547,13 @@ function ClientRow({ item, token, onUploaded }) {
         )}
 
         {clientFiles.length > 0 && (
-          <ul className="tk-filelist" style={{ marginTop: 8 }}>
+          <ul className="nv-fchips">
             {clientFiles.map((f) => (
-              <li key={f.id}>
-                <span className="tk-fileicon">▤</span>
-                <span className="tk-fileinfo">
-                  <b>{f.name}</b>
-                  <i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i>
-                </span>
-                {f.rejected && <span className="tk-file-rejected">ต้องแก้ไข</span>}
-                {canUpload && (
-                  <button className="tk-x" disabled={busy} onClick={() => remove(f.id)}>ลบ</button>
-                )}
+              <li key={f.id} className="nv-fchip">
+                <span className="nv-ftype">{fileExt(f.name)}</span>
+                <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
+                {f.rejected && <span className="nv-frej">ต้องแก้ไข</span>}
+                {canUpload && <button className="nv-fx" disabled={busy} onClick={() => remove(f.id)}>ลบ</button>}
               </li>
             ))}
           </ul>
@@ -534,29 +561,27 @@ function ClientRow({ item, token, onUploaded }) {
 
         {canUpload && (
           <>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              style={{ display: "none" }}
-              onChange={(e) => {
-                upload(e.target.files);
-                e.target.value = "";
-              }}
-            />
-            <button
-              className="tk-btn primary"
-              style={{ marginTop: 8 }}
-              disabled={busy}
-              onClick={() => fileRef.current?.click()}
-            >
-              {busy ? "กำลังอัปโหลด…" : "↑ อัปโหลดเอกสาร"}
-            </button>
+            <input ref={fileRef} type="file" multiple style={{ display: "none" }}
+              onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+            {clientFiles.length === 0 ? (
+              <div className={`nv-drop ${drag ? "drag" : ""}`}
+                onClick={() => !busy && fileRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+                onDragLeave={() => setDrag(false)}
+                onDrop={onDrop}>
+                <div className="t">{busy ? "กำลังอัปโหลด…" : <>ลากไฟล์มาวางที่นี่ หรือ <b>เลือกไฟล์</b></>}</div>
+                <div className="h">PDF, JPG, PNG, XLSX</div>
+              </div>
+            ) : (
+              <button className="nv-upbtn" disabled={busy} onClick={() => fileRef.current?.click()}>
+                {busy ? "กำลังอัปโหลด…" : "↑ อัปโหลดเพิ่ม"}
+              </button>
+            )}
           </>
         )}
-        {err && <p className="tk-lock-err" style={{ marginTop: 6 }}>{err}</p>}
+        {err && <p className="nv-lock-err" style={{ marginTop: 6 }}>{err}</p>}
       </div>
-      <Pill status={item.status} />
-    </li>
+      <span className={`nv-st ${chip.tone} nv-crow-st`}>{chip.label}</span>
+    </div>
   );
 }
