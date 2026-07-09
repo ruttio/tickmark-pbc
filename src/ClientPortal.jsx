@@ -229,6 +229,7 @@ function LockScreen({ onUnlock }) {
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [focused, setFocused] = useState(false);
 
   const submit = async () => {
     if (code.length !== 16 || busy) return;
@@ -246,10 +247,8 @@ function LockScreen({ onUnlock }) {
     }
   };
 
-  const codeDisplayGroups = Array.from({ length: 4 }, (_, i) => {
-    const part = code.slice(i * 4, i * 4 + 4);
-    return part ? part.padEnd(4, "0") : "0000";
-  });
+  // The box the caret sits in while typing (−1 = none: unfocused or complete).
+  const activeIdx = focused && code.length < 16 ? Math.floor(code.length / 4) : -1;
 
   return (
     <div className="nv-lockwrap">
@@ -273,12 +272,20 @@ function LockScreen({ onUnlock }) {
                 setCode(onlyDigits(e.target.value));
                 setErr("");
               }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
             />
             <span className="nv-otp" aria-hidden="true">
-              {codeDisplayGroups.map((part, i) => (
-                <span className={`nv-otp-box ${code.length > i * 4 ? "on" : ""}`} key={i}>{part}</span>
-              ))}
+              {[0, 1, 2, 3].map((i) => {
+                const typed = code.slice(i * 4, i * 4 + 4);
+                const isCaret = i === activeIdx;
+                return (
+                  <span className={`nv-otp-box ${typed ? "on" : ""} ${isCaret ? "caret" : ""}`} key={i}>
+                    {isCaret ? <>{typed}<i className="nv-caret" /></> : (typed ? typed.padEnd(4, "0") : "0000")}
+                  </span>
+                );
+              })}
             </span>
           </label>
           {err && <p className="nv-lock-err">{err}</p>}

@@ -641,6 +641,9 @@
 .nv-otp{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .nv-otp-box{height:64px;display:flex;align-items:center;justify-content:center;border:1.5px solid #E5E7EB;border-radius:14px;background:#fff;color:#94A3B8;font:800 22px 'Inter',sans-serif;letter-spacing:1.5px}
 .nv-otp-box.on{border-color:#12B39A;color:#081A34;box-shadow:0 0 0 4px rgba(18,179,154,.12)}
+.nv-otp-box.caret{border-color:#12B39A;color:#081A34;box-shadow:0 0 0 4px rgba(18,179,154,.18)}
+.nv-caret{display:inline-block;width:2px;height:28px;background:#12B39A;border-radius:2px;vertical-align:middle;margin-left:1px;animation:nvcaret 1.05s steps(1,end) infinite}
+@keyframes nvcaret{0%,50%{opacity:1}50.01%,100%{opacity:0}}
 .nv-lock-cta{width:100%;min-height:54px;display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,#12B39A,#5EEAD0);color:#fff;font:800 16px 'Inter','IBM Plex Sans Thai',sans-serif;border:0;border-radius:12px;cursor:pointer;text-shadow:0 1px 1px rgba(8,26,52,.36);box-shadow:0 12px 24px rgba(18,179,154,.26)}
 .nv-lock-cta:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
 .nv-lock-note{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;font:400 12px/1.5 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
