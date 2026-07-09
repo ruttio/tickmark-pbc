@@ -402,6 +402,8 @@ export default function App() {
   const [importDraft, setImportDraft] = useState(null);
   const importRef = useRef(null);
   const [filter, setFilter] = useState("all");
+  const [itemQ, setItemQ] = useState("");             // engagement-detail text search
+  const [catFilter, setCatFilter] = useState(null);   // engagement-detail category filter (null = all)
   const [busy, setBusy] = useState(false);            // a backend mutation is in flight
   const [err, setErr] = useState("");
   const [view, setView] = useState("dashboard");      // 'dashboard' | 'engagement'
@@ -650,6 +652,25 @@ export default function App() {
     return [...map.entries()];
   }, [eng, filter]);
 
+  // Engagement-detail (3e) left panel: category list (all items) + the grouped
+  // list further narrowed by the category filter and the text search.
+  const detailCats = useMemo(() => {
+    const arr = []; const m = new Map();
+    (eng?.items || []).forEach((it) => {
+      let c = m.get(it.category);
+      if (!c) { c = { cat: it.category, count: 0, overdue: 0 }; m.set(it.category, c); arr.push(c); }
+      c.count++; if (isOverdue(it)) c.overdue++;
+    });
+    return arr;
+  }, [eng]);
+  const viewGroups = useMemo(() => {
+    const q = itemQ.trim().toLowerCase();
+    return grouped
+      .filter(([cat]) => !catFilter || cat === catFilter)
+      .map(([cat, items]) => [cat, items.filter((it) => !q || `${it.ref} ${it.description}`.toLowerCase().includes(q))])
+      .filter(([, items]) => items.length > 0);
+  }, [grouped, catFilter, itemQ]);
+
   const exportCSV = () => {
     if (!eng) return;
     const head = ["Ref", "Category", "Description", "Required", "Due date", "Status", "Files"];
@@ -678,33 +699,6 @@ export default function App() {
   return (
     <div className="tk-root">
       {/* Top bar (engagement view only; the dashboard renders its own navy top bar) */}
-      {view !== "dashboard" && (
-      <header className="tk-top">
-        <div className="tk-brand">
-          <Tick size={20} />
-          <span className="tk-word">Tickmark</span>
-          <span className="tk-tag">PBC portal · firm</span>
-        </div>
-        <div className="tk-top-right">
-          {view === "engagement" && (
-            <button className="tk-topbtn" onClick={goDashboard}>← ภาพรวม</button>
-          )}
-          {view === "engagement" && engagements.length > 0 && (
-            <select className="tk-select" value={currentId || ""} onChange={(e) => openEngagement(e.target.value)}>
-              {engagements.map((e) => {
-                const x = engExpiry(e);
-                const tag = x.state === "expired" ? " · หมดอายุ" : x.state === "soon" ? ` · เหลือ ${x.daysLeft} วัน` : "";
-                return <option key={e.id} value={e.id}>{e.client}{tag}</option>;
-              })}
-            </select>
-          )}
-          <button className="tk-btn primary" onClick={() => setModal("generate")}><Tick size={13} /> New portal</button>
-          <span style={{ fontSize: 12, color: "#9db8ac", fontFamily: "'JetBrains Mono', monospace" }}>{session.user?.email}</span>
-          <button className="tk-icon" title="ออกจากระบบ" onClick={signOut}>⎋</button>
-        </div>
-      </header>
-      )}
-
       {err && (
         <div className="tk-purge">{err}<button onClick={() => setErr("")}>✕</button></div>
       )}
@@ -719,112 +713,164 @@ export default function App() {
           onExtend={(days) => extendEng(eng.id, days)}
           onDelete={() => deleteEng(eng.id)} />
       ) : (
-        <main className="tk-main">
-          {/* Engagement header + progress ledger */}
-          <section className="tk-head">
-            <div>
-              <p className="tk-eyebrow">{eng.template}</p>
-              <h1 className="tk-client">{eng.client}</h1>
-              <p className="tk-meta">
-                Period end <b>{fmtDate(eng.periodEnd)}</b> · {stats.total} items
-                {stats.overdue > 0 && <span className="tk-od"> · {stats.overdue} overdue</span>}
-              </p>
-              {(() => {
-                const x = engExpiry(eng);
-                if (x.state === "none") return null;
-                const cls = x.state === "soon" ? "soon" : "ok";
-                return (
-                  <p className={`tk-expiry ${cls}`}>
-                    🗓 หมดอายุ {fmtDate(eng.expiresAt)} · เหลือ {x.daysLeft} วัน
-                    {eng.autoDelete && <span className="tk-expiry-auto"> · ลบอัตโนมัติเมื่อหมดอายุ</span>}
-                  </p>
-                );
-              })()}
+        <div className="nv">
+          {/* navy top bar */}
+          <div className="nv-top">
+            <div className="nv-brand"><span className="mk"><Tick size={17} /></span><span className="wd">Tickmark</span><span className="nv-pill">PBC Portal · Firm</span></div>
+            <div className="nv-top-right">
+              <button className="nv-tbtn" onClick={goDashboard}>← ภาพรวม</button>
+              {engagements.length > 0 && (
+                <select className="nv-sel" value={currentId || ""} onChange={(e) => openEngagement(e.target.value)}>
+                  {engagements.map((e) => {
+                    const ex = engExpiry(e);
+                    const tag = ex.state === "expired" ? " · หมดอายุ" : ex.state === "soon" ? ` · เหลือ ${ex.daysLeft} วัน` : "";
+                    return <option key={e.id} value={e.id}>{e.client}{tag}</option>;
+                  })}
+                </select>
+              )}
+              <button className="nv-cta" onClick={() => setModal("generate")}>+ New portal</button>
+              <span className="nv-email">{session.user?.email}</span>
+              <span className="nv-icon" title="ออกจากระบบ" onClick={signOut}>⎋</span>
             </div>
-            <div className="tk-progress">
-              <div className="tk-pct"><span>{stats.pct}</span><i>%</i></div>
-              <div className="tk-ledger" aria-hidden="true">
-                {eng.items.map((it) => (
-                  <span key={it.id} className={`cell ${it.status === "accepted" ? "done" : isOverdue(it) ? "od" : it.status === "outstanding" ? "" : "wip"}`} />
-                ))}
+          </div>
+
+          <div className="nv-page">
+            {/* compact engagement header */}
+            <div className="nv-eh">
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                  <span className="nv-eh-name">{eng.client}</span>
+                  <span className="nv-eh-type">{eng.template}</span>
+                </div>
+                <div className="nv-eh-meta">
+                  งวดสิ้นสุด <b>{fmtDate(eng.periodEnd)}</b> · {stats.total} รายการ
+                  {stats.overdue > 0 && <> · <span className="od">{stats.overdue} เกินกำหนด</span></>}
+                  {(() => {
+                    const x = engExpiry(eng);
+                    if (x.state === "none") return null;
+                    return <> &nbsp;·&nbsp; หมดอายุ {fmtDate(eng.expiresAt)} · เหลือ {x.daysLeft} วัน{eng.autoDelete && " · ลบอัตโนมัติ"}</>;
+                  })()}
+                </div>
               </div>
-              <p className="tk-progress-cap">{stats.by.accepted} of {stats.total} accepted</p>
-            </div>
-          </section>
-
-          {stats.overdue > 0 && (
-            <div className="tk-alert" onClick={() => setFilter("overdue")}>
-              ⚠ มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง (overdue) — คลิกเพื่อดู
-            </div>
-          )}
-
-          {/* Dashboard chips / filter */}
-          <section className="tk-chips">
-            <Chip active={filter === "all"} onClick={() => setFilter("all")} label="All" n={stats.total} tone="neutral" />
-            {STATUS_ORDER.map((s) => (
-              <Chip key={s} active={filter === s} onClick={() => setFilter(filter === s ? "all" : s)}
-                label={STATUS[s].label} n={stats.by[s]} tone={STATUS[s].tone} glyph={STATUS[s].glyph} />
-            ))}
-            <Chip active={filter === "overdue"} onClick={() => setFilter(filter === "overdue" ? "all" : "overdue")}
-              label="Overdue" n={stats.overdue} tone="rust" glyph="⚠" />
-          </section>
-
-          {/* Toolbar */}
-          <section className="tk-toolbar">
-            <button className="tk-btn primary" onClick={() => setModal("generate")}><Tick size={13} /> Generate request list</button>
-            <button className="tk-btn" onClick={() => importRef.current?.click()}>⤓ นำเข้าจาก Excel</button>
-            <button className="tk-btn" onClick={() => setModal("add")}>+ Add item</button>
-            <button className="tk-btn ghost" onClick={exportCSV}>↓ Export CSV</button>
-            <button className="tk-btn ghost" onClick={() => setModal("zip")}>⤓ โหลดไฟล์ (.zip)</button>
-            <button className="tk-btn ghost" onClick={() => {
-              const link = `${location.origin}/client.html?e=${eng.id}`;
-              navigator.clipboard?.writeText(link).catch(() => {});
-              alert("คัดลอกลิงก์สำหรับลูกค้าแล้ว (ส่งรหัส 16 หลักแยกช่องทาง):\n\n" + link);
-            }}>🔗 ลิงก์ลูกค้า</button>
-            <button className="tk-btn ghost" onClick={notifyClient}>📧 แจ้งลูกค้า</button>
-            {eng.myRole === "owner" && (
-              <button className="tk-btn ghost" onClick={() => setModal("share")}>👥 แชร์</button>
-            )}
-            {(eng.myRole === "owner" || eng.myCanDelete) && (
-              <button className="tk-btn ghost" onClick={() => setModal("archived")}>🗄 Archived</button>
-            )}
-            <button className="tk-btn ghost" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
-            {busy && <span className="tk-hint">กำลังบันทึก…</span>}
-            <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
-              onChange={(e) => { const f = e.target.files[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
-          </section>
-
-          {/* Grouped list */}
-          {grouped.length === 0 ? (
-            <p className="tk-none">No items match this filter.</p>
-          ) : grouped.map(([cat, items]) => (
-            <section key={cat} className="tk-group">
-              <div className="tk-group-head">
-                <span className="tk-cat">{cat}</span>
-                <span className="tk-rule" />
-                <span className="tk-count">{items.filter((i) => i.status === "accepted").length}/{items.length}</span>
+              <div className="nv-eh-right">
+                <div className="nv-eh-pct"><div><b>{stats.pct}</b><i>%</i></div><span>{stats.by.accepted} of {stats.total} accepted</span></div>
+                <div className="nv-dots" aria-hidden="true">
+                  {eng.items.map((it) => (
+                    <span key={it.id} className={it.status === "accepted" ? "done" : isOverdue(it) ? "od" : it.status === "outstanding" ? "" : "wip"} />
+                  ))}
+                </div>
               </div>
-              <ul className="tk-rows">
-                {items.map((it) => (
-                  <li key={it.id} className={`tk-row ${openItem === it.id ? "open" : ""}`} onClick={() => setOpenItem(it.id)}>
-                    <span className="tk-ref">{it.ref}</span>
-                    <div className="tk-desc">
-                      <span className="tk-desc-main">{it.description}{it.required && <i className="tk-req" title="Required">•</i>}</span>
-                      <span className="tk-desc-sub">
-                        {it.files.length > 0 && <span className="tk-files-mini">{it.files.length} file{it.files.length > 1 ? "s" : ""}</span>}
-                        {it.firmNote && <span className="tk-note-flag" title={it.firmNote}>📝 โน้ต</span>}
-                        <span className={`tk-due ${isOverdue(it) ? "od" : ""}`}>Due {fmtDate(it.dueDate)}</span>
-                      </span>
+            </div>
+
+            {/* two-column: filter panel + document management */}
+            <div className="nv-work">
+              {/* LEFT: search, alert, status filters, category groups */}
+              <aside className="nv-aside">
+                <div className="nv-isearch"><span>⌕</span><input value={itemQ} onChange={(e) => setItemQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
+                {stats.overdue > 0 && (
+                  <div className="nv-alert" onClick={() => { setFilter("overdue"); setCatFilter(null); }}>
+                    <span className="ic">⚠</span>
+                    <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{(() => { const f = eng.items.find(isOverdue); return f ? ` — ${f.description}` : ""; })()} · คลิกเพื่อดู</span>
+                  </div>
+                )}
+                <div className="nv-fcard">
+                  <div className="nv-fcard-t">สถานะ</div>
+                  <button className={`nv-frow ${filter === "all" ? "on" : ""}`} onClick={() => setFilter("all")}>
+                    <span className="lb">All</span><span className="ct">{stats.total}</span>
+                  </button>
+                  {STATUS_ORDER.map((s) => (
+                    <button key={s} className={`nv-frow ${filter === s ? "on" : ""}`} onClick={() => setFilter(filter === s ? "all" : s)}>
+                      <span className="lb"><span className="dot" style={{ background: STATUS_DOT[s] }} />{STATUS[s].label}</span>
+                      <span className="ct">{stats.by[s]}</span>
+                    </button>
+                  ))}
+                  <button className={`nv-frow ${filter === "overdue" ? "on" : ""}`} onClick={() => setFilter(filter === "overdue" ? "all" : "overdue")}>
+                    <span className="lb" style={filter === "overdue" ? undefined : { color: "#EF4444" }}><span className="dot" style={{ background: "#EF4444" }} />Overdue</span>
+                    <span className="ct" style={{ background: "rgba(239,68,68,.12)", color: "#EF4444" }}>{stats.overdue}</span>
+                  </button>
+                </div>
+                {detailCats.length > 0 && (
+                  <div className="nv-fcard">
+                    <div className="nv-fcard-t">หมวดเอกสาร</div>
+                    <button className={`nv-grow ${!catFilter ? "on" : ""}`} onClick={() => setCatFilter(null)}>
+                      <span className="gl">ทั้งหมด</span><span className="gr"><span className="gc">{stats.total}</span></span>
+                    </button>
+                    {detailCats.map((c) => (
+                      <button key={c.cat} className={`nv-grow ${catFilter === c.cat ? "on" : ""}`} onClick={() => setCatFilter(catFilter === c.cat ? null : c.cat)}>
+                        <span className="gl">{c.cat}</span>
+                        <span className="gr">{c.overdue > 0 && <span className="rd" />}<span className="gc">{c.count}</span></span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </aside>
+
+              {/* RIGHT: toolbar + grouped document list */}
+              <div>
+                <div className="nv-tools">
+                  <NvMenu label="+ เพิ่มรายการ" variant="mint">
+                    <button className="nv-mitem" onClick={() => setModal("generate")}>✓ สร้างรายการคำขอ</button>
+                    <button className="nv-mitem" onClick={() => setModal("add")}>＋ เพิ่มรายการเดี่ยว</button>
+                    <button className="nv-mitem" onClick={() => importRef.current?.click()}>↓ นำเข้าจาก Excel</button>
+                  </NvMenu>
+                  <NvMenu label="👥 แชร์กับลูกค้า" variant="light">
+                    <button className="nv-mitem" onClick={() => {
+                      const link = `${location.origin}/client.html?e=${eng.id}`;
+                      navigator.clipboard?.writeText(link).catch(() => {});
+                      alert("คัดลอกลิงก์สำหรับลูกค้าแล้ว (ส่งรหัส 16 หลักแยกช่องทาง):\n\n" + link);
+                    }}>🔗 คัดลอกลิงก์ลูกค้า</button>
+                    <button className="nv-mitem" onClick={notifyClient}>📧 แจ้งลูกค้า</button>
+                    {eng.myRole === "owner" && <button className="nv-mitem" onClick={() => setModal("share")}>＋ เชิญสมาชิก / แชร์</button>}
+                  </NvMenu>
+                  <button className="nv-btn" onClick={() => setModal("zip")}>↓ โหลดไฟล์ (.zip)</button>
+                  {busy && <span className="nv-search-note">กำลังบันทึก…</span>}
+                  <div style={{ marginLeft: "auto" }}>
+                    <NvMenu label="เพิ่มเติม" variant="dark" align="right">
+                      <button className="nv-mitem" onClick={exportCSV}>↓ Export CSV</button>
+                      {(eng.myRole === "owner" || eng.myCanDelete) && <button className="nv-mitem" onClick={() => setModal("archived")}>🗄 Archived</button>}
+                      <div className="nv-msep" />
+                      <button className="nv-mitem" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
+                    </NvMenu>
+                  </div>
+                  <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
+                    onChange={(e) => { const f = e.target.files[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
+                </div>
+
+                {viewGroups.length === 0 ? (
+                  <div className="nv-list"><div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ไม่พบรายการที่ตรงกับตัวกรอง</div></div>
+                ) : viewGroups.map(([cat, items]) => (
+                  <div key={cat}>
+                    <div className="nv-ghead"><span className="gt">{cat}</span><span className="gline" /><span className="gn">{items.filter((i) => i.status === "accepted").length}/{items.length}</span></div>
+                    <div className="nv-list">
+                      {items.map((it, idx) => {
+                        const od = isOverdue(it);
+                        const rowCls = it.status === "accepted" ? "acc" : od ? "od" : "";
+                        const stTone = od ? "red" : STATUS_ST[it.status];
+                        const stLabel = od ? "⚠ Overdue" : `${STATUS[it.status].glyph} ${STATUS[it.status].label}`;
+                        return (
+                          <button key={it.id} className={`nv-doc ${rowCls}`} onClick={() => setOpenItem(it.id)}>
+                            <span className="nv-doc-no">{String(idx + 1).padStart(2, "0")}</span>
+                            <div className="nv-doc-main">
+                              <div className="nv-doc-name">{it.description}{it.required && <span className="req" title="Required">•</span>}</div>
+                              <div className="nv-doc-sub">
+                                {it.files.length > 0 && <span className="f">{it.files.length} file{it.files.length > 1 ? "s" : ""}</span>}
+                                {it.firmNote && <span className="note" title={it.firmNote}>โน้ต</span>}
+                                <span className={`due ${od ? "od" : ""}`}>Due {fmtDate(it.dueDate)}</span>
+                              </div>
+                            </div>
+                            <span className={`nv-st ${stTone}`}>{stLabel}</span>
+                            <span className="nv-doc-chev">›</span>
+                          </button>
+                        );
+                      })}
                     </div>
-                    <Pill status={it.status} />
-                    <span className="tk-chev">›</span>
-                  </li>
+                  </div>
                 ))}
-              </ul>
-            </section>
-          ))}
-          <footer className="tk-foot">Firm workspace · {eng.items.length} items · backed by Supabase (RLS-scoped)</footer>
-        </main>
+                <p className="nv-foot">Firm workspace · {eng.items.length} items · backed by Supabase (RLS-scoped)</p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Item drawer */}
@@ -1057,6 +1103,27 @@ const notifLabel = (a) => (/remove/i.test(a) ? "ลบไฟล์ที่อ�
 const notifIcon = (a) => (/remove/i.test(a) ? "🗑" : "📤");
 
 const STORAGE_LIMIT = 10 * 1073741824; // 10 GB — Cloudflare R2 free tier (beyond it: ~$0.015/GB/mo, egress free).
+
+// Navy/mint status accents for the engagement-detail (3e) filter list + chips.
+const STATUS_DOT = { outstanding: "#64748B", submitted: "#3B82F6", review: "#F59E0B", accepted: "#12B39A", returned: "#F59E0B", reopened: "#64748B" };
+const STATUS_ST  = { outstanding: "slate", submitted: "info", review: "amber", accepted: "mint", returned: "amber", reopened: "slate" };
+
+// A toolbar button that opens a dropdown menu; closes on item click or backdrop.
+function NvMenu({ label, variant = "dark", align = "left", children }) {
+  const [open, setOpen] = useState(false);
+  const cls = variant === "mint" ? "nv-cta" : variant === "light" ? "nv-btn" : "nv-btn dark";
+  return (
+    <div className="nv-mwrap">
+      <button className={cls} onClick={() => setOpen((o) => !o)}>{label} <span style={{ fontSize: 10, opacity: 0.85 }}>▾</span></button>
+      {open && (
+        <>
+          <div className="nv-backdrop" onClick={() => setOpen(false)} />
+          <div className={`nv-menu ${align === "right" ? "right" : ""}`} onClick={() => setOpen(false)}>{children}</div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function KpiCard({ tone, icon, label, num, sub, numTone, subTone }) {
   return (
