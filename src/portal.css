@@ -761,3 +761,7 @@
 .nv-fb-sel:focus{border-color:#12B39A;box-shadow:0 0 0 3px rgba(18,179,154,.12)}
 .nv-fb-clear{font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;background:none;border:0;cursor:pointer;padding:6px 8px}
 .nv-fb-clear:hover{color:#EF4444}
+/* status + category dropdowns inside the left panel */
+.nv-asf{display:flex;flex-direction:column;gap:8px;background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:12px;box-shadow:0 16px 40px rgba(8,26,52,.08)}
+.nv-asf-l{font:700 11px 'Inter','IBM Plex Sans Thai',sans-serif;letter-spacing:1px;text-transform:uppercase;color:#64748B;padding-left:2px}
+.nv-asf-sel{width:100%}
