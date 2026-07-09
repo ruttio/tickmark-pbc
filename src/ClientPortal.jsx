@@ -388,42 +388,24 @@ function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
                 <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{firstOverdue && ` — ${firstOverdue.description}`} · คลิกเพื่อดู</span>
               </div>
             )}
-            <div className="nv-fcard">
-              <div className="nv-fcard-t">สถานะ</div>
-              <button className={`nv-frow ${filter === "all" ? "on" : ""}`} onClick={() => setFilter("all")}>
-                <span className="lb">ทั้งหมด</span><span className="ct">{items.length}</span>
-              </button>
-              {STATUS_ORDER.map((s) => (
-                <button key={s} className={`nv-frow ${filter === s ? "on" : ""}`} onClick={() => setFilter(filter === s ? "all" : s)}>
-                  <span className="lb"><span className="dot" style={{ background: DOT[s] }} />{TH[s]}</span>
-                  <span className="ct">{stats.by[s]}</span>
-                </button>
-              ))}
-              <button className={`nv-frow ${filter === "overdue" ? "on" : ""}`} onClick={() => setFilter(filter === "overdue" ? "all" : "overdue")}>
-                <span className="lb" style={filter === "overdue" ? undefined : { color: "#EF4444" }}><span className="dot" style={{ background: "#EF4444" }} />เกินกำหนด</span>
-                <span className="ct" style={{ background: "rgba(239,68,68,.12)", color: "#EF4444" }}>{stats.overdue}</span>
-              </button>
+            <div className="nv-asf">
+              <label className="nv-asf-l">สถานะ</label>
+              <select className="nv-fb-sel nv-asf-sel" value={filter} onChange={(e) => setFilter(e.target.value)}>
+                <option value="all">ทุกสถานะ · {items.length}</option>
+                {stats.action > 0 && <option value="action">⚠ ต้องดำเนินการ · {stats.action}</option>}
+                {STATUS_ORDER.map((s) => <option key={s} value={s}>{TH[s]} · {stats.by[s]}</option>)}
+                <option value="overdue">เกินกำหนด · {stats.overdue}</option>
+              </select>
             </div>
-            <div className="nv-fcard">
-              <div className="nv-fcard-t">หมวดเอกสาร</div>
-              {stats.action > 0 && (
-                <button className="nv-cataction" onClick={() => { setFilter("action"); setCatFilter(null); }}>
-                  <span className="l">⚠ ต้องดำเนินการ</span><span className="n">{stats.action}</span>
-                </button>
-              )}
-              <button className={`nv-grow ${!catFilter ? "on" : ""}`} onClick={() => setCatFilter(null)}>
-                <span className="gl">ทั้งหมด</span><span className="gr"><span className="gc">{items.length}</span></span>
-              </button>
-              {cats.map((c) => (
-                <button key={c.cat} className={`nv-grow ${catFilter === c.cat ? "on" : ""}`} onClick={() => setCatFilter(catFilter === c.cat ? null : c.cat)}>
-                  <span className="gl">{c.cat}</span>
-                  <span className="gr">
-                    {c.overdue > 0 ? <span className="rd" /> : c.action > 0 ? <span className="rd" style={{ background: "#F59E0B" }} /> : null}
-                    <span className="gc">{c.count}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
+            {cats.length > 0 && (
+              <div className="nv-asf">
+                <label className="nv-asf-l">หมวดเอกสาร</label>
+                <select className="nv-fb-sel nv-asf-sel" value={catFilter || ""} onChange={(e) => setCatFilter(e.target.value || null)}>
+                  <option value="">ทุกหมวด · {items.length}</option>
+                  {cats.map((c) => <option key={c.cat} value={c.cat}>{c.cat} · {c.count}</option>)}
+                </select>
+              </div>
+            )}
           </aside>
 
           {/* RIGHT: document request list */}
