@@ -409,6 +409,7 @@ export default function App() {
   const [view, setView] = useState("dashboard");      // 'dashboard' | 'engagement'
   const [dash, setDash] = useState(null);             // engagements + progress for the dashboard
   const [notifs, setNotifs] = useState([]);           // recent client activity (notification center)
+  const [followups, setFollowups] = useState([]);     // open items to follow up (overdue / due-soon / to-review)
   const [storage, setStorage] = useState(null);       // total bytes stored across the firm
 
   /* ---- auth session ---- */
@@ -460,12 +461,13 @@ export default function App() {
   const loadDashboard = async () => {
     setErr("");
     try {
-      const [d, n, s] = await Promise.all([
+      const [d, n, s, f] = await Promise.all([
         firmApi.listEngagementsWithProgress(),
         firmApi.listNotifications().catch(() => []),
         firmApi.getStorageUsage().catch(() => null),
+        firmApi.listFollowUps().catch(() => []),
       ]);
-      setDash(d); setNotifs(n); setStorage(s);
+      setDash(d); setNotifs(n); setStorage(s); setFollowups(f);
     } catch (e) { setErr(e.message || "โหลดภาพรวมไม่สำเร็จ"); }
   };
   useEffect(() => {
@@ -704,7 +706,7 @@ export default function App() {
       )}
 
       {view === "dashboard" ? (
-        <FirmDashboard dash={dash} notifs={notifs} storage={storage} session={session} onOpen={openEngagement}
+        <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} session={session} onOpen={openEngagement}
           onNew={() => setModal("generate")} onMarkAllRead={markAllRead} onSignOut={signOut} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
@@ -1146,7 +1148,7 @@ function KpiCard({ tone, icon, label, num, sub, numTone, subTone }) {
   );
 }
 
-function FirmDashboard({ dash, notifs, storage, session, onOpen, onNew, onMarkAllRead, onSignOut }) {
+function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNew, onMarkAllRead, onSignOut }) {
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
@@ -1174,6 +1176,28 @@ function FirmDashboard({ dash, notifs, storage, session, onOpen, onNew, onMarkAl
     return m;
   }, [notifs]);
   const totalUnread = useMemo(() => (notifs || []).filter((n) => n.unread).length, [notifs]);
+
+  // Follow-up panel: open items grouped into overdue / due-soon / to-review.
+  const follow = useMemo(() => {
+    const clientOf = (id) => (dash || []).find((e) => e.id === id)?.client || "—";
+    const now = Date.now(); const DAY = 86400000; const SOON = 7 * DAY;
+    const overdue = [], soon = [], reviewBy = new Map();
+    (followups || []).forEach((it) => {
+      if (it.status === "submitted") {
+        const g = reviewBy.get(it.engagementId) || { engagementId: it.engagementId, client: clientOf(it.engagementId), count: 0 };
+        g.count++; reviewBy.set(it.engagementId, g);
+      }
+      if (it.dueDate == null) return;
+      const row = { ...it, client: clientOf(it.engagementId) };
+      if (it.dueDate < now) overdue.push({ ...row, days: Math.max(1, Math.floor((now - it.dueDate) / DAY)) });
+      else if (it.dueDate - now <= SOON) soon.push({ ...row, days: Math.max(1, Math.ceil((it.dueDate - now) / DAY)) });
+    });
+    overdue.sort((a, b) => b.days - a.days);
+    soon.sort((a, b) => a.days - b.days);
+    const review = [...reviewBy.values()].sort((a, b) => b.count - a.count);
+    const reviewTotal = review.reduce((n, g) => n + g.count, 0);
+    return { overdue, soon, review, reviewTotal, empty: !overdue.length && !soon.length && !review.length };
+  }, [followups, dash]);
 
   const groups = useMemo(() => {
     const byEng = new Map();
@@ -1294,21 +1318,53 @@ function FirmDashboard({ dash, notifs, storage, session, onOpen, onNew, onMarkAl
                 </div>
               )}
               <div className="nv-panel">
-                <div className="nv-panel-head"><span className="t">กิจกรรมล่าสุด</span>{totalUnread > 0 && <span className="more" onClick={onMarkAllRead}>อ่านทั้งหมด</span>}</div>
-                {!notifs || notifs.length === 0 ? (
-                  <p className="tk-muted" style={{ margin: 0, color: "#64748B" }}>ยังไม่มีกิจกรรม</p>
+                <div className="nv-panel-head"><span className="ic">✓</span><span className="t">สิ่งที่ต้องติดตาม</span></div>
+                {follow.empty ? (
+                  <p className="nv-fu-empty">ไม่มีสิ่งที่ต้องติดตามตอนนี้ 🎉</p>
                 ) : (
-                  <ul className="nv-act-list">
-                    {notifs.slice(0, 8).map((n) => (
-                      <li key={n.id} onClick={() => onOpen(n.engagementId)}>
-                        <span className={`nv-act-ic ${/remove/i.test(n.action) ? "slate" : "info"}`}>{/remove/i.test(n.action) ? "🗑" : "↑"}</span>
-                        <div className="nv-act-body">
-                          <div className="tx"><b>{n.client}</b> {notifLabel(n.action)}{n.itemDescription && <span style={{ color: "#64748B" }}> · {n.itemDescription}</span>}</div>
-                          <div className="ts">{timeAgo(n.at)}</div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    {follow.overdue.length > 0 && (
+                      <div className="nv-fu-sec">
+                        <span className="nv-fu-h red">เกินกำหนด ({follow.overdue.length})</span>
+                        {follow.overdue.slice(0, 4).map((it) => (
+                          <div key={it.id} className="nv-fu-row" onClick={() => onOpen(it.engagementId)}>
+                            <span className="nv-fu-ic red">▤</span>
+                            <div className="nv-fu-main"><b>{it.client}</b><span>{it.description}</span></div>
+                            <span className="nv-fu-when red">เกิน {it.days} วัน</span>
+                            <span className="nv-fu-chev">›</span>
+                          </div>
+                        ))}
+                        {follow.overdue.length > 4 && <p className="nv-fu-more">+ อีก {follow.overdue.length - 4} รายการ</p>}
+                      </div>
+                    )}
+                    {follow.soon.length > 0 && (
+                      <div className="nv-fu-sec">
+                        <span className="nv-fu-h amber">ใกล้ครบกำหนด ({follow.soon.length})</span>
+                        {follow.soon.slice(0, 4).map((it) => (
+                          <div key={it.id} className="nv-fu-row" onClick={() => onOpen(it.engagementId)}>
+                            <span className="nv-fu-ic amber">◷</span>
+                            <div className="nv-fu-main"><b>{it.client}</b><span>{it.description}</span></div>
+                            <span className="nv-fu-when amber">เหลือ {it.days} วัน</span>
+                            <span className="nv-fu-chev">›</span>
+                          </div>
+                        ))}
+                        {follow.soon.length > 4 && <p className="nv-fu-more">+ อีก {follow.soon.length - 4} รายการ</p>}
+                      </div>
+                    )}
+                    {follow.review.length > 0 && (
+                      <div className="nv-fu-sec">
+                        <span className="nv-fu-h info">รอตรวจ ({follow.reviewTotal})</span>
+                        {follow.review.slice(0, 4).map((g) => (
+                          <div key={g.engagementId} className="nv-fu-row" onClick={() => onOpen(g.engagementId)}>
+                            <span className="nv-fu-ic info">▤</span>
+                            <div className="nv-fu-main"><b>{g.client}</b><span>รอตรวจ {g.count} รายการ</span></div>
+                            <span className="nv-fu-chev">›</span>
+                          </div>
+                        ))}
+                        {follow.review.length > 4 && <p className="nv-fu-more">+ อีก {follow.review.length - 4} พอร์ทัล</p>}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
