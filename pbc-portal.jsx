@@ -913,39 +913,34 @@ export default function App() {
 }
 
 /* ---------- Auth surfaces ---------------------------------------------- */
-function AuthBrandPanel({ role = "firm" }) {
-  const isFirm = role === "firm";
+function AuthBrandPanel() {
   return (
-    <aside className="tk-auth-brand">
-      <div className="tk-auth-brand-mark">
-        <Tick size={22} />
-        <span>Tickmark</span>
+    <div className="nv-authL">
+      <span className="c1" /><span className="c2" />
+      <div className="inner">
+        <div className="logo"><span className="mk"><Tick size={24} /></span>Tickmark</div>
+        <span className="pill">PBC Portal · Firm</span>
+        <h2>พื้นที่ทำงานของสำนักงาน</h2>
+        <p className="lead">จัดการพอร์ทัลลูกค้า คำขอเอกสาร และติดตามสถานะการส่งของงานตรวจสอบบัญชี</p>
+        <ul>
+          <li><i>▦</i>พอร์ทัลลูกค้าทั้งหมด</li>
+          <li><i>↑</i>คำขอเอกสารและสถานะการส่ง</li>
+          <li><i>♪</i>การแจ้งเตือนและกิจกรรมล่าสุด</li>
+        </ul>
+        <div className="foot">TICKMARK PBC · FIRM WORKSPACE</div>
       </div>
-      <p className="tk-auth-kicker">PBC Portal {isFirm ? "· Firm" : ""}</p>
-      <h1>{isFirm ? "จัดการพอร์ทัลลูกค้าและคำขอเอกสารตรวจสอบบัญชี" : "ส่งเอกสารตรวจสอบบัญชีในที่เดียว ปลอดภัย"}</h1>
-      <p className="tk-auth-copy">
-        {isFirm
-          ? "พื้นที่ทำงานสำหรับทีม audit เพื่อติดตามคำขอเอกสาร ลูกค้า และสถานะตรวจรับในระบบเดียว"
-          : "พอร์ทัลเฉพาะสำหรับรับส่งเอกสาร PBC พร้อมสถานะชัดเจนและการเข้าถึงที่ควบคุมได้"}
-      </p>
-      <ul className="tk-auth-points">
-        <li><b>{isFirm ? "ควบคุมพอร์ทัลลูกค้า" : "ส่งเอกสารอย่างปลอดภัย"}</b><span>{isFirm ? "เห็นความคืบหน้าและสถานะของแต่ละพอร์ทัล" : "ไฟล์ผูกกับลิงก์และรหัสเฉพาะของคุณ"}</span></li>
-        <li><b>{isFirm ? "ติดตามคำขอแบบเรียลไทม์" : "ติดตามคำขอแบบเรียลไทม์"}</b><span>{isFirm ? "ติดตามอัปโหลด ตรวจรับ และส่งกลับโดยไม่หลุด workflow" : "เห็นทันทีว่าอะไรส่งแล้วหรือยังรออัปโหลด"}</span></li>
-        <li><b>สถานะชัดเจนในหน้าเดียว</b><span>{isFirm ? "ทุกงานใช้ status และ token เดียวกันทั้งระบบ" : "ตรวจรับ ส่งกลับ และความคืบหน้าอ่านได้ง่าย"}</span></li>
-      </ul>
-      <p className="tk-auth-brand-foot">TICKMARK PBC · {isFirm ? "FIRM WORKSPACE" : "SECURE LINK"}</p>
-    </aside>
+    </div>
   );
 }
 
-function AuthFrame({ children, role = "firm" }) {
+function AuthFrame({ children }) {
   return (
-    <main className={`tk-auth-page tk-auth-${role}`}>
-      <AuthBrandPanel role={role} />
-      <section className="tk-auth-form-panel">
-        {children}
-      </section>
-    </main>
+    <div className="nv-authpage">
+      <div className="nv-authcard">
+        <AuthBrandPanel />
+        <div className="nv-authR"><div className="form">{children}</div></div>
+      </div>
+    </div>
   );
 }
 
@@ -959,6 +954,8 @@ function AuthScreen() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [remember, setRemember] = useState(true);
 
   const ready = mode === "reset"
     ? !!email.trim()
@@ -985,54 +982,65 @@ function AuthScreen() {
   };
 
   return (
-    <div className="tk-root tk-auth-root">
-      <AuthFrame role="firm">
-        <div className="tk-lock">
-          <div className="tk-lock-card tk-auth-card tk-auth-firm-card" style={{ textAlign: "left" }}>
-            <div className="tk-lock-icon" style={{ textAlign: "center" }}>🏢</div>
-            <h2 style={{ textAlign: "center" }}>{mode === "signin" ? "เข้าสู่ระบบสำนักงาน" : mode === "signup" ? "สมัครสำนักงานใหม่" : "รีเซ็ตรหัสผ่าน"}</h2>
-            <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>
-              {mode === "signin" ? "สำหรับพนักงานสำนักงาน — เห็นเฉพาะงานของสำนักงานคุณ"
-                : mode === "signup" ? "สร้างบัญชีสำนักงานของคุณเพื่อเริ่มสร้างพอร์ทัล"
-                : "ใส่อีเมลที่ใช้สมัคร เราจะส่งลิงก์ตั้งรหัสผ่านใหม่ให้"}
-            </p>
+    <div className="tk-root nv">
+      <AuthFrame>
+        <div className="kick">{mode === "signin" ? "เข้าสู่ระบบสำนักงาน" : mode === "signup" ? "สมัครสำนักงานใหม่" : "รีเซ็ตรหัสผ่าน"}</div>
+        <h1>{mode === "signin" ? "เข้าสู่ระบบ" : mode === "signup" ? "สมัครสำนักงาน" : "ลืมรหัสผ่าน"}</h1>
+        <p className="sub">
+          {mode === "signin" ? "สำหรับพนักงานสำนักงาน — เห็นเฉพาะงานของสำนักงานคุณ"
+            : mode === "signup" ? "สร้างบัญชีสำนักงานของคุณเพื่อเริ่มสร้างพอร์ทัล"
+              : "ใส่อีเมลที่ใช้สมัคร เราจะส่งลิงก์ตั้งรหัสผ่านใหม่ให้"}
+        </p>
 
-            {mode === "signup" && (
-              <>
-                <label className="tk-field"><span>ชื่อสำนักงาน (Firm)</span>
-                  <input value={firmName} onChange={(e) => setFirmName(e.target.value)} placeholder="เช่น Tickmark & Co." /></label>
-                <label className="tk-field"><span>ชื่อผู้ใช้ (ไม่บังคับ)</span>
-                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="เช่น Jane CPA" /></label>
-              </>
-            )}
-            <label className="tk-field"><span>อีเมล</span>
-              <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@firm.com" /></label>
-            {mode !== "reset" && (
-              <label className="tk-field"><span>รหัสผ่าน (≥ 6 ตัว)</span>
-                <input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                  value={password} onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" /></label>
-            )}
+        {mode === "signup" && (
+          <>
+            <label className="nv-field"><span>ชื่อสำนักงาน (Firm)</span>
+              <div className="nv-input"><input value={firmName} onChange={(e) => setFirmName(e.target.value)} placeholder="เช่น Tickmark & Co." /></div></label>
+            <label className="nv-field"><span>ชื่อผู้ใช้ (ไม่บังคับ)</span>
+              <div className="nv-input"><input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="เช่น Jane CPA" /></div></label>
+          </>
+        )}
+        <label className="nv-field"><span>อีเมล</span>
+          <div className="nv-input"><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@firm.com" /></div></label>
+        {mode !== "reset" && (
+          <label className="nv-field"><span>รหัสผ่าน (≥ 6 ตัว)</span>
+            <div className="nv-input">
+              <input type={showPw ? "text" : "password"} autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                value={password} onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••••" />
+              <button type="button" className="eye" title={showPw ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"} onClick={() => setShowPw((s) => !s)}>{showPw ? "◎" : "◉"}</button>
+            </div></label>
+        )}
 
-            {err && <p className="tk-lock-err">{err}</p>}
-            {info && <p className="tk-lock-demo">{info}</p>}
-
-            <button className="tk-btn primary full" disabled={!ready || busy} onClick={submit}>
-              {busy ? "กำลังดำเนินการ…" : mode === "signin" ? "เข้าสู่ระบบ" : mode === "signup" ? "สมัครและเริ่มใช้งาน" : "ส่งลิงก์รีเซ็ตรหัสผ่าน"}
-            </button>
-            {mode === "signin" && (
-              <button type="button" className="tk-link" style={{ display: "block", margin: "12px auto 0" }}
-                onClick={() => { setMode("reset"); setErr(""); setInfo(""); }}>ลืมรหัสผ่าน?</button>
-            )}
-            <button type="button" className="tk-link" style={{ display: "block", margin: "8px auto 0" }}
-              onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setErr(""); setInfo(""); }}>
-              {mode === "signin" ? "ยังไม่มีบัญชี? สมัครสำนักงานใหม่" : mode === "signup" ? "มีบัญชีแล้ว? เข้าสู่ระบบ" : "← กลับเข้าสู่ระบบ"}
-            </button>
-            {!SUPABASE_CONFIGURED && (
-              <p className="tk-lock-demo" style={{ marginTop: 12 }}>⚠ ยังไม่ได้ตั้งค่า backend (.env.local)</p>
-            )}
+        {mode === "signin" && (
+          <div className="nv-authrow">
+            <span className="nv-check" onClick={() => setRemember((r) => !r)}>
+              <span className={`bx ${remember ? "" : "off"}`}>✓</span>จดจำการเข้าสู่ระบบ
+            </span>
+            <button type="button" className="nv-authlink" onClick={() => { setMode("reset"); setErr(""); setInfo(""); }}>ลืมรหัสผ่าน?</button>
           </div>
+        )}
+
+        {err && <p className="nv-err">{err}</p>}
+        {info && <p className="nv-info">{info}</p>}
+
+        <button className="nv-authcta" disabled={!ready || busy} onClick={submit}>
+          {busy ? "กำลังดำเนินการ…" : mode === "signin" ? "เข้าสู่ระบบ" : mode === "signup" ? "สมัครและเริ่มใช้งาน" : "ส่งลิงก์รีเซ็ตรหัสผ่าน"}
+        </button>
+
+        <div className="nv-authfoot">
+          {mode === "reset" ? (
+            <button type="button" className="nv-authlink" onClick={() => { setMode("signin"); setErr(""); setInfo(""); }}>← กลับเข้าสู่ระบบ</button>
+          ) : (
+            <>
+              {mode === "signin" ? "ยังไม่มีบัญชี? " : "มีบัญชีแล้ว? "}
+              <button type="button" className="nv-authlink" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setErr(""); setInfo(""); }}>
+                {mode === "signin" ? "สมัครสำนักงานใหม่" : "เข้าสู่ระบบ"}
+              </button>
+            </>
+          )}
         </div>
+        {!SUPABASE_CONFIGURED && <p className="nv-authwarn">⚠ ยังไม่ได้ตั้งค่า backend (.env.local)</p>}
       </AuthFrame>
     </div>
   );

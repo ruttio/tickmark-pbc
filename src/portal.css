@@ -687,3 +687,43 @@
 .nv-crow-st{align-self:flex-start;flex:none}
 .nv-cfoot{text-align:center;font:400 10.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin-top:26px;letter-spacing:.3px}
 @media(max-width:560px){ .nv-crow{flex-wrap:wrap} .nv-crow-st{order:3} }
+
+/* ---- firm auth split screen (3b) ---- */
+.nv-authpage{min-height:100vh;background:#F6F8FB;display:flex;align-items:center;justify-content:center;padding:24px;font-family:'Inter','IBM Plex Sans Thai',sans-serif}
+.nv-authcard{width:100%;max-width:1040px;display:grid;grid-template-columns:minmax(0,43%) minmax(0,1fr);min-height:600px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 24px 60px rgba(8,26,52,.14)}
+.nv-authL{position:relative;overflow:hidden;padding:44px 44px 36px;background:linear-gradient(145deg,#123563 0%,#081A34 100%);color:#fff;display:flex;flex-direction:column}
+.nv-authL .c1{position:absolute;right:-180px;top:70px;width:360px;height:360px;border-radius:999px;border:1px solid rgba(94,234,208,.10)}
+.nv-authL .c2{position:absolute;left:-150px;bottom:-140px;width:300px;height:300px;border-radius:999px;border:1px solid rgba(94,234,208,.12);background:rgba(94,234,208,.035)}
+.nv-authL .inner{position:relative;z-index:1;display:flex;flex-direction:column;height:100%}
+.nv-authL .logo{display:flex;align-items:center;gap:10px;font:800 26px 'Inter',sans-serif;line-height:1}
+.nv-authL .logo .mk{color:#5EEAD0}
+.nv-authL .pill{align-self:flex-start;margin-top:26px;font:800 11px 'Inter',sans-serif;letter-spacing:.8px;text-transform:uppercase;color:#5EEAD0;padding:7px 18px;border:1px solid rgba(94,234,208,.28);border-radius:7px;background:rgba(94,234,208,.10)}
+.nv-authL h2{font:700 19px/1.4 'Inter','IBM Plex Sans Thai',sans-serif;margin:40px 0 0;max-width:340px;color:rgba(255,255,255,.92)}
+.nv-authL .lead{font:400 13.5px/1.6 'Inter','IBM Plex Sans Thai',sans-serif;margin:10px 0 0;max-width:320px;color:rgba(255,255,255,.66)}
+.nv-authL ul{list-style:none;margin:32px 0 0;padding:0;display:flex;flex-direction:column;gap:14px}
+.nv-authL li{display:flex;align-items:center;gap:12px;font:500 14px 'Inter','IBM Plex Sans Thai',sans-serif;color:rgba(255,255,255,.82)}
+.nv-authL li i{width:28px;height:28px;border-radius:8px;background:rgba(18,179,154,.18);color:#5EEAD0;display:flex;align-items:center;justify-content:center;font-size:13px;flex:none;font-style:normal}
+.nv-authL .foot{margin-top:auto;padding-top:34px;font:400 11px 'Inter',sans-serif;letter-spacing:.5px;color:rgba(255,255,255,.62)}
+.nv-authR{display:flex;align-items:center;justify-content:center;padding:52px 56px;background:#fff}
+.nv-authR .form{width:100%;max-width:400px}
+.nv-authR .kick{font:700 13px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin-bottom:8px;text-align:center}
+.nv-authR h1{font:800 30px/1.12 'Inter','IBM Plex Sans Thai',sans-serif;color:#081A34;margin:0 0 8px;text-align:center}
+.nv-authR .sub{font:400 14px/1.6 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin:0 0 28px;text-align:center}
+.nv-field{display:flex;flex-direction:column;gap:6px;margin-bottom:18px}
+.nv-field>span{font:600 13px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
+.nv-input{min-height:52px;display:flex;align-items:center;gap:10px;border:1px solid #E5E7EB;border-radius:12px;padding:0 15px;background:#fff}
+.nv-input:focus-within{border-color:#12B39A;box-shadow:0 0 0 4px rgba(18,179,154,.12)}
+.nv-input input{flex:1;min-width:0;border:0;outline:none;background:transparent;font:400 15px 'Inter',sans-serif;color:#0F172A}
+.nv-input .eye{color:#64748B;font-size:16px;cursor:pointer;background:none;border:0;flex:none;padding:0}
+.nv-authrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px;font:500 13px 'Inter','IBM Plex Sans Thai',sans-serif}
+.nv-check{display:flex;align-items:center;gap:7px;color:#0F172A;cursor:pointer;user-select:none}
+.nv-check .bx{width:16px;height:16px;border-radius:4px;background:#12B39A;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex:none}
+.nv-check .bx.off{background:#fff;border:1.5px solid #cbd5e1;color:transparent}
+.nv-authlink{color:#123563;font-weight:600;cursor:pointer;background:none;border:0;font-family:inherit;font-size:13px;padding:0}
+.nv-authcta{width:100%;min-height:56px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#12B39A 0%,#5EEAD0 100%);color:#fff;font:800 16px 'Inter','IBM Plex Sans Thai',sans-serif;border:0;border-radius:12px;cursor:pointer;text-shadow:0 1px 1px rgba(8,26,52,.36);box-shadow:0 12px 24px rgba(18,179,154,.26)}
+.nv-authcta:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+.nv-authfoot{text-align:center;margin-top:20px;font:400 13px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
+.nv-err{color:#EF4444;font:600 13px 'Inter','IBM Plex Sans Thai',sans-serif;text-align:center;margin:0 0 14px}
+.nv-info{color:#0f766e;background:rgba(18,179,154,.1);border-radius:10px;padding:10px 12px;font:500 12.5px/1.5 'Inter','IBM Plex Sans Thai',sans-serif;text-align:center;margin:0 0 14px}
+.nv-authwarn{color:#8a5a16;background:rgba(245,158,11,.1);border-radius:10px;padding:10px 12px;font:500 12px/1.5 'Inter','IBM Plex Sans Thai',sans-serif;text-align:center;margin:14px 0 0}
+@media(max-width:820px){ .nv-authcard{grid-template-columns:1fr;max-width:440px} .nv-authL{display:none} .nv-authR{padding:40px 28px} }
