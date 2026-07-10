@@ -41,17 +41,36 @@ async function sha256(s: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Resolve a session token -> engagement_id (or null if missing/expired).
-async function engagementForToken(token: string): Promise<string | null> {
+// Resolve a session token -> { engagement_id?, group_id? } (or null).
+// A single-portal session pins engagement_id; a group session sets group_id.
+async function sessionForToken(
+  token: string,
+): Promise<{ engagement_id: string | null; group_id: string | null } | null> {
   if (!token) return null;
   const token_hash = await sha256(token);
   const { data } = await admin
     .from("portal_sessions")
-    .select("engagement_id, expires_at")
+    .select("engagement_id, group_id, expires_at")
     .eq("token_hash", token_hash)
     .maybeSingle();
   if (!data || new Date(data.expires_at) < new Date()) return null;
-  return data.engagement_id as string;
+  return { engagement_id: data.engagement_id ?? null, group_id: data.group_id ?? null };
+}
+
+// Which engagement does this call target? Single sessions are pinned to one;
+// group sessions accept an explicit engagement_id — but ONLY if that
+// engagement belongs to the session's group (this is the isolation guard).
+async function resolveEngagement(
+  session: { engagement_id: string | null; group_id: string | null },
+  body: any,
+): Promise<string | null> {
+  if (session.engagement_id) return session.engagement_id;
+  if (!session.group_id) return null;
+  const eid = String(body?.engagement_id || "");
+  if (!eid) return null;
+  const { data } = await admin.from("engagements").select("group_id").eq("id", eid).maybeSingle();
+  if (!data || data.group_id !== session.group_id) return null; // not part of this group
+  return eid;
 }
 
 Deno.serve(async (req) => {
@@ -68,6 +87,10 @@ Deno.serve(async (req) => {
       const engagement_id = String(body.engagement_id || "");
       const code = String(body.code || "").replace(/\D/g, "");
       if (!engagement_id || code.length !== 16) return json({ error: "invalid input" }, 400);
+
+      // grouped portals are reached only through their group link
+      const { data: engRow } = await admin.from("engagements").select("group_id").eq("id", engagement_id).maybeSingle();
+      if (engRow?.group_id) return json({ error: "portal is accessed via its group link", grouped: true }, 409);
 
       // throttle check
       const { data: t } = await admin.from("unlock_throttle")
@@ -101,9 +124,67 @@ Deno.serve(async (req) => {
       return json({ token, expires_at });
     }
 
-    // Every other action needs a valid session token.
-    const engagement_id = await engagementForToken(String(body.token || ""));
-    if (!engagement_id) return json({ error: "session expired" }, 401);
+    // ---- group_unlock: verify the group code, hand back a GROUP session token ----
+    if (action === "group_unlock") {
+      const group_id = String(body.group_id || "");
+      const code = String(body.code || "").replace(/\D/g, "");
+      if (!group_id || code.length !== 16) return json({ error: "invalid input" }, 400);
+
+      const { data: t } = await admin.from("group_unlock_throttle")
+        .select("failed, locked_until").eq("group_id", group_id).maybeSingle();
+      if (t?.locked_until && new Date(t.locked_until) > new Date())
+        return json({ error: "too many attempts, try again later" }, 429);
+
+      const { data: ok, error } = await admin.rpc("verify_group_code", { p_group: group_id, p_code: code });
+      if (error) return json({ error: "verify failed" }, 500);
+
+      if (!ok) {
+        const failed = (t?.failed ?? 0) + 1;
+        const lock = failed >= MAX_FAILS;
+        await admin.from("group_unlock_throttle").upsert({
+          group_id,
+          failed: lock ? 0 : failed,
+          locked_until: lock ? new Date(Date.now() + LOCK_MINUTES * 60000).toISOString() : null,
+        });
+        return json({ error: "wrong code" }, 401);
+      }
+
+      await admin.from("group_unlock_throttle").upsert({ group_id, failed: 0, locked_until: null });
+      const token = crypto.randomUUID() + crypto.randomUUID().replace(/-/g, "");
+      const expires_at = new Date(Date.now() + SESSION_HOURS * 3600_000).toISOString();
+      await admin.from("portal_sessions").insert({ token_hash: await sha256(token), group_id, expires_at });
+      return json({ token, expires_at });
+    }
+
+    // Every other action needs a valid session token (single-portal or group).
+    const session = await sessionForToken(String(body.token || ""));
+    if (!session) return json({ error: "session expired" }, 401);
+
+    // ---- group_data: the group's companies + progress (group session only) ----
+    if (action === "group_data") {
+      if (!session.group_id) return json({ error: "not a group session" }, 403);
+      const { data: grp } = await admin.from("client_groups")
+        .select("id, name").eq("id", session.group_id).maybeSingle();
+      const { data: engs } = await admin.from("engagements")
+        .select("id, client, template, period_end, request_items(status, archived_at)")
+        .eq("group_id", session.group_id);
+      const companies = (engs || []).map((e: any) => {
+        const items = (e.request_items || []).filter((i: any) => !i.archived_at);
+        const total = items.length;
+        const accepted = items.filter((i: any) => i.status === "accepted").length;
+        const by: Record<string, number> = {};
+        items.forEach((i: any) => { by[i.status] = (by[i.status] || 0) + 1; });
+        return {
+          id: e.id, client: e.client, template: e.template, period_end: e.period_end,
+          total, accepted, pct: total ? Math.round((accepted / total) * 100) : 0, by,
+        };
+      });
+      return json({ group: grp, companies });
+    }
+
+    // Resolve the target engagement for the remaining (per-portal) actions.
+    const engagement_id = await resolveEngagement(session, body);
+    if (!engagement_id) return json({ error: "forbidden" }, 403);
 
     // ---- data: return this portal's items + files only ----
     if (action === "data") {

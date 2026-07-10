@@ -92,8 +92,16 @@ function Tick({ size = 16 }) {
 
 /* ======================================================================= */
 export default function ClientPortal() {
-  const engagementId = useMemo(() => new URLSearchParams(location.search).get("e") || "", []);
+  const { engagementId, groupId } = useMemo(() => {
+    const p = new URLSearchParams(location.search);
+    return { engagementId: p.get("e") || "", groupId: p.get("g") || "" };
+  }, []);
+  if (groupId && !engagementId) return <GroupPortal groupId={groupId} />;
+  return <SinglePortal engagementId={engagementId} />;
+}
 
+/* ---------- single-portal flow (client.html?e=…) ----------------------- */
+function SinglePortal({ engagementId }) {
   const [phase, setPhase] = useState("init"); // init | locked | loading | ready
   const [token, setToken] = useState(null);
   const [eng, setEng] = useState(null);
@@ -240,6 +248,7 @@ function LockScreen({ onUnlock }) {
       await onUnlock(code);
     } catch (e) {
       if (e.status === 429) setErr("กรอกผิดหลายครั้งเกินไป — โปรดลองใหม่ภายหลัง (~15 นาที)");
+      else if (e.status === 409) setErr("พอร์ทัลนี้อยู่ในกลุ่ม — โปรดเข้าผ่านลิงก์กลุ่มที่สำนักงานส่งให้");
       else if (e.status === 401) setErr("รหัสไม่ถูกต้อง — กรุณาลองใหม่อีกครั้ง");
       else setErr(e.message || "เข้าพอร์ทัลไม่สำเร็จ");
       setCode("");
@@ -353,7 +362,7 @@ function MultiFilter({ label, placeholder, options, selected, onChange }) {
 }
 
 /* ---------- the request list + uploads (3c) ---------------------------- */
-function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
+function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploaded }) {
   const [statusSel, setStatusSel] = useState([]);   // status filters (empty = all; may include "action"/"overdue")
   const [catSel, setCatSel] = useState([]);          // category filters (empty = all)
   const [q, setQ] = useState("");
@@ -467,7 +476,7 @@ function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
                   </div>
                   <div className="nv-list">
                     {rows.map((it, idx) => (
-                      <ClientRow key={it.id} item={it} index={idx + 1} token={token} onUploaded={onUploaded} />
+                      <ClientRow key={it.id} item={it} index={idx + 1} token={token} engagementId={engagementId} onUploaded={onUploaded} />
                     ))}
                   </div>
                 </div>
@@ -481,7 +490,7 @@ function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
   );
 }
 
-function ClientRow({ item, index, token, onUploaded }) {
+function ClientRow({ item, index, token, engagementId, onUploaded }) {
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -495,7 +504,7 @@ function ClientRow({ item, index, token, onUploaded }) {
     setErr("");
     try {
       // Sequential so a failure is attributable to one file.
-      for (const f of files) await clientApi.uploadDocument(token, item.id, f);
+      for (const f of files) await clientApi.uploadDocument(token, item.id, f, engagementId);
       await onUploaded();
     } catch (e) {
       if (e.status === 401) {
@@ -513,7 +522,7 @@ function ClientRow({ item, index, token, onUploaded }) {
     setBusy(true);
     setErr("");
     try {
-      await clientApi.removeFile(token, item.id, fileId);
+      await clientApi.removeFile(token, item.id, fileId, engagementId);
       await onUploaded();
     } catch (e) {
       if (e.status === 401) { await onUploaded(); return; }
@@ -530,7 +539,7 @@ function ClientRow({ item, index, token, onUploaded }) {
   const rowCls = item.status === "accepted" ? "acc" : od ? "od" : "";
 
   const openSample = async (fileId) => {
-    try { window.open(await clientApi.sampleUrl(token, fileId), "_blank"); }
+    try { window.open(await clientApi.sampleUrl(token, fileId, engagementId), "_blank"); }
     catch (e) { setErr(e.message || "เปิดไฟล์ไม่สำเร็จ"); }
   };
 
@@ -611,5 +620,144 @@ function ClientRow({ item, index, token, onUploaded }) {
       </div>
       <span className={`nv-st ${chip.tone} nv-crow-st`}>{chip.label}</span>
     </div>
+  );
+}
+
+/* ======================================================================= */
+/* ---------- group flow (client.html?g=…) — one code, many portals ------ */
+function GroupPortal({ groupId }) {
+  const cacheId = "g_" + groupId; // distinct sessionStorage namespace from single portals
+  const [phase, setPhase] = useState("init"); // init | locked | loading | ready
+  const [token, setToken] = useState(null);
+  const [data, setData] = useState(null);      // { group, companies }
+  const [activeId, setActiveId] = useState(null); // drilled-in engagement id
+  const [loadErr, setLoadErr] = useState("");
+
+  useEffect(() => {
+    const cached = loadToken(cacheId);
+    if (cached) { setToken(cached); void loadGroup(cached); }
+    else setPhase("locked");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId]);
+
+  async function loadGroup(tok) {
+    setPhase("loading"); setLoadErr("");
+    try {
+      const d = await clientApi.groupData(tok);
+      setData(d); setPhase("ready");
+    } catch (e) {
+      if (e.status === 401) { clearToken(cacheId); setToken(null); setPhase("locked"); }
+      else { setLoadErr(e.message || "โหลดข้อมูลไม่สำเร็จ"); setPhase("ready"); }
+    }
+  }
+
+  async function handleUnlock(code) {
+    const { token: tok, expiresAt } = await clientApi.groupUnlock(groupId, code);
+    saveToken(cacheId, tok, expiresAt);
+    setToken(tok);
+    await loadGroup(tok);
+  }
+  function lock() { clearToken(cacheId); setToken(null); setData(null); setActiveId(null); setPhase("locked"); }
+
+  if (phase === "init") return <Shell><div className="tk-boot" style={{ color: "#64748B" }}>Loading…</div></Shell>;
+  if (phase === "locked") return <Shell secure><LockScreen onUnlock={handleUnlock} /></Shell>;
+
+  if (activeId) {
+    return (
+      <Shell onLock={lock}>
+        <GroupCompany token={token} engagementId={activeId}
+          onBack={() => { setActiveId(null); void loadGroup(token); }} />
+      </Shell>
+    );
+  }
+  return (
+    <Shell onLock={lock}>
+      <GroupDashboard data={data} loadErr={loadErr} onOpen={setActiveId} />
+    </Shell>
+  );
+}
+
+function GroupDashboard({ data, loadErr, onOpen }) {
+  const companies = data?.companies || [];
+  return (
+    <div className="nv-page">
+      <div className="nv-phead">
+        <div>
+          <h2>{data?.group?.name || "กลุ่มลูกค้า"}</h2>
+          <div className="sub">เลือกบริษัทเพื่อดูและอัปโหลดเอกสาร · {companies.length} บริษัท</div>
+        </div>
+      </div>
+      {loadErr && <p className="nv-lock-err" style={{ textAlign: "center" }}>{loadErr}</p>}
+      {companies.length === 0 ? (
+        <div className="nv-list"><div style={{ padding: "40px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ยังไม่มีบริษัทในกลุ่มนี้</div></div>
+      ) : (
+        <div className="nv-eng-grid">
+          {companies.map((c) => <GroupCompanyCard key={c.id} c={c} onOpen={() => onOpen(c.id)} />)}
+        </div>
+      )}
+      <p className="nv-cfoot">เอกสารถูกเก็บอย่างปลอดภัย · เข้าถึงได้เฉพาะกลุ่มของคุณ</p>
+    </div>
+  );
+}
+
+function GroupCompanyCard({ c, onOpen }) {
+  const done = c.pct >= 100 && c.total > 0;
+  const outstanding = (c.by?.outstanding || 0) + (c.by?.reopened || 0);
+  const review = (c.by?.submitted || 0) + (c.by?.review || 0);
+  const tags = [];
+  if (c.accepted > 0) tags.push({ tone: "mint", txt: `ตรวจรับ ${c.accepted}` });
+  if (review > 0) tags.push({ tone: "amber", txt: `รอตรวจ ${review}` });
+  if (outstanding > 0) tags.push({ tone: "slate", txt: `รออัปโหลด ${outstanding}` });
+  return (
+    <button className="nv-card" onClick={onOpen}>
+      <div>
+        <div className="nv-card-top">
+          <div style={{ minWidth: 0 }}>
+            <div className="nv-card-type">{c.template}</div>
+            <div className="nv-card-name">{c.client}</div>
+          </div>
+          <div className={`nv-card-pct ${done ? "done" : ""}`}><b>{c.pct}</b><i>%</i></div>
+        </div>
+        <div className="nv-card-sub">งวดสิ้นสุด {fmtDate(c.periodEnd)} · {c.total} รายการ</div>
+      </div>
+      <div className="nv-bar"><span style={{ width: `${c.pct}%` }} /></div>
+      <div className="nv-tags">
+        {tags.length ? tags.map((t, i) => <span key={i} className={`nv-tag2 ${t.tone}`}>{t.txt}</span>)
+          : <span className="nv-tag2 slate">ยังไม่มีรายการ</span>}
+      </div>
+      <div className="nv-card-foot">
+        <span className="open">เปิด →</span>
+        <span style={{ color: "#94A3B8", fontSize: 15 }}>›</span>
+      </div>
+    </button>
+  );
+}
+
+// Drill into one company within a group session: load its items and reuse the
+// standard document list, passing engagementId through to the upload calls.
+function GroupCompany({ token, engagementId, onBack }) {
+  const [eng, setEng] = useState(null);
+  const [items, setItems] = useState([]);
+  const [phase, setPhase] = useState("loading");
+  const [loadErr, setLoadErr] = useState("");
+
+  const load = async () => {
+    setPhase("loading"); setLoadErr("");
+    try {
+      const { engagement, items } = await clientApi.fetchData(token, engagementId);
+      setEng(engagement); setItems(items); setPhase("ready");
+    } catch (e) {
+      setLoadErr(e.message || "โหลดข้อมูลไม่สำเร็จ"); setPhase("ready");
+    }
+  };
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [engagementId]);
+
+  return (
+    <>
+      <div className="nv-page" style={{ paddingBottom: 0 }}>
+        <button className="nv-tbtn" style={{ color: "#123563", background: "#fff", border: "1px solid #E5E7EB" }} onClick={onBack}>← กลับไปหน้ากลุ่ม</button>
+      </div>
+      <ClientList phase={phase} eng={eng} items={items} loadErr={loadErr} token={token} engagementId={engagementId} onUploaded={load} />
+    </>
   );
 }

@@ -526,7 +526,7 @@ export default function App() {
       await firmApi.setItemStatus(itemId, "returned", "Returned", note);
     }, reloadDetail);
 
-  const generateEngagement = ({ client, template, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite, items }) =>
+  const generateEngagement = ({ client, template, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite, items, groupId }) =>
     run(async () => {
       const id = await firmApi.createEngagement(
         { client, template, periodEnd, code, retentionDays: retDays, autoDelete, clientEmail },
@@ -535,6 +535,7 @@ export default function App() {
           description: it.description, required: it.required ?? true, dueDate: baseDue, status: "outstanding", sort: i,
         }))
       );
+      if (groupId) { try { await firmApi.setEngagementGroup(id, groupId); } catch (_) { /* keep the portal even if grouping fails */ } }
       setModal(null);
       await reloadList(id);
       setView("engagement");
@@ -716,7 +717,7 @@ export default function App() {
 
       {view === "dashboard" ? (
         <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} bucketUsage={bucketUsage} session={session} onOpen={openEngagement}
-          onNew={() => setModal("generate")} onMarkAllRead={markAllRead} onSignOut={signOut} />
+          onNew={() => setModal("generate")} onGroups={() => setModal("groups")} onMarkAllRead={markAllRead} onSignOut={signOut} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
       ) : engExpiry(eng).state === "expired" ? (
@@ -874,6 +875,7 @@ export default function App() {
 
       {/* Modals */}
       {modal === "generate" && <GenerateModal busy={busy} onClose={() => setModal(null)} onCreate={generateEngagement} />}
+      {modal === "groups" && <ClientGroupsModal onClose={() => setModal(null)} onChanged={loadDashboard} />}
       {modal === "add" && eng && <AddItemModal eng={eng} onClose={() => setModal(null)} onAdd={addItem} />}
       {modal === "import" && importDraft && (
         <ImportModal draft={importDraft} onClose={() => { setModal(null); setImportDraft(null); }} onImport={importEngagement} />
@@ -1179,7 +1181,7 @@ function KpiCard({ tone, icon, label, num, sub, numTone, subTone }) {
   );
 }
 
-function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session, onOpen, onNew, onMarkAllRead, onSignOut }) {
+function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session, onOpen, onNew, onGroups, onMarkAllRead, onSignOut }) {
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
@@ -1329,7 +1331,10 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
             <h2>Engagements</h2>
             <div className="sub">ภาพรวมพอร์ทัล คำขอเอกสาร และสถานะล่าสุดของลูกค้า{q && ` · พบ ${filtered.length} จาก ${dash.length}`}</div>
           </div>
-          <button className="nv-cta" onClick={onNew}>+ สร้างพอร์ทัลใหม่</button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button className="nv-btn" onClick={onGroups}>👥 กลุ่มลูกค้า</button>
+            <button className="nv-cta" onClick={onNew}>+ สร้างพอร์ทัลใหม่</button>
+          </div>
         </div>
 
         <div className="nv-today">
@@ -1930,6 +1935,9 @@ function GenerateModal({ onClose, onCreate, busy }) {
   const [autoDelete, setAutoDelete] = useState(true);
   const [newCat, setNewCat] = useState("");
   const [newDesc, setNewDesc] = useState("");
+  const [clientGroups, setClientGroups] = useState([]);
+  const [groupId, setGroupId] = useState("");
+  useEffect(() => { firmApi.listClientGroups().then(setClientGroups).catch(() => {}); }, []);
   const tpl = TEMPLATES.find((t) => t.key === tplKey);
   const included = items.filter((i) => i.include);
   const ready = client.trim() && code.length === 16 && included.length > 0;
@@ -1959,6 +1967,7 @@ function GenerateModal({ onClose, onCreate, busy }) {
       code, retDays, autoDelete,   // raw code — the DB hashes it (create_engagement)
       clientEmail: clientEmail.trim(),
       sendInvite: sendInvite && !!clientEmail.trim(),
+      groupId: groupId || null,
       items: included.map((i) => ({ category: i.category, description: i.description, required: i.required })),
     });
   };
@@ -1973,6 +1982,15 @@ function GenerateModal({ onClose, onCreate, busy }) {
         <label className="tk-field"><span>Client name</span>
           <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Northwind Trading Co." /></label>
       </div>
+      {clientGroups.length > 0 && (
+        <label className="tk-field"><span>กลุ่มลูกค้า (ไม่บังคับ)</span>
+          <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+            <option value="">— ไม่มี (พอร์ทัลเดี่ยว) —</option>
+            {clientGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+          {groupId && <span className="tk-hint" style={{ marginTop: 4 }}>อยู่ในกลุ่มแล้วจะเข้าผ่านลิงก์กลุ่มเท่านั้น (ลิงก์เดี่ยวปิด)</span>}
+        </label>
+      )}
 
       <div className="imp-summary" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <span>เลือกไว้ <b>{included.length}</b> / {items.length} รายการ · {groups.length} หมวด — ติ๊กเลือก/เอาออก หรือแก้ข้อความได้</span>
@@ -2267,6 +2285,108 @@ function ReminderModal({ candidates, onClose }) {
               {busy ? "กำลังส่ง…" : `ส่ง reminder (${sel.size})`}
             </button>
           </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+// Manage client groups: create a group, share one group link, and assign
+// which portals belong to it (grouped portals are group-link-only).
+function ClientGroupsModal({ onClose, onChanged }) {
+  const [groups, setGroups] = useState(null);
+  const [engs, setEngs] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const reload = async () => {
+    try {
+      const [g, e] = await Promise.all([firmApi.listClientGroups(), firmApi.listEngagements()]);
+      setGroups(g); setEngs(e);
+    } catch (ex) { setErr(ex.message || "โหลดไม่สำเร็จ"); }
+  };
+  useEffect(() => { reload(); /* eslint-disable-next-line */ }, []);
+
+  const doRun = async (fn) => {
+    setBusy(true); setErr("");
+    try { await fn(); await reload(); onChanged?.(); }
+    catch (e) { setErr(e.message || "ดำเนินการไม่สำเร็จ"); }
+    finally { setBusy(false); }
+  };
+  const create = () => { if (code.length !== 16) return; doRun(async () => { const id = await firmApi.createClientGroup({ name: name.trim(), code }); setName(""); setCode(""); setCreating(false); setSel(id); }); };
+  const toggleEng = (e) => doRun(() => firmApi.setEngagementGroup(e.id, e.groupId === sel ? null : sel));
+  const del = (id) => { if (!confirm("ลบกลุ่มนี้? พอร์ทัลในกลุ่มจะกลับเป็นพอร์ทัลเดี่ยว")) return; doRun(async () => { await firmApi.deleteClientGroup(id); if (sel === id) setSel(null); }); };
+  const resetCode = (id) => { if (!confirm("สุ่มรหัสกลุ่มใหม่? รหัสเดิมจะใช้ไม่ได้ทันที")) return; const c = genCode(); doRun(async () => { await firmApi.setGroupCode(id, c); alert("รหัสกลุ่มใหม่ (ส่งให้ลูกค้าแยกช่องทาง):\n\n" + c.replace(/(.{4})/g, "$1 ").trim()); }); };
+
+  const selGroup = (groups || []).find((g) => g.id === sel);
+  const link = selGroup ? `${location.origin}/client.html?g=${selGroup.id}` : "";
+  const memberCount = (gid) => engs.filter((e) => e.groupId === gid).length;
+
+  return (
+    <Modal title="กลุ่มลูกค้า — แชร์หลายพอร์ทัลด้วยลิงก์เดียว" onClose={onClose} wide>
+      {err && <p className="tk-lock-err">{err}</p>}
+      {groups === null ? (
+        <p className="tk-muted">กำลังโหลด…</p>
+      ) : (
+        <>
+          {creating ? (
+            <div className="tk-field-row" style={{ alignItems: "flex-end" }}>
+              <label className="tk-field"><span>ชื่อกลุ่ม</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ABC Group" /></label>
+              <label className="tk-field" style={{ flex: 2 }}><span>รหัสกลุ่ม (16 หลัก)</span>
+                <PasscodeInput value={code} onChange={setCode} />
+                <button type="button" className="tk-link" onClick={() => setCode(genCode())}>สุ่มรหัสให้</button>
+              </label>
+              <button className="tk-btn primary" style={{ marginBottom: 13 }} disabled={code.length !== 16 || busy} onClick={create}>สร้าง</button>
+              <button className="tk-btn" style={{ marginBottom: 13 }} onClick={() => { setCreating(false); setErr(""); }}>ยกเลิก</button>
+            </div>
+          ) : (
+            <button className="tk-btn primary" onClick={() => setCreating(true)}>＋ สร้างกลุ่มใหม่</button>
+          )}
+
+          {groups.length === 0 ? (
+            <p className="tk-muted" style={{ marginTop: 12 }}>ยังไม่มีกลุ่ม — สร้างกลุ่มแรกด้านบน</p>
+          ) : (
+            <ul className="tk-rows" style={{ marginTop: 12 }}>
+              {groups.map((g) => (
+                <li key={g.id} className={`tk-row ${sel === g.id ? "open" : ""}`} style={{ cursor: "pointer" }} onClick={() => setSel(sel === g.id ? null : g.id)}>
+                  <div className="tk-desc"><span className="tk-desc-main">{g.name}</span><span className="tk-desc-sub">{memberCount(g.id)} พอร์ทัล</span></div>
+                  <button className="tk-x" onClick={(e) => { e.stopPropagation(); del(g.id); }}>ลบ</button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {selGroup && (
+            <div style={{ marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+              <label className="tk-field"><span>ลิงก์กลุ่ม (ส่งรหัสกลุ่มแยกช่องทาง)</span>
+                <input readOnly value={link} onFocus={(e) => e.target.select()} /></label>
+              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                <button className="tk-btn" onClick={() => { navigator.clipboard?.writeText(link).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "คัดลอกแล้ว ✓" : "🔗 คัดลอกลิงก์"}</button>
+                <button className="tk-btn ghost" onClick={() => resetCode(selGroup.id)}>สุ่มรหัสกลุ่มใหม่</button>
+              </div>
+              <p className="tk-hint" style={{ marginBottom: 8 }}>ติ๊กพอร์ทัลที่จะอยู่ในกลุ่มนี้ — พอร์ทัลในกลุ่มจะเข้าผ่านลิงก์กลุ่มเท่านั้น (ลิงก์เดี่ยวปิด)</p>
+              <div className="imp-scroll" style={{ maxHeight: "34vh" }}>
+                {engs.length === 0 ? <p className="tk-muted" style={{ padding: 16, margin: 0 }}>ยังไม่มีพอร์ทัล</p> : engs.map((e) => {
+                  const inThis = e.groupId === sel;
+                  const inOther = e.groupId && e.groupId !== sel;
+                  return (
+                    <label key={e.id} className="imp-row" style={{ cursor: "pointer" }}>
+                      <input type="checkbox" checked={inThis} disabled={busy} onChange={() => toggleEng(e)} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{e.client}</div>
+                        <div style={{ fontSize: 12, color: "var(--ink-soft)" }}>{e.template}{inOther && <span style={{ color: "#b4791b" }}> · อยู่ในกลุ่มอื่น (ติ๊กเพื่อย้ายมา)</span>}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </>
       )}
     </Modal>
