@@ -416,7 +416,8 @@ export default function App() {
   const [dash, setDash] = useState(null);             // engagements + progress for the dashboard
   const [notifs, setNotifs] = useState([]);           // recent client activity (notification center)
   const [followups, setFollowups] = useState([]);     // open items to follow up (overdue / due-soon / to-review)
-  const [storage, setStorage] = useState(null);       // total bytes stored across the firm
+  const [storage, setStorage] = useState(null);       // this firm's referenced bytes (RLS-scoped)
+  const [bucketUsage, setBucketUsage] = useState(null); // whole shared bucket { bytes, count }
 
   /* ---- auth session ---- */
   useEffect(() => {
@@ -467,13 +468,14 @@ export default function App() {
   const loadDashboard = async () => {
     setErr("");
     try {
-      const [d, n, s, f] = await Promise.all([
+      const [d, n, s, f, b] = await Promise.all([
         firmApi.listEngagementsWithProgress(),
         firmApi.listNotifications().catch(() => []),
         firmApi.getStorageUsage().catch(() => null),
         firmApi.listFollowUps().catch(() => []),
+        firmApi.getBucketUsage().catch(() => null),
       ]);
-      setDash(d); setNotifs(n); setStorage(s); setFollowups(f);
+      setDash(d); setNotifs(n); setStorage(s); setFollowups(f); setBucketUsage(b);
     } catch (e) { setErr(e.message || "โหลดภาพรวมไม่สำเร็จ"); }
   };
   useEffect(() => {
@@ -712,7 +714,7 @@ export default function App() {
       )}
 
       {view === "dashboard" ? (
-        <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} session={session} onOpen={openEngagement}
+        <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} bucketUsage={bucketUsage} session={session} onOpen={openEngagement}
           onNew={() => setModal("generate")} onMarkAllRead={markAllRead} onSignOut={signOut} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
@@ -1176,7 +1178,7 @@ function KpiCard({ tone, icon, label, num, sub, numTone, subTone }) {
   );
 }
 
-function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNew, onMarkAllRead, onSignOut }) {
+function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session, onOpen, onNew, onMarkAllRead, onSignOut }) {
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
@@ -1267,8 +1269,6 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
 
   const email = session?.user?.email || "";
   const initials = (email.slice(0, 2) || "NF").toUpperCase();
-  const stPct = storage != null ? Math.min(100, Math.round((storage / STORAGE_LIMIT) * 100)) : 0;
-  const stTone = stPct >= 90 ? "over" : stPct >= 70 ? "soon" : "";
 
   return (
     <div className="nv">
@@ -1406,17 +1406,32 @@ function FirmDashboard({ dash, notifs, followups, storage, session, onOpen, onNe
               )}
             </div>
             <div className="nv-rail">
-              {storage != null && (
-                <div className="nv-panel nv-store-c">
-                  <div className="nv-store-c-top">
-                    <span className="ic">◱</span>
-                    <span className="t">พื้นที่จัดเก็บ · R2</span>
-                    <span className={`p ${stTone}`}>{stPct}%</span>
+              {storage != null && (() => {
+                const bkt = bucketUsage?.bytes;                       // whole shared bucket (null if unavailable)
+                const total = bkt != null ? bkt : storage;           // what counts toward the 10 GB quota
+                const pct = Math.min(100, Math.round((total / STORAGE_LIMIT) * 100));
+                const tone = pct >= 90 ? "over" : pct >= 70 ? "soon" : "";
+                const minePct = Math.max(0, Math.min(100, (storage / STORAGE_LIMIT) * 100));
+                const otherPct = Math.max(0, Math.min(100 - minePct, (total - storage) / STORAGE_LIMIT * 100));
+                return (
+                  <div className="nv-panel nv-store-c">
+                    <div className="nv-store-c-top">
+                      <span className="ic">◱</span>
+                      <span className="t">พื้นที่จัดเก็บ · R2</span>
+                      <span className={`p ${tone}`}>{pct}%</span>
+                    </div>
+                    <div className={`nv-bar nv-bar2 ${tone === "over" ? "red" : tone === "soon" ? "amber" : ""}`}>
+                      <span className="mine" style={{ width: `${minePct}%` }} />
+                      {bkt != null && <span className="other" style={{ width: `${otherPct}%` }} />}
+                    </div>
+                    <div className="nv-store-c-sub">
+                      ของคุณ <b>{fmtSize(storage)}</b>
+                      {bkt != null && <> · รวมทั้ง bucket {fmtSize(bkt)}</>}
+                      {" "}/ 10 GB · เหลือ {fmtSize(Math.max(0, STORAGE_LIMIT - total))}
+                    </div>
                   </div>
-                  <div className={`nv-bar ${stTone === "over" ? "red" : stTone === "soon" ? "amber" : ""}`}><span style={{ width: `${stPct}%` }} /></div>
-                  <div className="nv-store-c-sub">{fmtSize(storage)} / 10 GB · เหลือ {fmtSize(Math.max(0, STORAGE_LIMIT - storage))}</div>
-                </div>
-              )}
+                );
+              })()}
               <div className="nv-panel" id="nv-followup">
                 <div className="nv-panel-head"><span className="ic">✓</span><span className="t">สิ่งที่ต้องติดตาม</span></div>
                 {follow.empty ? (

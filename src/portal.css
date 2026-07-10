@@ -513,6 +513,13 @@
 .nv-store-row .p{margin-left:auto;font-size:12px;font-weight:600;color:#12B39A}
 .nv-store-row .p.soon{color:#F59E0B} .nv-store-row .p.over{color:#EF4444}
 .nv-bar.amber span{background:#F59E0B} .nv-bar.red span{background:#EF4444}
+/* two-tone quota bar: your firm's share (solid) + rest of the shared bucket (faded) */
+.nv-bar2{display:flex}
+.nv-bar2 span{border-radius:0}
+.nv-bar2 .mine{background:#12B39A}
+.nv-bar2 .other{background:rgba(18,179,154,.32)}
+.nv-bar2.amber .mine{background:#F59E0B} .nv-bar2.amber .other{background:rgba(245,158,11,.3)}
+.nv-bar2.red .mine{background:#EF4444} .nv-bar2.red .other{background:rgba(239,68,68,.3)}
 .nv-store-note{font-size:11.5px;color:#64748B;margin:10px 0 0}
 /* compact storage box */
 .nv-store-c{padding:14px 16px}

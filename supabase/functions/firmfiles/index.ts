@@ -11,7 +11,7 @@
 //  the portal that owns the folder = storage_path's first segment).
 // =====================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { presignGet, presignPut, deleteObjects } from "../_shared/r2.ts";
+import { presignGet, presignPut, deleteObjects, bucketUsage } from "../_shared/r2.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -76,6 +76,15 @@ Deno.serve(async (req) => {
       }
       if (paths.length) await deleteObjects(paths);
       return json({ ok: true });
+    }
+
+    // Aggregate size of the whole (shared) bucket — bytes + object count only,
+    // no keys or contents. Any approved firm user may read it to gauge how much
+    // of the 10 GB free tier is left.
+    if (action === "usage") {
+      const { data: prof } = await admin.from("profiles").select("approved").eq("id", user.id).maybeSingle();
+      if (!prof?.approved) return json({ error: "not approved" }, 403);
+      return json(await bucketUsage());
     }
 
     return json({ error: "unknown action" }, 400);

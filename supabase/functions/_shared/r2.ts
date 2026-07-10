@@ -41,6 +41,27 @@ export async function deleteObjects(keys: string[]): Promise<void> {
   await Promise.all(keys.map((k) => aws.fetch(objUrl(k), { method: "DELETE" })));
 }
 
+// Total stored bytes + object count for the whole bucket (shared across all
+// firms). S3 ListObjectsV2, paginated. Used for the "bucket overall" figure so
+// a firm can see how much of the 10 GB free tier is actually left.
+export async function bucketUsage(): Promise<{ bytes: number; count: number }> {
+  let bytes = 0, count = 0, token: string | undefined;
+  do {
+    const u = new URL(`${ENDPOINT}/`);
+    u.searchParams.set("list-type", "2");
+    u.searchParams.set("max-keys", "1000");
+    if (token) u.searchParams.set("continuation-token", token);
+    const res = await aws.fetch(u.toString(), { method: "GET" });
+    if (!res.ok) throw new Error(`R2 list failed (${res.status})`);
+    const xml = await res.text();
+    for (const m of xml.matchAll(/<Size>(\d+)<\/Size>/g)) { bytes += Number(m[1]); count++; }
+    token = /<IsTruncated>true<\/IsTruncated>/.test(xml)
+      ? xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/)?.[1]?.replace(/&amp;/g, "&")
+      : undefined;
+  } while (token);
+  return { bytes, count };
+}
+
 // Upload bytes server-side (used by the one-time migration).
 export async function uploadObject(key: string, body: ArrayBuffer | Uint8Array | Blob, contentType?: string): Promise<void> {
   const res = await aws.fetch(objUrl(key), {
