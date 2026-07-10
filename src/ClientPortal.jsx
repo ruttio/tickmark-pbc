@@ -51,7 +51,8 @@ const groupDigits = (s) => s.replace(/(.{4})/g, "$1 ").trim();
 const fmtDate = (ts) =>
   !ts ? "—" : new Date(ts).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 const fmtSize = (b) =>
-  b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0) + " KB" : (b / 1048576).toFixed(1) + " MB";
+  b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0) + " KB"
+    : b < 1073741824 ? (b / 1048576).toFixed(1) + " MB" : (b / 1073741824).toFixed(2) + " GB";
 const isOverdue = (it) => it.status !== "accepted" && it.dueDate && it.dueDate < Date.now();
 const fileExt = (name) => (name.includes(".") ? name.split(".").pop().slice(0, 4).toUpperCase() : "ไฟล์");
 

@@ -209,7 +209,8 @@ function fmtDate(ts) {
 function fmtSize(bytes) {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1048576) return (bytes / 1024).toFixed(0) + " KB";
-  return (bytes / 1048576).toFixed(1) + " MB";
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + " MB";
+  return (bytes / 1073741824).toFixed(2) + " GB";
 }
 function isOverdue(item) {
   return item.status !== "accepted" && item.dueDate && item.dueDate < Date.now();
