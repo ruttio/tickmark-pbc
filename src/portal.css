@@ -656,10 +656,14 @@
 .nv-chead-name{font:700 20px 'Inter',sans-serif;color:#0F172A;line-height:1}
 .nv-chead-type{font:600 10px 'Inter',sans-serif;letter-spacing:1px;text-transform:uppercase;color:#12B39A}
 .nv-chead-meta{font:400 12px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
-.nv-chead-prog{display:flex;align-items:center;gap:10px;min-width:200px}
-.nv-chead-prog .bar{flex:1;height:6px;border-radius:5px;background:rgba(100,116,139,.12);overflow:hidden;display:flex}
+.nv-chead-prog{display:flex;flex-direction:column;gap:6px;min-width:240px}
+.nv-chead-prog .row{display:flex;align-items:center;gap:10px}
+.nv-chead-prog .bar{flex:1;height:9px;border-radius:6px;background:rgba(100,116,139,.12);overflow:hidden;display:flex}
 .nv-chead-prog .bar .a{height:100%;background:#12B39A} .nv-chead-prog .bar .p{height:100%;background:#F59E0B}
-.nv-chead-prog .pc{font:700 15px 'Inter',sans-serif;color:#12B39A;line-height:1}
+.nv-chead-prog .pc{font:800 20px 'Inter',sans-serif;color:#12B39A;line-height:1}
+.nv-chead-prog .cap{font:400 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;text-align:right}
+.nv-chead-prog .cap b{color:#12B39A;font-weight:700}
+.nv-chead-prog .cap .pend{color:#b4791b}
 
 /* client list rows */
 .nv-cataction{display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.22);border-radius:10px;padding:8px 11px;cursor:pointer;margin-bottom:8px;width:100%;font-family:inherit}

@@ -410,11 +410,17 @@ function ClientList({ phase, eng, items, loadErr, token, onUploaded }) {
           </div>
           {items.length > 0 && (
             <div className="nv-chead-prog">
-              <div className="bar">
-                <span className="a" style={{ width: `${pct}%` }} />
-                <span className="p" style={{ width: `${Math.round((pending / items.length) * 100)}%` }} />
+              <div className="row">
+                <div className="bar">
+                  <span className="a" style={{ width: `${pct}%` }} />
+                  <span className="p" style={{ width: `${Math.round((pending / items.length) * 100)}%` }} />
+                </div>
+                <span className="pc">{pct}%</span>
               </div>
-              <span className="pc">{pct}%</span>
+              <div className="cap">
+                ตรวจรับแล้ว <b>{accepted}</b> / {items.length} รายการ
+                {pending > 0 && <span className="pend"> · รอตรวจ {pending}</span>}
+              </div>
             </div>
           )}
         </div>
