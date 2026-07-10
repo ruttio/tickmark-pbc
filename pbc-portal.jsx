@@ -1188,9 +1188,15 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
   const [showReminder, setShowReminder] = useState(false);
   const [sortBy, setSortBy] = useState("recent");     // recent | name | progress
   const [viewMode, setViewMode] = useState("grid");   // grid | list
+  const [scope, setScope] = useState("all");          // all | solo | group
+  const [clientGroups, setClientGroups] = useState([]);
+  useEffect(() => { firmApi.listClientGroups().then(setClientGroups).catch(() => {}); }, [dash]);
+  const groupName = useMemo(() => Object.fromEntries((clientGroups || []).map((g) => [g.id, g.name])), [clientGroups]);
+  const hasGroups = clientGroups.length > 0;
 
   const filtered = useMemo(() => {
-    const list = dash || [];
+    const list = (dash || []).filter((e) =>
+      scope === "solo" ? !e.groupId : scope === "group" ? !!e.groupId : true);
     const s = q.trim().toLowerCase();
     const base = !s ? list : list.filter((e) => `${e.client} ${e.template}`.toLowerCase().includes(s));
     const arr = [...base];
@@ -1198,7 +1204,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
     else if (sortBy === "progress") arr.sort((a, b) => (b.pct || 0) - (a.pct || 0));
     else arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); // recent
     return arr;
-  }, [dash, q, sortBy]);
+  }, [dash, q, sortBy, scope]);
 
   const kpi = useMemo(() => {
     const list = dash || [];
@@ -1385,6 +1391,15 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
               <div className="nv-colhead">
                 <span className="t">Engagement ที่กำลังดำเนินการ <span>· {filtered.length}</span></span>
                 <div className="nv-colhead-r">
+                  {hasGroups && (
+                    <label className="nv-sortsel-w">แสดง:
+                      <select className="nv-sortsel" value={scope} onChange={(e) => setScope(e.target.value)}>
+                        <option value="all">ทั้งหมด</option>
+                        <option value="solo">พอร์ทัลเดี่ยว</option>
+                        <option value="group">ในกลุ่ม</option>
+                      </select>
+                    </label>
+                  )}
                   <label className="nv-sortsel-w">จัดเรียง:
                     <select className="nv-sortsel" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
                       <option value="recent">ล่าสุด</option>
@@ -1404,7 +1419,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
                 <>
                   <div className={`nv-eng-grid ${viewMode === "list" ? "list" : ""}`}>
                     {filtered.map((e) => (
-                      <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
+                      <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} groupName={e.groupId ? groupName[e.groupId] : null} onOpen={() => onOpen(e.id)} />
                     ))}
                   </div>
                   <p className="nv-grid-foot">แสดง {filtered.length} จาก {dash.length} รายการ</p>
@@ -1500,7 +1515,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
   );
 }
 
-function EngagementCard({ e, onOpen, unread }) {
+function EngagementCard({ e, onOpen, unread, groupName }) {
   const x = engExpiry(e);
   const tags = [];
   if (e.overdue > 0) tags.push({ tone: "red", txt: `⚠ เกินกำหนด ${e.overdue}` });
@@ -1516,7 +1531,7 @@ function EngagementCard({ e, onOpen, unread }) {
       <div>
         <div className="nv-card-top">
           <div style={{ minWidth: 0 }}>
-            <div className="nv-card-type">{e.template}</div>
+            <div className="nv-card-type">{e.template}{groupName && <span style={{ marginLeft: 6, color: "#123563", textTransform: "none", letterSpacing: 0 }}>· 👥 {groupName}</span>}</div>
             <div className="nv-card-name">{e.client}</div>
           </div>
           <div className={`nv-card-pct ${done ? "done" : ""}`}><b>{e.pct}</b><i>%</i></div>
@@ -2335,14 +2350,18 @@ function ClientGroupsModal({ onClose, onChanged }) {
       ) : (
         <>
           {creating ? (
-            <div className="tk-field-row" style={{ alignItems: "flex-end" }}>
-              <label className="tk-field"><span>ชื่อกลุ่ม</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ABC Group" /></label>
-              <label className="tk-field" style={{ flex: 2 }}><span>รหัสกลุ่ม (16 หลัก)</span>
-                <PasscodeInput value={code} onChange={setCode} />
+            <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "14px 16px", marginBottom: 4 }}>
+              <label className="tk-field"><span>ชื่อกลุ่ม</span>
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ABC Group" autoFocus /></label>
+              <label className="tk-field" style={{ marginBottom: 4 }}><span>รหัสกลุ่ม (16 หลัก)</span>
+                <PasscodeInput value={code} onChange={setCode} /></label>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 10 }}>
                 <button type="button" className="tk-link" onClick={() => setCode(genCode())}>สุ่มรหัสให้</button>
-              </label>
-              <button className="tk-btn primary" style={{ marginBottom: 13 }} disabled={code.length !== 16 || busy} onClick={create}>สร้าง</button>
-              <button className="tk-btn" style={{ marginBottom: 13 }} onClick={() => { setCreating(false); setErr(""); }}>ยกเลิก</button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="tk-btn" onClick={() => { setCreating(false); setErr(""); }}>ยกเลิก</button>
+                  <button className="tk-btn primary" disabled={code.length !== 16 || busy} onClick={create}>สร้างกลุ่ม</button>
+                </div>
+              </div>
             </div>
           ) : (
             <button className="tk-btn primary" onClick={() => setCreating(true)}>＋ สร้างกลุ่มใหม่</button>
