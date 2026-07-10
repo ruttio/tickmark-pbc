@@ -1190,6 +1190,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
   const [viewMode, setViewMode] = useState("grid");   // grid | list
   const [scope, setScope] = useState("all");          // all | solo | group
   const [clientGroups, setClientGroups] = useState([]);
+  const [expandedGroup, setExpandedGroup] = useState(null);
   useEffect(() => { firmApi.listClientGroups().then(setClientGroups).catch(() => {}); }, [dash]);
   const groupName = useMemo(() => Object.fromEntries((clientGroups || []).map((g) => [g.id, g.name])), [clientGroups]);
   const hasGroups = clientGroups.length > 0;
@@ -1205,6 +1206,14 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
     else arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); // recent
     return arr;
   }, [dash, q, sortBy, scope]);
+
+  // "ในกลุ่ม" view: bucket the (already filtered/sorted) grouped portals by group.
+  const groupsView = useMemo(() => {
+    if (scope !== "group") return [];
+    const byId = new Map();
+    filtered.forEach((e) => { if (!byId.has(e.groupId)) byId.set(e.groupId, []); byId.get(e.groupId).push(e); });
+    return [...byId.entries()].map(([id, engs]) => ({ id, name: groupName[id] || "กลุ่มลูกค้า", engs }));
+  }, [scope, filtered, groupName]);
 
   const kpi = useMemo(() => {
     const list = dash || [];
@@ -1414,7 +1423,24 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
                 </div>
               </div>
               {filtered.length === 0 ? (
-                <p className="tk-none" style={{ color: "#64748B" }}>ไม่พบพอร์ทัลที่ตรงกับ “{q}”</p>
+                <p className="tk-none" style={{ color: "#64748B" }}>{scope === "group" ? "ยังไม่มีพอร์ทัลในกลุ่ม" : "ไม่พบพอร์ทัลที่ตรงกับ “" + q + "”"}</p>
+              ) : scope === "group" ? (
+                <>
+                  {groupsView.map((g) => (
+                    <div key={g.id} style={{ marginBottom: 14 }}>
+                      <GroupCard name={g.name} engagements={g.engs} expanded={expandedGroup === g.id}
+                        onToggle={() => setExpandedGroup(expandedGroup === g.id ? null : g.id)} />
+                      {expandedGroup === g.id && (
+                        <div className={`nv-eng-grid ${viewMode === "list" ? "list" : ""}`} style={{ marginTop: 12 }}>
+                          {g.engs.map((e) => (
+                            <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <p className="nv-grid-foot">แสดง {groupsView.length} กลุ่ม · {filtered.length} พอร์ทัล</p>
+                </>
               ) : (
                 <>
                   <div className={`nv-eng-grid ${viewMode === "list" ? "list" : ""}`}>
@@ -1512,6 +1538,26 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
         </footer>
       </div>
     </div>
+  );
+}
+
+function GroupCard({ name, engagements, expanded, onToggle }) {
+  const total = engagements.reduce((n, e) => n + (e.total || 0), 0);
+  const accepted = engagements.reduce((n, e) => n + (e.accepted || 0), 0);
+  const overdue = engagements.reduce((n, e) => n + (e.overdue || 0), 0);
+  const pct = total ? Math.round((accepted / total) * 100) : 0;
+  return (
+    <button className={`nv-gcard ${expanded ? "open" : ""}`} onClick={onToggle}>
+      <span className="nv-gcard-ic">👥</span>
+      <div className="nv-gcard-main">
+        <div className="nv-gcard-name">{name}</div>
+        <div className="nv-gcard-sub">
+          {engagements.length} พอร์ทัล · ตรวจรับ {accepted}/{total} · {pct}%
+          {overdue > 0 && <span style={{ color: "#EF4444", fontWeight: 600 }}> · เกินกำหนด {overdue}</span>}
+        </div>
+      </div>
+      <span className="nv-gcard-chev">{expanded ? "▾" : "›"}</span>
+    </button>
   );
 }
 
