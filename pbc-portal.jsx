@@ -1427,7 +1427,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
                     </div>
                     <div className="nv-store-c-sub">
                       ของคุณ <b>{fmtSize(storage)}</b>
-                      {bkt != null && <> · รวมทั้ง bucket {fmtSize(bkt)}</>}
+                      {bkt != null && <> · รวมทั้ง firm {fmtSize(bkt)}</>}
                       {" "}/ 10 GB · เหลือ {fmtSize(Math.max(0, STORAGE_LIMIT - total))}
                     </div>
                   </div>
