@@ -411,6 +411,7 @@ export default function App() {
   const [eng, setEng] = useState(null);               // detail of currentId (items + files + history)
   const [openItem, setOpenItem] = useState(null);     // item id for drawer
   const [modal, setModal] = useState(null);           // 'generate' | 'add' | 'import' | 'settings'
+  const [rollSource, setRollSource] = useState(null); // roll-forward: prefill GenerateModal from a prior portal
   const [importDraft, setImportDraft] = useState(null);
   const importRef = useRef(null);
   const [statusSel, setStatusSel] = useState([]);     // engagement-detail status filters (empty = all; may include "overdue")
@@ -502,6 +503,13 @@ export default function App() {
     setOpenItem(itemId);
   };
   const goDashboard = () => { setOpenItem(null); setView("dashboard"); };
+  // Open the Generate modal fresh, or pre-filled from a prior portal (roll-forward).
+  const openGenerate = (src = null) => { setRollSource(src); setModal("generate"); };
+  const buildRollSource = (e) => ({
+    client: e.client, template: e.template, periodEnd: e.periodEnd,
+    clientEmail: e.clientEmail, groupId: e.groupId || "",
+    items: (e.items || []).filter((it) => !it.archivedAt).map((it) => ({ category: it.category, description: it.description, required: it.required })),
+  });
   const markAllRead = () => run(() => firmApi.markAllSeen(), loadDashboard);
 
   /* ---- load the selected portal's detail when it changes ---- */
@@ -729,7 +737,7 @@ export default function App() {
 
       {view === "dashboard" ? (
         <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} bucketUsage={bucketUsage} session={session} onOpen={openEngagement} onOpenItem={openItemInEngagement}
-          onNew={() => setModal("generate")} onGroups={() => setModal("groups")} onMarkAllRead={markAllRead} onSignOut={signOut} />
+          onNew={() => openGenerate()} onGroups={() => setModal("groups")} onMarkAllRead={markAllRead} onSignOut={signOut} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
       ) : engExpiry(eng).state === "expired" ? (
@@ -752,7 +760,7 @@ export default function App() {
                   })}
                 </select>
               )}
-              <button className="nv-cta" onClick={() => setModal("generate")}>+ New portal</button>
+              <button className="nv-cta" onClick={() => openGenerate()}>+ New portal</button>
               <span className="nv-email">{session.user?.email}</span>
               <span className="nv-icon" title="ออกจากระบบ" onClick={signOut}>⎋</span>
             </div>
@@ -812,7 +820,7 @@ export default function App() {
               <div>
                 <div className="nv-tools">
                   <NvMenu label="+ เพิ่มรายการ" variant="mint">
-                    <button className="nv-mitem" onClick={() => setModal("generate")}>✓ สร้างรายการคำขอ</button>
+                    <button className="nv-mitem" onClick={() => openGenerate()}>✓ สร้างรายการคำขอ</button>
                     <button className="nv-mitem" onClick={() => setModal("add")}>＋ เพิ่มรายการเดี่ยว</button>
                     <button className="nv-mitem" onClick={() => importRef.current?.click()}>↓ นำเข้าจาก Excel</button>
                   </NvMenu>
@@ -828,6 +836,7 @@ export default function App() {
                   {busy && <span className="nv-search-note">กำลังบันทึก…</span>}
                   <div style={{ marginLeft: "auto" }}>
                     <NvMenu label="เพิ่มเติม" variant="dark" align="right">
+                      <button className="nv-mitem" onClick={() => openGenerate(buildRollSource(eng))}>🔁 สร้างพอร์ทัลปีถัดไป</button>
                       <button className="nv-mitem" onClick={exportCSV}>↓ Export CSV</button>
                       {(eng.myRole === "owner" || eng.myCanDelete) && <button className="nv-mitem" onClick={() => setModal("archived")}>🗄 Archived</button>}
                       <div className="nv-msep" />
@@ -886,7 +895,7 @@ export default function App() {
       )}
 
       {/* Modals */}
-      {modal === "generate" && <GenerateModal busy={busy} onClose={() => setModal(null)} onCreate={generateEngagement} />}
+      {modal === "generate" && <GenerateModal busy={busy} source={rollSource} onClose={() => { setModal(null); setRollSource(null); }} onCreate={generateEngagement} />}
       {modal === "groups" && <ClientGroupsModal onClose={() => setModal(null)} onChanged={loadDashboard} />}
       {modal === "add" && eng && <AddItemModal eng={eng} onClose={() => setModal(null)} onAdd={addItem} />}
       {modal === "import" && importDraft && (
@@ -2058,29 +2067,37 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
   );
 }
 
-function GenerateModal({ onClose, onCreate, busy }) {
+function GenerateModal({ onClose, onCreate, busy, source }) {
   const flatten = (t) => t.groups.flatMap(([category, rows]) =>
     rows.map(([description, required]) => ({ id: uid(), category, description, required, include: true })));
-  const [tplKey, setTplKey] = useState(TEMPLATES[0].key);
-  const [items, setItems] = useState(() => flatten(TEMPLATES[0]));
-  const [client, setClient] = useState("");
-  const [periodEnd, setPeriodEnd] = useState(new Date(new Date().getFullYear() - 1, 11, 31).toISOString().slice(0, 10));
+  const fromSource = () => (source?.items || []).map((it) => ({ id: uid(), category: it.category || "General", description: it.description, required: it.required ?? true, include: true }));
+  const [tplKey, setTplKey] = useState(source ? "__source__" : TEMPLATES[0].key);
+  const [items, setItems] = useState(() => source ? fromSource() : flatten(TEMPLATES[0]));
+  const [client, setClient] = useState(source?.client || "");
+  const [periodEnd, setPeriodEnd] = useState(() => {
+    if (source?.periodEnd) { const d = new Date(source.periodEnd); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); }
+    return new Date(new Date().getFullYear() - 1, 11, 31).toISOString().slice(0, 10);
+  });
   const [due, setDue] = useState(new Date(Date.now() + 14 * DAY).toISOString().slice(0, 10));
   const [code, setCode] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
+  const [clientEmail, setClientEmail] = useState(source?.clientEmail || "");
   const [sendInvite, setSendInvite] = useState(true);
   const [retDays, setRetDays] = useState(90);
   const [autoDelete, setAutoDelete] = useState(true);
   const [newCat, setNewCat] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [clientGroups, setClientGroups] = useState([]);
-  const [groupId, setGroupId] = useState("");
+  const [groupId, setGroupId] = useState(source?.groupId || "");
   useEffect(() => { firmApi.listClientGroups().then(setClientGroups).catch(() => {}); }, []);
-  const tpl = TEMPLATES.find((t) => t.key === tplKey);
+  const tplName = tplKey === "__source__" ? (source?.template || "PBC") : (TEMPLATES.find((t) => t.key === tplKey)?.name || "PBC");
   const included = items.filter((i) => i.include);
   const ready = client.trim() && code.length === 16 && included.length > 0;
 
-  const changeTpl = (key) => { setTplKey(key); setItems(flatten(TEMPLATES.find((t) => t.key === key))); };
+  const changeTpl = (key) => {
+    setTplKey(key);
+    if (key === "__source__") setItems(fromSource());
+    else setItems(flatten(TEMPLATES.find((t) => t.key === key)));
+  };
   const toggle = (id) => setItems((p) => p.map((i) => (i.id === id ? { ...i, include: !i.include } : i)));
   const allOn = items.length > 0 && items.every((i) => i.include);
   const toggleAll = () => setItems((p) => p.map((i) => ({ ...i, include: !allOn })));
@@ -2100,7 +2117,7 @@ function GenerateModal({ onClose, onCreate, busy }) {
   const create = () => {
     if (!ready) return;
     onCreate({
-      client: client.trim(), template: tpl.name,
+      client: client.trim(), template: tplName,
       periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(),
       code, retDays, autoDelete,   // raw code — the DB hashes it (create_engagement)
       clientEmail: clientEmail.trim(),
@@ -2110,10 +2127,12 @@ function GenerateModal({ onClose, onCreate, busy }) {
     });
   };
   return (
-    <Modal title="Generate request list" onClose={onClose} wide>
+    <Modal title={source ? "สร้างพอร์ทัลปีถัดไป (Roll-forward)" : "Generate request list"} onClose={onClose} wide>
+      {source && <p className="tk-tplblurb" style={{ marginTop: 0 }}>คัดลอกจาก <b>{source.client}</b> — ปรับงวด/รหัสใหม่ให้แล้ว ตรวจรายการแล้วกดสร้างได้เลย (ทุกข้อเริ่มที่ "รออัปโหลด")</p>}
       <div className="tk-field-row">
         <label className="tk-field"><span>Template</span>
           <select value={tplKey} onChange={(e) => changeTpl(e.target.value)}>
+            {source && <option value="__source__">จากพอร์ทัลเดิม · {source.template}</option>}
             {TEMPLATES.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
           </select>
         </label>
