@@ -1206,6 +1206,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
   const [sortBy, setSortBy] = useState("recent");     // recent | name | progress
   const [viewMode, setViewMode] = useState("grid");   // grid | list
   const [scope, setScope] = useState("all");          // all | group
+  const [actFilter, setActFilter] = useState("all");  // activity feed: all | client | firm
   const [clientGroups, setClientGroups] = useState([]);
   const [openGroup, setOpenGroup] = useState(null);   // group id whose detail view is showing
   useEffect(() => { firmApi.listClientGroups().then(setClientGroups).catch(() => {}); }, [dash]);
@@ -1510,24 +1511,31 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
               })()}
               <div className="nv-panel" id="nv-followup">
                 <div className="nv-panel-head"><span className="t">กิจกรรมล่าสุด</span>{totalUnread > 0 && <span className="more" onClick={onMarkAllRead}>อ่านทั้งหมด</span>}</div>
-                {!notifs || notifs.length === 0 ? (
-                  <p className="tk-muted" style={{ margin: 0, color: "#64748B" }}>ยังไม่มีกิจกรรม</p>
-                ) : (
-                  <ul className="nv-act-list">
-                    {notifs.slice(0, 8).map((n) => {
-                      const m = notifMeta(n.action);
-                      return (
-                        <li key={n.id} onClick={() => onOpen(n.engagementId)}>
-                          <span className={`nv-act-ic ${m.tone}`}>{m.icon}</span>
-                          <div className="nv-act-body">
-                            <div className="tx"><b>{n.client}</b> {n.actor && <>· {n.actor} </>}{m.label}{n.itemDescription && <span style={{ color: "#64748B" }}> · {n.itemDescription}</span>}</div>
-                            <div className="ts">{timeAgo(n.at)}</div>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                <div className="nv-seg sm" style={{ marginBottom: 12 }}>
+                  <button className={actFilter === "all" ? "on" : ""} onClick={() => setActFilter("all")}>ทั้งหมด</button>
+                  <button className={actFilter === "client" ? "on" : ""} onClick={() => setActFilter("client")}>ลูกค้า</button>
+                  <button className={actFilter === "firm" ? "on" : ""} onClick={() => setActFilter("firm")}>สำนักงาน</button>
+                </div>
+                {(() => {
+                  const feed = (notifs || []).filter((n) => actFilter === "all" ? true : actFilter === "client" ? n.by === "Client" : n.by === "Firm");
+                  if (feed.length === 0) return <p className="tk-muted" style={{ margin: 0, color: "#64748B" }}>{actFilter === "client" ? "ยังไม่มีกิจกรรมจากลูกค้า" : actFilter === "firm" ? "ยังไม่มีกิจกรรมจากสำนักงาน" : "ยังไม่มีกิจกรรม"}</p>;
+                  return (
+                    <ul className="nv-act-list">
+                      {feed.slice(0, 8).map((n) => {
+                        const m = notifMeta(n.action);
+                        return (
+                          <li key={n.id} onClick={() => onOpen(n.engagementId)}>
+                            <span className={`nv-act-ic ${m.tone}`}>{m.icon}</span>
+                            <div className="nv-act-body">
+                              <div className="tx"><b>{n.client}</b> {n.actor && <>· {n.actor} </>}{m.label}{n.itemDescription && <span style={{ color: "#64748B" }}> · {n.itemDescription}</span>}</div>
+                              <div className="ts">{timeAgo(n.at)}</div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
               </div>
             </div>
           </div>
