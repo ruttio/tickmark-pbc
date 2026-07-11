@@ -1121,6 +1121,11 @@ function notifMeta(action) {
   if (/reopen/i.test(a)) return { icon: "↻", tone: "amber", label: "เปิดใหม่" };
   if (/review/i.test(a)) return { icon: "◐", tone: "info", label: "เริ่มตรวจ" };
   if (/note/i.test(a)) return { icon: "📝", tone: "amber", label: "เพิ่มโน้ต" };
+  if (/renam/i.test(a)) return { icon: "✎", tone: "slate", label: "แก้ไขชื่อรายการ" };
+  if (/reschedul/i.test(a)) return { icon: "🗓", tone: "amber", label: "แก้ไขกำหนดส่ง" };
+  if (/archiv/i.test(a)) return { icon: "🗄", tone: "slate", label: "ย้ายไปที่เก็บถาวร" };
+  if (/restor/i.test(a)) return { icon: "↺", tone: "info", label: "กู้คืนจากที่เก็บ" };
+  if (/request/i.test(a)) return { icon: "＋", tone: "info", label: "เพิ่มรายการ" };
   return { icon: "•", tone: "slate", label: a };
 }
 const notifLabel = (a) => notifMeta(a).label;
