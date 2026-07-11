@@ -2434,24 +2434,37 @@ function StatusListModal({ kind, items, onClose, onOpenItem }) {
     soon: { title: "รายการที่ใกล้ครบกำหนด" },
     review: { title: "รายการที่รอตรวจ" },
   }[kind] || { title: "รายการ" };
+  // group items by engagement (preserve incoming order)
+  const groups = [];
+  const byId = new Map();
+  items.forEach((it) => {
+    let g = byId.get(it.engagementId);
+    if (!g) { g = { engagementId: it.engagementId, client: it.client, items: [] }; byId.set(it.engagementId, g); groups.push(g); }
+    g.items.push(it);
+  });
   return (
     <Modal title={meta.title} onClose={onClose} wide>
-      <p className="tk-tplblurb" style={{ marginTop: 0 }}>คลิกที่รายการเพื่อไปยังข้อนั้นในพอร์ทัลได้เลย · {items.length} รายการ</p>
+      <p className="tk-tplblurb" style={{ marginTop: 0 }}>คลิกที่รายการเพื่อไปยังข้อนั้นในพอร์ทัลได้เลย · {items.length} รายการ · {groups.length} พอร์ทัล</p>
       <div className="imp-scroll" style={{ maxHeight: "58vh" }}>
         {items.length === 0 ? (
           <p className="tk-muted" style={{ padding: 20, textAlign: "center", margin: 0 }}>ไม่มีรายการ</p>
-        ) : items.map((it) => (
-          <button key={it.id} className="nv-sl-row" onClick={() => onOpenItem(it.engagementId, it.id)}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="nv-sl-name">{it.description}</div>
-              <div className="nv-sl-sub">
-                <b>{it.client}</b>{it.dueDate ? ` · กำหนดส่ง ${fmtDate(it.dueDate)}` : ""}
-                {kind === "overdue" && it.days ? <span style={{ color: "#EF4444", fontWeight: 600 }}> · เกิน {it.days} วัน</span> : null}
-                {kind === "soon" && it.days ? <span style={{ color: "#b4791b", fontWeight: 600 }}> · เหลือ {it.days} วัน</span> : null}
-              </div>
-            </div>
-            <span className="nv-sl-chev">›</span>
-          </button>
+        ) : groups.map((g) => (
+          <div key={g.engagementId} className="nv-slg">
+            <div className="nv-slg-head"><span className="nm">{g.client}</span><span className="ct">{g.items.length} รายการ</span></div>
+            {g.items.map((it) => (
+              <button key={it.id} className="nv-sl-row" onClick={() => onOpenItem(it.engagementId, it.id)}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="nv-sl-name">{it.description}</div>
+                  <div className="nv-sl-sub">
+                    {it.dueDate ? `กำหนดส่ง ${fmtDate(it.dueDate)}` : "ไม่มีกำหนดส่ง"}
+                    {kind === "overdue" && it.days ? <span style={{ color: "#EF4444", fontWeight: 600 }}> · เกิน {it.days} วัน</span> : null}
+                    {kind === "soon" && it.days ? <span style={{ color: "#b4791b", fontWeight: 600 }}> · เหลือ {it.days} วัน</span> : null}
+                  </div>
+                </div>
+                <span className="nv-sl-chev">›</span>
+              </button>
+            ))}
+          </div>
         ))}
       </div>
     </Modal>
