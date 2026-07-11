@@ -1497,53 +1497,21 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
                 );
               })()}
               <div className="nv-panel" id="nv-followup">
-                <div className="nv-panel-head"><span className="ic">✓</span><span className="t">สิ่งที่ต้องติดตาม</span></div>
-                {follow.empty ? (
-                  <p className="nv-fu-empty">ไม่มีสิ่งที่ต้องติดตามตอนนี้ 🎉</p>
+                <div className="nv-panel-head"><span className="t">กิจกรรมล่าสุด</span>{totalUnread > 0 && <span className="more" onClick={onMarkAllRead}>อ่านทั้งหมด</span>}</div>
+                {!notifs || notifs.length === 0 ? (
+                  <p className="tk-muted" style={{ margin: 0, color: "#64748B" }}>ยังไม่มีกิจกรรม</p>
                 ) : (
-                  <>
-                    {follow.overdue.length > 0 && (
-                      <div className="nv-fu-sec">
-                        <span className="nv-fu-h red">เกินกำหนด ({follow.overdue.length})</span>
-                        {follow.overdue.slice(0, 3).map((it) => (
-                          <div key={it.id} className="nv-fu-row" onClick={() => onOpen(it.engagementId)}>
-                            <span className="nv-fu-ic red">▤</span>
-                            <div className="nv-fu-main"><b>{it.client}</b><span>{it.description}</span></div>
-                            <span className="nv-fu-when red">เกิน {it.days} วัน</span>
-                            <span className="nv-fu-chev">›</span>
-                          </div>
-                        ))}
-                        {follow.overdue.length > 3 && <p className="nv-fu-more">+ อีก {follow.overdue.length - 3} รายการ</p>}
-                      </div>
-                    )}
-                    {follow.soon.length > 0 && (
-                      <div className="nv-fu-sec">
-                        <span className="nv-fu-h amber">ใกล้ครบกำหนด ({follow.soon.length})</span>
-                        {follow.soon.slice(0, 3).map((it) => (
-                          <div key={it.id} className="nv-fu-row" onClick={() => onOpen(it.engagementId)}>
-                            <span className="nv-fu-ic amber">◷</span>
-                            <div className="nv-fu-main"><b>{it.client}</b><span>{it.description}</span></div>
-                            <span className="nv-fu-when amber">เหลือ {it.days} วัน</span>
-                            <span className="nv-fu-chev">›</span>
-                          </div>
-                        ))}
-                        {follow.soon.length > 3 && <p className="nv-fu-more">+ อีก {follow.soon.length - 3} รายการ</p>}
-                      </div>
-                    )}
-                    {follow.review.length > 0 && (
-                      <div className="nv-fu-sec">
-                        <span className="nv-fu-h info">รอตรวจ ({follow.reviewTotal})</span>
-                        {follow.review.slice(0, 3).map((g) => (
-                          <div key={g.engagementId} className="nv-fu-row" onClick={() => onOpen(g.engagementId)}>
-                            <span className="nv-fu-ic info">▤</span>
-                            <div className="nv-fu-main"><b>{g.client}</b><span>รอตรวจ {g.count} รายการ</span></div>
-                            <span className="nv-fu-chev">›</span>
-                          </div>
-                        ))}
-                        {follow.review.length > 3 && <p className="nv-fu-more">+ อีก {follow.review.length - 3} พอร์ทัล</p>}
-                      </div>
-                    )}
-                  </>
+                  <ul className="nv-act-list">
+                    {notifs.slice(0, 8).map((n) => (
+                      <li key={n.id} onClick={() => onOpen(n.engagementId)}>
+                        <span className={`nv-act-ic ${/remove/i.test(n.action) ? "slate" : "info"}`}>{/remove/i.test(n.action) ? "🗑" : "↑"}</span>
+                        <div className="nv-act-body">
+                          <div className="tx"><b>{n.client}</b> {notifLabel(n.action)}{n.itemDescription && <span style={{ color: "#64748B" }}> · {n.itemDescription}</span>}</div>
+                          <div className="ts">{timeAgo(n.at)}</div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
             </div>
