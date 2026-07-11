@@ -448,9 +448,9 @@ export default function App() {
   /* ---- load the signed-in user's profile (for the approval gate) ---- */
   useEffect(() => {
     let alive = true;
-    if (!session) { setProfile(undefined); return; }
+    if (!session) { setProfile(undefined); firmApi.setActor(null); return; }
     firmApi.getProfile()
-      .then((p) => { if (alive) setProfile(p); })
+      .then((p) => { if (alive) { setProfile(p); firmApi.setActor(p?.full_name || session.user?.email || null); } })
       .catch(() => { if (alive) setProfile(null); });
     return () => { alive = false; };
   }, [session]);
@@ -1104,8 +1104,20 @@ function timeAgo(ts) {
   const h = Math.floor(m / 60); if (h < 24) return `${h} ชม.ที่แล้ว`;
   return `${Math.floor(h / 24)} วันที่แล้ว`;
 }
-const notifLabel = (a) => (/remove/i.test(a) ? "ลบไฟล์ที่อัปไว้" : /submit/i.test(a) ? "อัปโหลดเอกสาร" : a);
-const notifIcon = (a) => (/remove/i.test(a) ? "🗑" : "📤");
+// Icon + colour tone + Thai label for an item_history action (client + firm).
+function notifMeta(action) {
+  const a = action || "";
+  if (/remove/i.test(a)) return { icon: "🗑", tone: "slate", label: "ลบไฟล์ที่อัปไว้" };
+  if (/submit/i.test(a)) return { icon: "↑", tone: "info", label: "อัปโหลดเอกสาร" };
+  if (/accept/i.test(a)) return { icon: "✓", tone: "mint", label: "ตรวจรับ" };
+  if (/return/i.test(a)) return { icon: "↩", tone: "amber", label: "ส่งกลับแก้ไข" };
+  if (/reopen/i.test(a)) return { icon: "↻", tone: "amber", label: "เปิดใหม่" };
+  if (/review/i.test(a)) return { icon: "◐", tone: "info", label: "เริ่มตรวจ" };
+  if (/note/i.test(a)) return { icon: "📝", tone: "amber", label: "เพิ่มโน้ต" };
+  return { icon: "•", tone: "slate", label: a };
+}
+const notifLabel = (a) => notifMeta(a).label;
+const notifIcon = (a) => notifMeta(a).icon;
 
 const STORAGE_LIMIT = 10 * 1073741824; // 10 GB — Cloudflare R2 free tier (beyond it: ~$0.015/GB/mo, egress free).
 
@@ -1502,15 +1514,18 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
                   <p className="tk-muted" style={{ margin: 0, color: "#64748B" }}>ยังไม่มีกิจกรรม</p>
                 ) : (
                   <ul className="nv-act-list">
-                    {notifs.slice(0, 8).map((n) => (
-                      <li key={n.id} onClick={() => onOpen(n.engagementId)}>
-                        <span className={`nv-act-ic ${/remove/i.test(n.action) ? "slate" : "info"}`}>{/remove/i.test(n.action) ? "🗑" : "↑"}</span>
-                        <div className="nv-act-body">
-                          <div className="tx"><b>{n.client}</b> {notifLabel(n.action)}{n.itemDescription && <span style={{ color: "#64748B" }}> · {n.itemDescription}</span>}</div>
-                          <div className="ts">{timeAgo(n.at)}</div>
-                        </div>
-                      </li>
-                    ))}
+                    {notifs.slice(0, 8).map((n) => {
+                      const m = notifMeta(n.action);
+                      return (
+                        <li key={n.id} onClick={() => onOpen(n.engagementId)}>
+                          <span className={`nv-act-ic ${m.tone}`}>{m.icon}</span>
+                          <div className="nv-act-body">
+                            <div className="tx"><b>{n.client}</b> {n.actor && <>· {n.actor} </>}{m.label}{n.itemDescription && <span style={{ color: "#64748B" }}> · {n.itemDescription}</span>}</div>
+                            <div className="ts">{timeAgo(n.at)}</div>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
