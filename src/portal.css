@@ -886,3 +886,12 @@
 .nv-pagefoot{text-align:center;color:#94A3B8;font-size:12px;margin:36px 0 0;padding-top:20px;border-top:1px solid #E5E7EB}
 .nv-pagefoot span{margin:0 8px;color:#cbd5e1}
 @media(max-width:900px){ .nv-today-cards{grid-template-columns:1fr} }
+
+/* status drill-in list (สิ่งที่ต้องจัดการวันนี้ → item list) */
+.nv-sl-row{display:flex;align-items:center;gap:12px;width:100%;background:none;border:0;border-bottom:1px solid var(--line);padding:12px 14px;cursor:pointer;text-align:left;font-family:inherit}
+.nv-sl-row:last-child{border-bottom:0}
+.nv-sl-row:hover{background:#f7f8fb}
+.nv-sl-name{font:500 14px 'Inter','IBM Plex Sans Thai',sans-serif;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nv-sl-sub{font:400 12px 'Inter','IBM Plex Sans Thai',sans-serif;color:var(--ink-soft);margin-top:3px}
+.nv-sl-sub b{color:var(--ink);font-weight:600}
+.nv-sl-chev{color:#94A3B8;font-size:16px;flex:none}

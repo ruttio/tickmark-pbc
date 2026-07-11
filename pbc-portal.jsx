@@ -494,6 +494,13 @@ export default function App() {
     setCurrentId(id); setOpenItem(null); setView("engagement");
     firmApi.markEngagementSeen(id).catch(() => {}); // clear its unread badge
   };
+  // Open a portal AND jump straight to a specific item (its drawer opens once
+  // the engagement loads). Used by the dashboard status drill-in.
+  const openItemInEngagement = (engId, itemId) => {
+    setCurrentId(engId); setView("engagement");
+    firmApi.markEngagementSeen(engId).catch(() => {});
+    setOpenItem(itemId);
+  };
   const goDashboard = () => { setOpenItem(null); setView("dashboard"); };
   const markAllRead = () => run(() => firmApi.markAllSeen(), loadDashboard);
 
@@ -721,7 +728,7 @@ export default function App() {
       )}
 
       {view === "dashboard" ? (
-        <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} bucketUsage={bucketUsage} session={session} onOpen={openEngagement}
+        <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} bucketUsage={bucketUsage} session={session} onOpen={openEngagement} onOpenItem={openItemInEngagement}
           onNew={() => setModal("generate")} onGroups={() => setModal("groups")} onMarkAllRead={markAllRead} onSignOut={signOut} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
@@ -1198,7 +1205,7 @@ function KpiCard({ tone, icon, label, num, sub, numTone, subTone }) {
   );
 }
 
-function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session, onOpen, onNew, onGroups, onMarkAllRead, onSignOut }) {
+function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session, onOpen, onOpenItem, onNew, onGroups, onMarkAllRead, onSignOut }) {
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
@@ -1207,6 +1214,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
   const [viewMode, setViewMode] = useState("grid");   // grid | list
   const [scope, setScope] = useState("all");          // all | group
   const [actFilter, setActFilter] = useState("all");  // activity feed: all | client | firm
+  const [statusView, setStatusView] = useState(null); // "overdue" | "soon" | "review" — today-panel drill-in
   const [clientGroups, setClientGroups] = useState([]);
   const [openGroup, setOpenGroup] = useState(null);   // group id whose detail view is showing
   useEffect(() => { firmApi.listClientGroups().then(setClientGroups).catch(() => {}); }, [dash]);
@@ -1275,14 +1283,15 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
   const follow = useMemo(() => {
     const clientOf = (id) => (dash || []).find((e) => e.id === id)?.client || "—";
     const now = Date.now(); const DAY = 86400000; const SOON = 7 * DAY;
-    const overdue = [], soon = [], reviewBy = new Map();
+    const overdue = [], soon = [], reviewItems = [], reviewBy = new Map();
     (followups || []).forEach((it) => {
+      const row = { ...it, client: clientOf(it.engagementId) };
       if (it.status === "submitted") {
-        const g = reviewBy.get(it.engagementId) || { engagementId: it.engagementId, client: clientOf(it.engagementId), count: 0 };
+        reviewItems.push(row);
+        const g = reviewBy.get(it.engagementId) || { engagementId: it.engagementId, client: row.client, count: 0 };
         g.count++; reviewBy.set(it.engagementId, g);
       }
       if (it.dueDate == null) return;
-      const row = { ...it, client: clientOf(it.engagementId) };
       if (it.dueDate < now) overdue.push({ ...row, days: Math.max(1, Math.floor((now - it.dueDate) / DAY)) });
       else if (it.dueDate - now <= SOON) soon.push({ ...row, days: Math.max(1, Math.ceil((it.dueDate - now) / DAY)) });
     });
@@ -1290,7 +1299,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
     soon.sort((a, b) => a.days - b.days);
     const review = [...reviewBy.values()].sort((a, b) => b.count - a.count);
     const reviewTotal = review.reduce((n, g) => n + g.count, 0);
-    return { overdue, soon, review, reviewTotal, empty: !overdue.length && !soon.length && !review.length };
+    return { overdue, soon, review, reviewItems, reviewTotal, empty: !overdue.length && !soon.length && !review.length };
   }, [followups, dash]);
 
   // Bulk-reminder candidates: per-engagement counts of items the CLIENT still
@@ -1378,6 +1387,13 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
 
       {showLine && <LineModal onClose={() => setShowLine(false)} />}
       {showReminder && <ReminderModal candidates={reminderCandidates} onClose={() => setShowReminder(false)} />}
+      {statusView && (
+        <StatusListModal
+          kind={statusView}
+          items={statusView === "overdue" ? follow.overdue : statusView === "soon" ? follow.soon : follow.reviewItems}
+          onClose={() => setStatusView(null)}
+          onOpenItem={(engId, itemId) => { setStatusView(null); onOpenItem(engId, itemId); }} />
+      )}
 
       <div className="nv-page">
         <div className="nv-phead">
@@ -1400,14 +1416,13 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
             <div className="nv-today-acts">
               <button className="nv-obtn mint" disabled={reminderCandidates.length === 0}
                 onClick={() => setShowReminder(true)}>✈ ส่ง reminder</button>
-              <button className="nv-obtn" onClick={() => document.getElementById("nv-followup")?.scrollIntoView({ behavior: "smooth", block: "center" })}>ดูรายการทั้งหมด</button>
             </div>
           </div>
           {(() => {
             const uniq = (a) => [...new Set(a)];
             const join = (a) => a.slice(0, 2).join(" · ") + (a.length > 2 ? ` +${a.length - 2}` : "");
-            const card = (tone, ic, label, count, names, target) => (
-              <button className={`nv-tc ${tone}`} onClick={() => target && onOpen(target)}>
+            const card = (tone, ic, label, count, names, kind) => (
+              <button className={`nv-tc ${tone}`} disabled={!count} onClick={() => count && setStatusView(kind)}>
                 <span className="nv-tc-ic">{ic}</span>
                 <div className="nv-tc-main">
                   <div className="nv-tc-t">{label} <b>{count}</b></div>
@@ -1418,9 +1433,9 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
             );
             return (
               <div className="nv-today-cards">
-                {card("red", "!", "เกินกำหนด", follow.overdue.length, uniq(follow.overdue.map((x) => x.client)), follow.overdue[0]?.engagementId)}
-                {card("amber", "◷", "ใกล้ครบกำหนด", follow.soon.length, uniq(follow.soon.map((x) => x.client)), follow.soon[0]?.engagementId)}
-                {card("mint", "✓", "รอตรวจ", follow.reviewTotal, follow.review.map((g) => g.client), follow.review[0]?.engagementId)}
+                {card("red", "!", "เกินกำหนด", follow.overdue.length, uniq(follow.overdue.map((x) => x.client)), "overdue")}
+                {card("amber", "◷", "ใกล้ครบกำหนด", follow.soon.length, uniq(follow.soon.map((x) => x.client)), "soon")}
+                {card("mint", "✓", "รอตรวจ", follow.reviewTotal, uniq(follow.reviewItems.map((x) => x.client)), "review")}
               </div>
             );
           })()}
@@ -2411,6 +2426,38 @@ function ReminderModal({ candidates, onClose }) {
 
 // Manage client groups: create a group, share one group link, and assign
 // which portals belong to it (grouped portals are group-link-only).
+// Drill-in list for a "สิ่งที่ต้องจัดการวันนี้" status card. Each row jumps
+// straight to that item inside its portal.
+function StatusListModal({ kind, items, onClose, onOpenItem }) {
+  const meta = {
+    overdue: { title: "รายการที่เกินกำหนด" },
+    soon: { title: "รายการที่ใกล้ครบกำหนด" },
+    review: { title: "รายการที่รอตรวจ" },
+  }[kind] || { title: "รายการ" };
+  return (
+    <Modal title={meta.title} onClose={onClose} wide>
+      <p className="tk-tplblurb" style={{ marginTop: 0 }}>คลิกที่รายการเพื่อไปยังข้อนั้นในพอร์ทัลได้เลย · {items.length} รายการ</p>
+      <div className="imp-scroll" style={{ maxHeight: "58vh" }}>
+        {items.length === 0 ? (
+          <p className="tk-muted" style={{ padding: 20, textAlign: "center", margin: 0 }}>ไม่มีรายการ</p>
+        ) : items.map((it) => (
+          <button key={it.id} className="nv-sl-row" onClick={() => onOpenItem(it.engagementId, it.id)}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="nv-sl-name">{it.description}</div>
+              <div className="nv-sl-sub">
+                <b>{it.client}</b>{it.dueDate ? ` · กำหนดส่ง ${fmtDate(it.dueDate)}` : ""}
+                {kind === "overdue" && it.days ? <span style={{ color: "#EF4444", fontWeight: 600 }}> · เกิน {it.days} วัน</span> : null}
+                {kind === "soon" && it.days ? <span style={{ color: "#b4791b", fontWeight: 600 }}> · เหลือ {it.days} วัน</span> : null}
+              </div>
+            </div>
+            <span className="nv-sl-chev">›</span>
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 function ClientGroupsModal({ onClose, onChanged }) {
   const [groups, setGroups] = useState(null);
   const [engs, setEngs] = useState([]);
