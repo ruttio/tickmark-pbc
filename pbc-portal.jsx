@@ -182,6 +182,11 @@ async function hashCode(code) {
 const onlyDigits = (s) => s.replace(/\D+/g, "").slice(0, 16);
 const groupDigits = (s) => s.replace(/(.{4})/g, "$1 ").trim();
 const genCode = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)).join("");
+// Initials for a group avatar: first letters of up to two words (or first 2 chars).
+const initialsOf = (name = "") => {
+  const w = name.trim().split(/\s+/).filter(Boolean);
+  return (w.length >= 2 ? w[0][0] + w[1][0] : (name.trim().slice(0, 2))).toUpperCase() || "•";
+};
 
 /* ---------- Retention / expiry (auto-delete portals) -------------------- */
 const RETENTION_OPTIONS = [
@@ -1188,32 +1193,53 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
   const [showReminder, setShowReminder] = useState(false);
   const [sortBy, setSortBy] = useState("recent");     // recent | name | progress
   const [viewMode, setViewMode] = useState("grid");   // grid | list
-  const [scope, setScope] = useState("all");          // all | solo | group
+  const [scope, setScope] = useState("all");          // all | group
   const [clientGroups, setClientGroups] = useState([]);
-  const [expandedGroup, setExpandedGroup] = useState(null);
+  const [openGroup, setOpenGroup] = useState(null);   // group id whose detail view is showing
   useEffect(() => { firmApi.listClientGroups().then(setClientGroups).catch(() => {}); }, [dash]);
-  const groupName = useMemo(() => Object.fromEntries((clientGroups || []).map((g) => [g.id, g.name])), [clientGroups]);
   const hasGroups = clientGroups.length > 0;
 
-  const filtered = useMemo(() => {
-    const list = (dash || []).filter((e) =>
-      scope === "solo" ? !e.groupId : scope === "group" ? !!e.groupId : true);
-    const s = q.trim().toLowerCase();
-    const base = !s ? list : list.filter((e) => `${e.client} ${e.template}`.toLowerCase().includes(s));
-    const arr = [...base];
-    if (sortBy === "name") arr.sort((a, b) => (a.client || "").localeCompare(b.client || ""));
-    else if (sortBy === "progress") arr.sort((a, b) => (b.pct || 0) - (a.pct || 0));
-    else arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); // recent
-    return arr;
-  }, [dash, q, sortBy, scope]);
+  const sortEngs = (arr) => {
+    const a = [...arr];
+    if (sortBy === "name") a.sort((x, y) => (x.client || "").localeCompare(y.client || ""));
+    else if (sortBy === "progress") a.sort((x, y) => (y.pct || 0) - (x.pct || 0));
+    else a.sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+    return a;
+  };
+  const matchQ = (e) => { const s = q.trim().toLowerCase(); return !s || `${e.client} ${e.template}`.toLowerCase().includes(s); };
 
-  // "ในกลุ่ม" view: bucket the (already filtered/sorted) grouped portals by group.
-  const groupsView = useMemo(() => {
-    if (scope !== "group") return [];
+  // standalone portals (no group)
+  const singles = useMemo(() => sortEngs((dash || []).filter((e) => !e.groupId && matchQ(e))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dash, q, sortBy]);
+
+  // one rolled-up record per group (with its member engagements + aggregates)
+  const groupsData = useMemo(() => {
     const byId = new Map();
-    filtered.forEach((e) => { if (!byId.has(e.groupId)) byId.set(e.groupId, []); byId.get(e.groupId).push(e); });
-    return [...byId.entries()].map(([id, engs]) => ({ id, name: groupName[id] || "กลุ่มลูกค้า", engs }));
-  }, [scope, filtered, groupName]);
+    (dash || []).forEach((e) => { if (e.groupId) { if (!byId.has(e.groupId)) byId.set(e.groupId, []); byId.get(e.groupId).push(e); } });
+    const s = q.trim().toLowerCase();
+    const out = [];
+    (clientGroups || []).forEach((g) => {
+      const nameHit = !s || g.name.toLowerCase().includes(s);
+      const members = sortEngs((byId.get(g.id) || []).filter((e) => nameHit || matchQ(e)));
+      if (!members.length) return;
+      const sum = (f) => members.reduce((n, e) => n + f(e), 0);
+      const total = sum((e) => e.total || 0), accepted = sum((e) => e.accepted || 0);
+      out.push({
+        id: g.id, name: g.name, initials: initialsOf(g.name), members,
+        total, accepted, pct: total ? Math.round((accepted / total) * 100) : 0,
+        overdue: sum((e) => e.overdue || 0),
+        review: sum((e) => (e.by?.submitted || 0) + (e.by?.review || 0)),
+        upload: sum((e) => (e.by?.outstanding || 0) + (e.by?.reopened || 0)),
+      });
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dash, clientGroups, q, sortBy]);
+
+  const groupPortals = groupsData.reduce((n, g) => n + g.members.length, 0);
+  const feedCount = scope === "group" ? groupsData.length : groupsData.length + singles.length;
+  const detailGroup = openGroup ? groupsData.find((g) => g.id === openGroup) : null;
 
   const kpi = useMemo(() => {
     const list = dash || [];
@@ -1397,58 +1423,49 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
         ) : (
           <div className="nv-cols">
             <div>
-              <div className="nv-colhead">
-                <span className="t">Engagement ที่กำลังดำเนินการ <span>· {filtered.length}</span></span>
-                <div className="nv-colhead-r">
-                  {hasGroups && (
-                    <label className="nv-sortsel-w">แสดง:
-                      <select className="nv-sortsel" value={scope} onChange={(e) => setScope(e.target.value)}>
-                        <option value="all">ทั้งหมด</option>
-                        <option value="solo">พอร์ทัลเดี่ยว</option>
-                        <option value="group">ในกลุ่ม</option>
-                      </select>
-                    </label>
-                  )}
-                  <label className="nv-sortsel-w">จัดเรียง:
-                    <select className="nv-sortsel" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                      <option value="recent">ล่าสุด</option>
-                      <option value="name">ชื่อลูกค้า</option>
-                      <option value="progress">ความคืบหน้า</option>
-                    </select>
-                  </label>
-                  <div className="nv-vtoggle">
-                    <button className={viewMode === "grid" ? "on" : ""} title="ตาราง" onClick={() => setViewMode("grid")}>▦</button>
-                    <button className={viewMode === "list" ? "on" : ""} title="รายการ" onClick={() => setViewMode("list")}>☰</button>
-                  </div>
-                </div>
-              </div>
-              {filtered.length === 0 ? (
-                <p className="tk-none" style={{ color: "#64748B" }}>{scope === "group" ? "ยังไม่มีพอร์ทัลในกลุ่ม" : "ไม่พบพอร์ทัลที่ตรงกับ “" + q + "”"}</p>
-              ) : scope === "group" ? (
-                <>
-                  {groupsView.map((g) => (
-                    <div key={g.id} style={{ marginBottom: 14 }}>
-                      <GroupCard name={g.name} engagements={g.engs} expanded={expandedGroup === g.id}
-                        onToggle={() => setExpandedGroup(expandedGroup === g.id ? null : g.id)} />
-                      {expandedGroup === g.id && (
-                        <div className={`nv-eng-grid ${viewMode === "list" ? "list" : ""}`} style={{ marginTop: 12 }}>
-                          {g.engs.map((e) => (
-                            <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  <p className="nv-grid-foot">แสดง {groupsView.length} กลุ่ม · {filtered.length} พอร์ทัล</p>
-                </>
+              {openGroup && detailGroup ? (
+                <GroupDetail g={detailGroup} unreadByEng={unreadByEng} onBack={() => setOpenGroup(null)} onOpen={onOpen} />
               ) : (
                 <>
-                  <div className={`nv-eng-grid ${viewMode === "list" ? "list" : ""}`}>
-                    {filtered.map((e) => (
-                      <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} groupName={e.groupId ? groupName[e.groupId] : null} onOpen={() => onOpen(e.id)} />
-                    ))}
+                  <div className="nv-colhead">
+                    <span className="t">Engagement ที่กำลังดำเนินการ <span>· {feedCount}</span></span>
+                    <div className="nv-colhead-r">
+                      {hasGroups && (
+                        <div className="nv-seg">
+                          <button className={scope === "all" ? "on" : ""} onClick={() => setScope("all")}>ทั้งหมด</button>
+                          <button className={scope === "group" ? "on" : ""} onClick={() => setScope("group")}>เฉพาะกลุ่ม</button>
+                        </div>
+                      )}
+                      <label className="nv-sortsel-w">จัดเรียง:
+                        <select className="nv-sortsel" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                          <option value="recent">ล่าสุด</option>
+                          <option value="name">ชื่อลูกค้า</option>
+                          <option value="progress">ความคืบหน้า</option>
+                        </select>
+                      </label>
+                      <div className="nv-vtoggle">
+                        <button className={viewMode === "grid" ? "on" : ""} title="ตาราง" onClick={() => setViewMode("grid")}>▦</button>
+                        <button className={viewMode === "list" ? "on" : ""} title="รายการ" onClick={() => setViewMode("list")}>☰</button>
+                      </div>
+                    </div>
                   </div>
-                  <p className="nv-grid-foot">แสดง {filtered.length} จาก {dash.length} รายการ</p>
+                  {feedCount === 0 ? (
+                    <p className="tk-none" style={{ color: "#64748B" }}>{scope === "group" ? "ยังไม่มีพอร์ทัลในกลุ่ม" : `ไม่พบพอร์ทัลที่ตรงกับ “${q}”`}</p>
+                  ) : (
+                    <>
+                      <div className={`nv-eng-grid ${viewMode === "list" ? "list" : ""}`}>
+                        {groupsData.map((g) => (
+                          <GroupCard key={g.id} g={g} onOpen={() => setOpenGroup(g.id)} />
+                        ))}
+                        {scope !== "group" && singles.map((e) => (
+                          <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
+                        ))}
+                      </div>
+                      <p className="nv-grid-foot">
+                        {scope === "group" ? `แสดง ${groupsData.length} กลุ่ม · ${groupPortals} พอร์ทัล` : `แสดง ${feedCount} รายการ`}
+                      </p>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -1541,23 +1558,72 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
   );
 }
 
-function GroupCard({ name, engagements, expanded, onToggle }) {
-  const total = engagements.reduce((n, e) => n + (e.total || 0), 0);
-  const accepted = engagements.reduce((n, e) => n + (e.accepted || 0), 0);
-  const overdue = engagements.reduce((n, e) => n + (e.overdue || 0), 0);
-  const pct = total ? Math.round((accepted / total) * 100) : 0;
+function groupChips(g) {
+  const tags = [];
+  if (g.overdue > 0) tags.push({ tone: "red", txt: `⚠ เกินกำหนด ${g.overdue}` });
+  if (g.review > 0) tags.push({ tone: "amber", txt: `รอตรวจ ${g.review}` });
+  if (g.accepted > 0) tags.push({ tone: "mint", txt: `ตรวจรับ ${g.accepted}` });
+  if (g.upload > 0) tags.push({ tone: "slate", txt: `รออัปโหลด ${g.upload}` });
+  return tags;
+}
+
+// Group card (2a) — same footprint as an EngagementCard, with a purple accent
+// (top ribbon + purple border + progress bar). Clicking it opens the detail.
+function GroupCard({ g, onOpen }) {
+  const chips = groupChips(g);
   return (
-    <button className={`nv-gcard ${expanded ? "open" : ""}`} onClick={onToggle}>
-      <span className="nv-gcard-ic">👥</span>
-      <div className="nv-gcard-main">
-        <div className="nv-gcard-name">{name}</div>
-        <div className="nv-gcard-sub">
-          {engagements.length} พอร์ทัล · ตรวจรับ {accepted}/{total} · {pct}%
-          {overdue > 0 && <span style={{ color: "#EF4444", fontWeight: 600 }}> · เกินกำหนด {overdue}</span>}
+    <button className="nv-card nv-cardg" onClick={onOpen}>
+      <div className="nv-gc-top">
+        <div className="nv-gc-id">
+          <span className="nv-gc-av">{g.initials}</span>
+          <div style={{ minWidth: 0 }}>
+            <div className="nv-gc-nl"><span className="nv-gc-name">{g.name}</span><span className="nv-gc-badge">GROUP</span></div>
+            <div className="nv-gc-sub">{g.members.length} พอร์ทัล · ตรวจรับ {g.accepted}/{g.total}</div>
+          </div>
+        </div>
+        <div className="nv-card-pct"><b>{g.pct}</b><i>%</i></div>
+      </div>
+      <div className="nv-bar"><span style={{ width: `${Math.max(3, g.pct)}%` }} /></div>
+      <div className="nv-tags">
+        {chips.length ? chips.map((t, i) => <span key={i} className={`nv-tag2 ${t.tone}`}>{t.txt}</span>)
+          : <span className="nv-tag2 slate">ยังไม่มีรายการ</span>}
+      </div>
+      <div className="nv-card-foot">
+        <span className="open">เปิดกลุ่ม →</span>
+        <span style={{ fontSize: 12, color: "#9aa2b4" }}>ดูพอร์ทัลในกลุ่ม</span>
+      </div>
+    </button>
+  );
+}
+
+// Group detail: a purple header card (rolled-up stats) + the member portals.
+function GroupDetail({ g, unreadByEng, onBack, onOpen }) {
+  return (
+    <>
+      <button className="nv-gd-back" onClick={onBack}>← กลับไปทั้งหมด</button>
+      <div className="nv-gd">
+        <div className="nv-gd-hd">
+          <span className="nv-gd-av">{g.initials}</span>
+          <div style={{ minWidth: 0 }}>
+            <div className="nv-gc-nl"><span className="nv-gd-name">{g.name}</span><span className="nv-gc-badge">GROUP</span></div>
+            <div className="nv-gc-sub">{g.members.length} พอร์ทัลในกลุ่ม · ตรวจรับ {g.accepted}/{g.total}</div>
+          </div>
+          <div className="nv-gd-pct"><b>{g.pct}%</b><span>ความคืบหน้ารวม</span></div>
+        </div>
+        <div className="nv-gd-bar"><span style={{ width: `${Math.max(3, g.pct)}%` }} /></div>
+        <div className="nv-gd-stats">
+          <div className="nv-gd-stat"><b style={{ color: "#EF4444" }}>{g.overdue}</b><span>เกินกำหนด</span></div>
+          <div className="nv-gd-stat"><b style={{ color: "#b9821f" }}>{g.review}</b><span>รอตรวจ</span></div>
+          <div className="nv-gd-stat"><b style={{ color: "#0F172A" }}>{g.upload}</b><span>รออัปโหลด</span></div>
         </div>
       </div>
-      <span className="nv-gcard-chev">{expanded ? "▾" : "›"}</span>
-    </button>
+      <div className="nv-gd-sec">พอร์ทัลในกลุ่มนี้ <span>· {g.members.length}</span></div>
+      <div className="nv-eng-grid">
+        {g.members.map((e) => (
+          <EngagementCard key={e.id} e={e} unread={unreadByEng[e.id] || 0} onOpen={() => onOpen(e.id)} />
+        ))}
+      </div>
+    </>
   );
 }
 
