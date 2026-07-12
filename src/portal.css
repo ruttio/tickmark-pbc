@@ -576,6 +576,12 @@
 .nv-store-c-sub{font:400 11px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin-top:7px}
 .nv-act-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:16px}
 .nv-act-list li{display:flex;gap:12px;align-items:flex-start;cursor:pointer}
+.nv-act-list li.nv-act{padding-left:10px;border-left:2.5px solid transparent}
+.nv-act-list li.nv-act.cli{border-left-color:#12B39A}
+.nv-act-list li.nv-act.firm{border-left-color:#6F63E6}
+.nv-act-body .ts .side{font-weight:700;letter-spacing:.01em}
+.nv-act-list li.nv-act.cli .ts .side{color:#12B39A}
+.nv-act-list li.nv-act.firm .ts .side{color:#6F63E6}
 .nv-act-ic{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex:none}
 .nv-act-ic.info{background:rgba(59,130,246,.12);color:#3B82F6}
 .nv-act-ic.mint{background:rgba(18,179,154,.12);color:#12B39A}

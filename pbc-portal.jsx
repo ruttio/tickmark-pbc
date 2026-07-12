@@ -1554,11 +1554,11 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
                       {feed.slice(0, 8).map((n) => {
                         const m = notifMeta(n.action);
                         return (
-                          <li key={n.id} onClick={() => onOpen(n.engagementId)}>
+                          <li key={n.id} className={`nv-act ${n.by === "Client" ? "cli" : "firm"}`} onClick={() => onOpen(n.engagementId)}>
                             <span className={`nv-act-ic ${m.tone}`}>{m.icon}</span>
                             <div className="nv-act-body">
                               <div className="tx"><b>{n.client}</b> {n.actor && <>· {n.actor} </>}{m.label}{n.itemDescription && <span style={{ color: "#64748B" }}> · {n.itemDescription}</span>}</div>
-                              <div className="ts">{timeAgo(n.at)}</div>
+                              <div className="ts"><span className="side">{n.by === "Client" ? "ลูกค้า" : "สำนักงาน"}</span> · {timeAgo(n.at)}</div>
                             </div>
                           </li>
                         );
