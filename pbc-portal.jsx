@@ -4,6 +4,7 @@ import { firmApi } from "./lib/portalApi.js";
 import { SUPABASE_CONFIGURED } from "./lib/supabaseClient.js";
 import { FilePreviewModal, isPreviewable } from "./src/FilePreview.jsx";
 import { CommentThread } from "./src/CommentThread.jsx";
+import { Analytics } from "./src/Analytics.jsx";
 import "./src/portal.css"; // shared stylesheet (also used by the client portal)
 
 /* =========================================================================
@@ -428,6 +429,7 @@ export default function App() {
   const [followups, setFollowups] = useState([]);     // open items to follow up (overdue / due-soon / to-review)
   const [storage, setStorage] = useState(null);       // this firm's referenced bytes (RLS-scoped)
   const [bucketUsage, setBucketUsage] = useState(null); // whole shared bucket { bytes, count }
+  const [analytics, setAnalytics] = useState(null);     // dashboard analytics (firm_analytics RPC)
 
   /* ---- auth session ---- */
   useEffect(() => {
@@ -478,14 +480,15 @@ export default function App() {
   const loadDashboard = async () => {
     setErr("");
     try {
-      const [d, n, s, f, b] = await Promise.all([
+      const [d, n, s, f, b, a] = await Promise.all([
         firmApi.listEngagementsWithProgress(),
         firmApi.listNotifications().catch(() => []),
         firmApi.getStorageUsage().catch(() => null),
         firmApi.listFollowUps().catch(() => []),
         firmApi.getBucketUsage().catch(() => null),
+        firmApi.getAnalytics().catch(() => null),
       ]);
-      setDash(d); setNotifs(n); setStorage(s); setFollowups(f); setBucketUsage(b);
+      setDash(d); setNotifs(n); setStorage(s); setFollowups(f); setBucketUsage(b); setAnalytics(a);
     } catch (e) { setErr(e.message || "โหลดภาพรวมไม่สำเร็จ"); }
   };
   useEffect(() => {
@@ -747,7 +750,7 @@ export default function App() {
       )}
 
       {view === "dashboard" ? (
-        <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} bucketUsage={bucketUsage} session={session} onOpen={openEngagement} onOpenItem={openItemInEngagement}
+        <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} bucketUsage={bucketUsage} analytics={analytics} session={session} onOpen={openEngagement} onOpenItem={openItemInEngagement}
           onNew={() => openGenerate()} onGroups={() => setModal("groups")} onMarkAllRead={markAllRead} onSignOut={signOut} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
@@ -1248,7 +1251,7 @@ function KpiCard({ tone, icon, label, num, sub, numTone, subTone }) {
   );
 }
 
-function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session, onOpen, onOpenItem, onNew, onGroups, onMarkAllRead, onSignOut }) {
+function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytics, session, onOpen, onOpenItem, onNew, onGroups, onMarkAllRead, onSignOut }) {
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
@@ -1483,6 +1486,13 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
             );
           })()}
         </div>
+
+        {dash.length > 0 && analytics && (
+          <div className="nv-panel nv-analytics-panel">
+            <div className="nv-panel-head"><span className="t">📊 สถิติภาพรวม</span></div>
+            <Analytics data={analytics} />
+          </div>
+        )}
 
         {dash.length === 0 ? (
           <div className="nv-empty">
