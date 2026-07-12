@@ -1907,6 +1907,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
   const [comments, setComments] = useState([]);
   const [loadingC, setLoadingC] = useState(false);
   const [sendingC, setSendingC] = useState(false);
+  const [commentErr, setCommentErr] = useState("");
   useEffect(() => {
     if (!onListComments) return;
     let live = true;
@@ -1917,8 +1918,9 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
   }, [item.id]);
   const sendComment = async (body) => {
     setSendingC(true);
+    setCommentErr("");
     try { await onAddComment(item.id, body); setComments(await onListComments(item.id)); }
-    catch { /* surfaced by the caller's error handling */ }
+    catch (e) { setCommentErr(e?.message || "ส่งความคิดเห็นไม่สำเร็จ"); }
     finally { setSendingC(false); }
   };
   const [note, setNote] = useState(item.note || "");
@@ -2045,6 +2047,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
           <div className="tk-block">
             <p className="tk-block-h">💬 การสนทนา · ลูกค้าเห็นได้</p>
             <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Firm" />
+            {commentErr && <p className="tk-muted" style={{ color: "#EF4444", marginTop: 6 }}>{commentErr}</p>}
           </div>
         )}
 

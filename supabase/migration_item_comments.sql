@@ -20,10 +20,12 @@ create index if not exists idx_comments_item on item_comments(item_id, created_a
 
 alter table item_comments enable row level security;
 
--- Firm staff may read/write comments on their own engagements' items.
+-- Firm staff may read/write comments on portals they're a member of.
+-- Uses the membership model (my_portals(), from portal_members) to match
+-- portal_items / portal_files / portal_history after migration_portal_sharing.
 -- (Clients read/write via the portal Edge Function with the service role,
 --  gated by their session token — they need no policy of their own.)
 drop policy if exists firm_comments on item_comments;
 create policy firm_comments on item_comments
-  for all using (engagement_id in (select id from engagements where firm_id = my_firm()))
-  with check (engagement_id in (select id from engagements where firm_id = my_firm()));
+  for all using (engagement_id in (select my_portals()))
+  with check (engagement_id in (select my_portals()));
