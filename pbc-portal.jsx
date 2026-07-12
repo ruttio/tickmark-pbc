@@ -1414,7 +1414,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, session,
         <div className="nv-phead">
           <div>
             <h2>Engagements</h2>
-            <div className="sub">ภาพรวมพอร์ทัล คำขอเอกสาร และสถานะล่าสุดของลูกค้า{q && ` · พบ ${filtered.length} จาก ${dash.length}`}</div>
+            <div className="sub">ภาพรวมพอร์ทัล คำขอเอกสาร และสถานะล่าสุดของลูกค้า{q && ` · พบ ${feedCount} จาก ${dash.length}`}</div>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button className="nv-btn" onClick={onGroups}>👥 กลุ่มลูกค้า</button>
