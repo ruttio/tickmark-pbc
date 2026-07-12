@@ -412,6 +412,7 @@ export default function App() {
   const [currentId, setCurrentId] = useState(null);
   const [eng, setEng] = useState(null);               // detail of currentId (items + files + history)
   const [openItem, setOpenItem] = useState(null);     // item id for drawer
+  const [unreadC, setUnreadC] = useState({});         // { itemId: unread client-comment count } in the open engagement
   const [modal, setModal] = useState(null);           // 'generate' | 'add' | 'import' | 'settings'
   const [rollSource, setRollSource] = useState(null); // roll-forward: prefill GenerateModal from a prior portal
   const [importDraft, setImportDraft] = useState(null);
@@ -502,7 +503,14 @@ export default function App() {
   const openItemInEngagement = (engId, itemId) => {
     setCurrentId(engId); setView("engagement");
     firmApi.markEngagementSeen(engId).catch(() => {});
+    openItemDrawer(itemId);
+  };
+  // Open an item's drawer; if it has unread client comments, mark them read
+  // (optimistically drop it from the unread card) so the notification clears.
+  const openItemDrawer = (itemId) => {
     setOpenItem(itemId);
+    setUnreadC((prev) => { if (!prev[itemId]) return prev; const n = { ...prev }; delete n[itemId]; return n; });
+    firmApi.markItemRead(itemId).catch(() => {});
   };
   const goDashboard = () => { setOpenItem(null); setView("dashboard"); };
   // Open the Generate modal fresh, or pre-filled from a prior portal (roll-forward).
@@ -520,6 +528,7 @@ export default function App() {
     setErr("");
     try { setEng(await firmApi.getEngagement(currentId)); }
     catch (e) { setErr(e.message || "โหลดพอร์ทัลไม่สำเร็จ"); }
+    firmApi.listUnreadComments(currentId).then(setUnreadC).catch(() => {});
   };
   useEffect(() => {
     if (session && currentId) reloadDetail();
@@ -808,6 +817,18 @@ export default function App() {
                     <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{(() => { const f = eng.items.find(isOverdue); return f ? ` — ${f.description}` : ""; })()} · คลิกเพื่อดู</span>
                   </div>
                 )}
+                {(() => {
+                  const ids = Object.keys(unreadC);
+                  if (!ids.length) return null;
+                  const total = ids.reduce((n, id) => n + (unreadC[id] || 0), 0);
+                  const first = eng.items.find((it) => unreadC[it.id]);
+                  return (
+                    <div className="nv-alert cmt" onClick={() => first && openItemDrawer(first.id)}>
+                      <span className="ic">💬</span>
+                      <span>มี <b>{total}</b> ความคิดเห็นใหม่จากลูกค้า{first ? ` — ${first.description}` : ""} · คลิกเพื่ออ่าน</span>
+                    </div>
+                  );
+                })()}
                 <MultiFilter label="สถานะ" placeholder={`ทุกสถานะ · ${stats.total}`} selected={statusSel} onChange={setStatusSel}
                   options={[
                     ...STATUS_ORDER.map((s) => ({ value: s, label: STATUS[s].label, count: stats.by[s], dot: STATUS_DOT[s] })),
@@ -863,7 +884,7 @@ export default function App() {
                         const stTone = od ? "red" : STATUS_ST[it.status];
                         const stLabel = od ? "⚠ Overdue" : `${STATUS[it.status].glyph} ${STATUS[it.status].label}`;
                         return (
-                          <button key={it.id} className={`nv-doc ${rowCls}`} onClick={() => setOpenItem(it.id)}>
+                          <button key={it.id} className={`nv-doc ${rowCls}`} onClick={() => openItemDrawer(it.id)}>
                             <span className="nv-doc-no">{String(idx + 1).padStart(2, "0")}</span>
                             <div className="nv-doc-main">
                               <div className="nv-doc-name">{it.description}{it.required && <span className="req" title="Required">•</span>}</div>

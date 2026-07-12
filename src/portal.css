@@ -629,6 +629,7 @@
 .nv-isearch input::placeholder{color:#94A3B8}
 .nv-alert{display:flex;gap:9px;align-items:flex-start;background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.22);color:#EF4444;border-radius:12px;padding:11px 13px;font:500 12px/1.45 'Inter','IBM Plex Sans Thai',sans-serif;cursor:pointer}
 .nv-alert .ic{font-size:14px;flex:none}
+.nv-alert.cmt{background:rgba(59,130,246,.10);border-color:rgba(59,130,246,.22);color:#2563EB}
 .nv-fcard{background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:12px;box-shadow:0 16px 40px rgba(8,26,52,.08)}
 .nv-fcard-t{font:700 11px 'Inter','IBM Plex Sans Thai',sans-serif;letter-spacing:1px;text-transform:uppercase;color:#64748B;padding:2px 6px 10px}
 .nv-frow{display:flex;align-items:center;justify-content:space-between;gap:8px;border-radius:10px;padding:8px 11px;cursor:pointer;border:0;background:none;width:100%;font-family:inherit;text-align:left}
