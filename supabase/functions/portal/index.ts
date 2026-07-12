@@ -254,6 +254,16 @@ Deno.serve(async (req) => {
       return json({ url: await presignGet(file.storage_path, 120) });
     }
 
+    // ---- file_url: inline presigned URL to PREVIEW any file in this portal ----
+    // (the client's own uploads or a firm sample). Isolation via engagement_id.
+    if (action === "file_url") {
+      const file_id = String(body.file_id || "");
+      const { data: file } = await admin.from("item_files")
+        .select("id, storage_path, type").eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!file) return json({ error: "file not found" }, 404);
+      return json({ url: await presignGet(file.storage_path, 120, { disposition: "inline", contentType: file.type || undefined }) });
+    }
+
     // ---- remove_file: client deletes one of their uploads (storage + row) ----
     // Allowed while the item is not yet accepted (covers returned / reopened).
     if (action === "remove_file") {

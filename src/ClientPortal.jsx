@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clientApi } from "../lib/portalApi.js";
 import { SUPABASE_CONFIGURED } from "../lib/supabaseClient.js";
+import { FilePreviewModal, isPreviewable } from "./FilePreview.jsx";
 import "./portal.css";
 
 /* ---------- status model (mirrors the firm app) ------------------------ */
@@ -495,6 +496,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [drag, setDrag] = useState(false);
+  const [preview, setPreview] = useState(null); // { file, url } while the viewer is open
   const canUpload = item.status !== "accepted";
 
   const upload = async (fileList) => {
@@ -543,6 +545,18 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
     catch (e) { setErr(e.message || "เปิดไฟล์ไม่สำเร็จ"); }
   };
 
+  // In-page preview (PDF / image) for any file in this portal.
+  const openPreview = async (f) => {
+    setPreview({ file: f, url: null }); // open immediately with a loading state
+    try {
+      const url = await clientApi.fileUrl(token, f.id, engagementId);
+      setPreview({ file: f, url });
+    } catch (e) {
+      setPreview(null);
+      setErr(e.message || "เปิดตัวอย่างไม่สำเร็จ");
+    }
+  };
+
   const onDrop = (e) => {
     e.preventDefault(); setDrag(false);
     if (canUpload && e.dataTransfer.files?.length) upload(e.dataTransfer.files);
@@ -576,6 +590,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
                 <li key={f.id} className="nv-fchip">
                   <span className="nv-ftype">{fileExt(f.name)}</span>
                   <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
+                  {isPreviewable(f) && <button className="nv-fx" onClick={() => openPreview(f)}>ดู</button>}
                   <button className="nv-fx" onClick={() => openSample(f.id)}>ดาวน์โหลด</button>
                 </li>
               ))}
@@ -590,6 +605,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
                 <span className="nv-ftype">{fileExt(f.name)}</span>
                 <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
                 {f.rejected && <span className="nv-frej">ต้องแก้ไข</span>}
+                {isPreviewable(f) && <button className="nv-fx" onClick={() => openPreview(f)}>ดู</button>}
                 {canUpload && <button className="nv-fx" disabled={busy} onClick={() => remove(f.id)}>ลบ</button>}
               </li>
             ))}
@@ -619,6 +635,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
         {err && <p className="nv-lock-err" style={{ marginTop: 6 }}>{err}</p>}
       </div>
       <span className={`nv-st ${chip.tone} nv-crow-st`}>{chip.label}</span>
+      {preview && <FilePreviewModal file={preview.file} url={preview.url} onClose={() => setPreview(null)} />}
     </div>
   );
 }

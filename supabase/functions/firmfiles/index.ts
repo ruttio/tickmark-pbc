@@ -53,7 +53,11 @@ Deno.serve(async (req) => {
     if (action === "download") {
       const path = String(body.storage_path || "");
       if (!(await isMember(user.id, engOf(path)))) return json({ error: "forbidden" }, 403);
-      return json({ url: await presignGet(path, 300) });
+      // inline (+ content type) so the firm can preview a PDF/image in-page.
+      const opts = body.inline
+        ? { disposition: "inline", contentType: body.content_type || undefined }
+        : undefined;
+      return json({ url: await presignGet(path, 300, opts) });
     }
 
     if (action === "upload") {

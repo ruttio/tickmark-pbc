@@ -21,9 +21,18 @@ const objUrl = (key: string) =>
   `${ENDPOINT}/${key.split("/").map(encodeURIComponent).join("/")}`;
 
 // Presigned GET (download), valid for `expiresIn` seconds.
-export async function presignGet(key: string, expiresIn = 120): Promise<string> {
+// opts.disposition ("inline" | "attachment") + opts.contentType are baked into
+// the signed query (S3 response-* overrides) so the browser can render a PDF /
+// image in-page instead of forcing a download.
+export async function presignGet(
+  key: string,
+  expiresIn = 120,
+  opts: { disposition?: string; contentType?: string } = {},
+): Promise<string> {
   const u = new URL(objUrl(key));
   u.searchParams.set("X-Amz-Expires", String(expiresIn));
+  if (opts.disposition) u.searchParams.set("response-content-disposition", opts.disposition);
+  if (opts.contentType) u.searchParams.set("response-content-type", opts.contentType);
   const signed = await aws.sign(u.toString(), { method: "GET", aws: { signQuery: true } });
   return signed.url;
 }

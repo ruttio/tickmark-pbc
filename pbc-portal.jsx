@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
 import { firmApi } from "./lib/portalApi.js";
 import { SUPABASE_CONFIGURED } from "./lib/supabaseClient.js";
+import { FilePreviewModal, isPreviewable } from "./src/FilePreview.jsx";
 import "./src/portal.css"; // shared stylesheet (also used by the client portal)
 
 /* =========================================================================
@@ -890,6 +891,7 @@ export default function App() {
       {drawerItem && (
         <Drawer key={drawerItem.id} item={drawerItem} role="firm" busy={busy} onClose={() => setOpenItem(null)}
           onSetStatus={setStatus} onDelete={deleteItem} onDownload={downloadFile} onSaveNote={saveItemNote}
+          onPreviewUrl={(f) => firmApi.signedDownloadUrl(f.storagePath, { inline: true, contentType: f.type })}
           onUpdateItem={updateItem} onReturn={returnItem}
           onUploadSample={uploadSample} onRemoveSample={removeSample}
           canDelete={eng.myRole === "owner" || eng.myCanDelete} />
@@ -1885,11 +1887,17 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   );
 }
 
-function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onSaveNote, onUpdateItem, onReturn, onUploadSample, onRemoveSample, canDelete, busy }) {
+function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onPreviewUrl, onSaveNote, onUpdateItem, onReturn, onUploadSample, onRemoveSample, canDelete, busy }) {
   const fileRef = useRef(null);
   const sampleRef = useRef(null);
   const clientFiles = item.files.filter((f) => !f.isSample);
   const sampleFiles = item.files.filter((f) => f.isSample);
+  const [preview, setPreview] = useState(null); // { file, url } while the viewer is open
+  const openPreview = async (f) => {
+    setPreview({ file: f, url: null });
+    try { setPreview({ file: f, url: await onPreviewUrl(f) }); }
+    catch { setPreview(null); }
+  };
   const [note, setNote] = useState(item.note || "");
   const [reason, setReason] = useState("");
   const [rejectedSet, setRejectedSet] = useState(() => new Set(item.files.filter((f) => f.rejected).map((f) => f.id)));
@@ -1953,6 +1961,9 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
                 {role === "firm" && f.downloadedAt && (
                   <span className="tk-dl-done" title={`โหลดแล้วเมื่อ ${fmtDate(f.downloadedAt)}`}>✓</span>
                 )}
+                {onPreviewUrl && isPreviewable(f) && (
+                  <button className="tk-x" onClick={() => openPreview(f)}>ดู</button>
+                )}
                 {role === "firm" && onDownload && (
                   <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>{f.downloadedAt ? "โหลดซ้ำ" : "download"}</button>
                 )}
@@ -1981,6 +1992,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
                 <li key={f.id}>
                   <span className="tk-fileicon">📎</span>
                   <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
+                  {onPreviewUrl && isPreviewable(f) && <button className="tk-x" onClick={() => openPreview(f)}>ดู</button>}
                   {onDownload && <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>download</button>}
                   {onRemoveSample && <button className="tk-x" disabled={busy} onClick={() => onRemoveSample(f)}>remove</button>}
                 </li>
@@ -2064,6 +2076,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
           </ol>
         </div>
       </aside>
+      {preview && <FilePreviewModal file={preview.file} url={preview.url} onClose={() => setPreview(null)} />}
     </>
   );
 }
