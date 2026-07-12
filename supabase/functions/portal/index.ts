@@ -264,6 +264,48 @@ Deno.serve(async (req) => {
       return json({ url: await presignGet(file.storage_path, 120, { disposition: "inline", contentType: file.type || undefined }) });
     }
 
+    // ---- list_comments: the conversation thread for one item ----
+    if (action === "list_comments") {
+      const item_id = String(body.item_id || "");
+      const { data: item } = await admin.from("request_items")
+        .select("id").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!item) return json({ error: "item not in this portal" }, 403);
+      const { data: comments } = await admin.from("item_comments")
+        .select("id, by, author, body, created_at").eq("item_id", item_id).order("created_at");
+      return json({ comments: comments ?? [] });
+    }
+
+    // ---- add_comment: the client posts a message on one item ----
+    if (action === "add_comment") {
+      const item_id = String(body.item_id || "");
+      const text = String(body.body || "").trim();
+      if (!text) return json({ error: "empty comment" }, 400);
+      const { data: item } = await admin.from("request_items")
+        .select("id, description").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!item) return json({ error: "item not in this portal" }, 403);
+
+      await admin.from("item_comments").insert({ item_id, engagement_id, by: "Client", body: text.slice(0, 2000) });
+      await admin.from("item_history").insert({ item_id, by: "Client", action: "Commented" });
+
+      // LINE notify linked portal members (fire-and-forget)
+      try {
+        const { data: eng } = await admin.from("engagements").select("client").eq("id", engagement_id).maybeSingle();
+        const { data: members } = await admin.from("portal_members").select("user_id").eq("engagement_id", engagement_id);
+        const userIds = (members || []).map((m: any) => m.user_id);
+        if (userIds.length) {
+          const { data: profs } = await admin.from("profiles")
+            .select("line_target").in("id", userIds).not("line_target", "is", null);
+          const targets = [...new Set((profs || []).map((p: any) => p.line_target).filter(Boolean))];
+          if (targets.length) {
+            const msg = `💬 ${eng?.client} แสดงความคิดเห็น\n• ${item.description || ""}\n"${text.slice(0, 120)}"`;
+            await Promise.all(targets.map((t) => linePush(t as string, msg)));
+          }
+        }
+      } catch (_) { /* never block on a notification */ }
+
+      return json({ ok: true });
+    }
+
     // ---- remove_file: client deletes one of their uploads (storage + row) ----
     // Allowed while the item is not yet accepted (covers returned / reopened).
     if (action === "remove_file") {

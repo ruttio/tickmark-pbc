@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { firmApi } from "./lib/portalApi.js";
 import { SUPABASE_CONFIGURED } from "./lib/supabaseClient.js";
 import { FilePreviewModal, isPreviewable } from "./src/FilePreview.jsx";
+import { CommentThread } from "./src/CommentThread.jsx";
 import "./src/portal.css"; // shared stylesheet (also used by the client portal)
 
 /* =========================================================================
@@ -892,6 +893,8 @@ export default function App() {
         <Drawer key={drawerItem.id} item={drawerItem} role="firm" busy={busy} onClose={() => setOpenItem(null)}
           onSetStatus={setStatus} onDelete={deleteItem} onDownload={downloadFile} onSaveNote={saveItemNote}
           onPreviewUrl={(f) => firmApi.signedDownloadUrl(f.storagePath, { inline: true, contentType: f.type })}
+          onListComments={(itemId) => firmApi.listComments(itemId)}
+          onAddComment={(itemId, body) => firmApi.addComment(itemId, eng.id, body)}
           onUpdateItem={updateItem} onReturn={returnItem}
           onUploadSample={uploadSample} onRemoveSample={removeSample}
           canDelete={eng.myRole === "owner" || eng.myCanDelete} />
@@ -1132,6 +1135,7 @@ export function notifMeta(action) {
   if (/return/i.test(a)) return { icon: "↩", tone: "amber", label: "ส่งกลับแก้ไข" };
   if (/reopen/i.test(a)) return { icon: "↻", tone: "amber", label: "เปิดใหม่" };
   if (/review/i.test(a)) return { icon: "◐", tone: "info", label: "เริ่มตรวจ" };
+  if (/comment/i.test(a)) return { icon: "💬", tone: "info", label: "แสดงความคิดเห็น" };
   if (/note/i.test(a)) return { icon: "📝", tone: "amber", label: "เพิ่มโน้ต" };
   if (/renam/i.test(a)) return { icon: "✎", tone: "slate", label: "แก้ไขชื่อรายการ" };
   if (/reschedul/i.test(a)) return { icon: "🗓", tone: "amber", label: "แก้ไขกำหนดส่ง" };
@@ -1887,7 +1891,7 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   );
 }
 
-function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onPreviewUrl, onSaveNote, onUpdateItem, onReturn, onUploadSample, onRemoveSample, canDelete, busy }) {
+function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onPreviewUrl, onListComments, onAddComment, onSaveNote, onUpdateItem, onReturn, onUploadSample, onRemoveSample, canDelete, busy }) {
   const fileRef = useRef(null);
   const sampleRef = useRef(null);
   const clientFiles = item.files.filter((f) => !f.isSample);
@@ -1897,6 +1901,25 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
     setPreview({ file: f, url: null });
     try { setPreview({ file: f, url: await onPreviewUrl(f) }); }
     catch { setPreview(null); }
+  };
+
+  // Per-item comment thread — loaded when the drawer opens on an item.
+  const [comments, setComments] = useState([]);
+  const [loadingC, setLoadingC] = useState(false);
+  const [sendingC, setSendingC] = useState(false);
+  useEffect(() => {
+    if (!onListComments) return;
+    let live = true;
+    setLoadingC(true);
+    onListComments(item.id).then((c) => { if (live) setComments(c); }).catch(() => {}).finally(() => { if (live) setLoadingC(false); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
+  const sendComment = async (body) => {
+    setSendingC(true);
+    try { await onAddComment(item.id, body); setComments(await onListComments(item.id)); }
+    catch { /* surfaced by the caller's error handling */ }
+    finally { setSendingC(false); }
   };
   const [note, setNote] = useState(item.note || "");
   const [reason, setReason] = useState("");
@@ -2014,6 +2037,14 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
               onClick={() => onSaveNote(item.id, firmNote.trim())}>
               {busy ? "กำลังบันทึก…" : "บันทึกโน้ต"}
             </button>
+          </div>
+        )}
+
+        {/* Per-item conversation with the client */}
+        {onListComments && (
+          <div className="tk-block">
+            <p className="tk-block-h">💬 การสนทนา · ลูกค้าเห็นได้</p>
+            <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Firm" />
           </div>
         )}
 

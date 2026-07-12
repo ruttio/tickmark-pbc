@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { clientApi } from "../lib/portalApi.js";
 import { SUPABASE_CONFIGURED } from "../lib/supabaseClient.js";
 import { FilePreviewModal, isPreviewable } from "./FilePreview.jsx";
+import { CommentThread } from "./CommentThread.jsx";
 import "./portal.css";
 
 /* ---------- status model (mirrors the firm app) ------------------------ */
@@ -497,7 +498,29 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
   const [err, setErr] = useState("");
   const [drag, setDrag] = useState(false);
   const [preview, setPreview] = useState(null); // { file, url } while the viewer is open
+  const [showC, setShowC] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [loadingC, setLoadingC] = useState(false);
+  const [sendingC, setSendingC] = useState(false);
   const canUpload = item.status !== "accepted";
+
+  const loadComments = async () => {
+    setLoadingC(true);
+    try { setComments(await clientApi.listComments(token, item.id, engagementId)); }
+    catch { /* keep prior */ }
+    finally { setLoadingC(false); }
+  };
+  const toggleComments = () => {
+    const next = !showC;
+    setShowC(next);
+    if (next) loadComments();
+  };
+  const sendComment = async (body) => {
+    setSendingC(true);
+    try { await clientApi.addComment(token, item.id, engagementId, body); await loadComments(); }
+    catch (e) { setErr(e.message || "ส่งความคิดเห็นไม่สำเร็จ"); }
+    finally { setSendingC(false); }
+  };
 
   const upload = async (fileList) => {
     const files = Array.from(fileList);
@@ -632,6 +655,12 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
             )}
           </>
         )}
+        <div className="nv-crow-comments">
+          <button type="button" className="nv-clink" onClick={toggleComments}>
+            💬 ความคิดเห็น{comments.length ? ` (${comments.length})` : ""} {showC ? "▲" : "▼"}
+          </button>
+          {showC && <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Client" />}
+        </div>
         {err && <p className="nv-lock-err" style={{ marginTop: 6 }}>{err}</p>}
       </div>
       <span className={`nv-st ${chip.tone} nv-crow-st`}>{chip.label}</span>

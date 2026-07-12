@@ -579,6 +579,10 @@
 .nv-act-list li.nv-act{padding-left:10px;border-left:2.5px solid transparent}
 .nv-act-list li.nv-act.cli{border-left-color:#12B39A}
 .nv-act-list li.nv-act.firm{border-left-color:#6F63E6}
+/* client row: per-item comment toggle */
+.nv-crow-comments{margin-top:10px;border-top:1px dashed #E5E7EB;padding-top:8px}
+.nv-clink{background:none;border:0;color:#12B39A;font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;cursor:pointer;padding:2px 0;display:inline-flex;align-items:center;gap:4px}
+.nv-clink:hover{text-decoration:underline}
 .nv-act-body .ts .side{font-weight:700;letter-spacing:.01em}
 .nv-act-list li.nv-act.cli .ts .side{color:#12B39A}
 .nv-act-list li.nv-act.firm .ts .side{color:#6F63E6}
