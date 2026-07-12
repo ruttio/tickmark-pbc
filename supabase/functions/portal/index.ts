@@ -193,7 +193,15 @@ Deno.serve(async (req) => {
       const { data: items } = await admin.from("request_items")
         .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(id, name, size, type, storage_path, uploaded_at, rejected, is_sample), item_comments(count)")
         .eq("engagement_id", engagement_id).order("sort");
-      return json({ engagement: eng, items: items ?? [] });
+      // Latest FIRM comment per item → lets the client show an unread-comment card.
+      const { data: fc } = await admin.from("item_comments")
+        .select("item_id, created_at").eq("engagement_id", engagement_id).eq("by", "Firm");
+      const lastFirm: Record<string, string> = {};
+      (fc || []).forEach((c: any) => {
+        if (!lastFirm[c.item_id] || c.created_at > lastFirm[c.item_id]) lastFirm[c.item_id] = c.created_at;
+      });
+      const withMeta = (items ?? []).map((it: any) => ({ ...it, last_firm_comment_at: lastFirm[it.id] || null }));
+      return json({ engagement: eng, items: withMeta });
     }
 
     // ---- upload_url: signed URL so the client can upload one file ----

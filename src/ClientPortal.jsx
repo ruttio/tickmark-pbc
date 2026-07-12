@@ -58,6 +58,12 @@ const fmtSize = (b) =>
 const isOverdue = (it) => it.status !== "accepted" && it.dueDate && it.dueDate < Date.now();
 const fileExt = (name) => (name.includes(".") ? name.split(".").pop().slice(0, 4).toUpperCase() : "ไฟล์");
 
+// The client has no login, so "which firm comments have I read" lives in
+// localStorage per engagement: { itemId: seenAtMs }.
+const seenKey = (engId) => `cseen_${engId}`;
+const getSeen = (engId) => { try { return JSON.parse(localStorage.getItem(seenKey(engId)) || "{}"); } catch { return {}; } };
+const writeSeen = (engId, map) => { try { localStorage.setItem(seenKey(engId), JSON.stringify(map)); } catch { /* private mode */ } };
+
 // Session token cache (per engagement, this tab only). Survives a refresh
 // within the 8h window so the client isn't re-prompted on every reload.
 const tokenKey = (engId) => `pbc:client:session:${engId}`;
@@ -368,6 +374,17 @@ function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploade
   const [statusSel, setStatusSel] = useState([]);   // status filters (empty = all; may include "action"/"overdue")
   const [catSel, setCatSel] = useState([]);          // category filters (empty = all)
   const [q, setQ] = useState("");
+  const [seen, setSeen] = useState(() => getSeen(engagementId));   // read firm-comments (localStorage)
+  const [openCommentsId, setOpenCommentsId] = useState(null);       // item whose thread the unread card opened
+  const markItemSeen = (itemId) => {
+    const m = { ...getSeen(engagementId), [itemId]: Date.now() };
+    writeSeen(engagementId, m); setSeen(m);
+  };
+  // Items with a firm comment newer than the client last read it.
+  const unreadC = useMemo(
+    () => items.filter((it) => it.lastFirmCommentAt && (!seen[it.id] || it.lastFirmCommentAt > seen[it.id])),
+    [items, seen],
+  );
 
   const stats = useMemo(() => {
     const by = Object.fromEntries(STATUS_ORDER.map((s) => [s, 0]));
@@ -453,6 +470,12 @@ function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploade
                 <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{firstOverdue && ` — ${firstOverdue.description}`} · คลิกเพื่อดู</span>
               </div>
             )}
+            {unreadC.length > 0 && (
+              <div className="nv-alert cmt" onClick={() => { setOpenCommentsId(unreadC[0].id); setStatusSel([]); setCatSel([]); setQ(""); }}>
+                <span className="ic">💬</span>
+                <span>มี <b>{unreadC.length}</b> ความคิดเห็นใหม่จากสำนักงาน — {unreadC[0].description} · คลิกเพื่ออ่าน</span>
+              </div>
+            )}
             <MultiFilter label="สถานะ" placeholder={`ทุกสถานะ · ${items.length}`} selected={statusSel} onChange={setStatusSel}
               options={[
                 ...(stats.action > 0 ? [{ value: "action", label: "⚠ ต้องดำเนินการ", count: stats.action, dot: "#EF4444" }] : []),
@@ -478,7 +501,8 @@ function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploade
                   </div>
                   <div className="nv-list">
                     {rows.map((it, idx) => (
-                      <ClientRow key={it.id} item={it} index={idx + 1} token={token} engagementId={engagementId} onUploaded={onUploaded} />
+                      <ClientRow key={it.id} item={it} index={idx + 1} token={token} engagementId={engagementId} onUploaded={onUploaded}
+                        autoOpen={openCommentsId === it.id} onSeen={() => markItemSeen(it.id)} />
                     ))}
                   </div>
                 </div>
@@ -492,8 +516,9 @@ function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploade
   );
 }
 
-function ClientRow({ item, index, token, engagementId, onUploaded }) {
+function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onSeen }) {
   const fileRef = useRef(null);
+  const rowRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [drag, setDrag] = useState(false);
@@ -513,8 +538,15 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
   const toggleComments = () => {
     const next = !showC;
     setShowC(next);
-    if (next) loadComments();
+    if (next) { loadComments(); onSeen?.(); }
   };
+  // Opened from the unread-comment card → expand, load, mark read, scroll to it.
+  useEffect(() => {
+    if (!autoOpen) return;
+    setShowC(true); loadComments(); onSeen?.();
+    rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpen]);
   const sendComment = async (body) => {
     setSendingC(true);
     try { await clientApi.addComment(token, item.id, engagementId, body); await loadComments(); }
@@ -586,7 +618,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
   };
 
   return (
-    <div className={`nv-crow ${rowCls}`}>
+    <div ref={rowRef} className={`nv-crow ${rowCls}`}>
       <span className="nv-crow-no">{index}</span>
       <div className="nv-crow-main">
         <div className="nv-crow-name">{item.description}{item.required && <span className="req" title="Required">•</span>}</div>
