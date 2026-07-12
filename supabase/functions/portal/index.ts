@@ -191,7 +191,7 @@ Deno.serve(async (req) => {
       const { data: eng } = await admin.from("engagements")
         .select("id, client, template, period_end, expires_at").eq("id", engagement_id).maybeSingle();
       const { data: items } = await admin.from("request_items")
-        .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(id, name, size, type, storage_path, uploaded_at, rejected, is_sample)")
+        .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(id, name, size, type, storage_path, uploaded_at, rejected, is_sample), item_comments(count)")
         .eq("engagement_id", engagement_id).order("sort");
       return json({ engagement: eng, items: items ?? [] });
     }

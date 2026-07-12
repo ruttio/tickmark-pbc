@@ -656,8 +656,8 @@ function ClientRow({ item, index, token, engagementId, onUploaded }) {
           </>
         )}
         <div className="nv-crow-comments">
-          <button type="button" className="nv-clink" onClick={toggleComments}>
-            💬 ความคิดเห็น{comments.length ? ` (${comments.length})` : ""} {showC ? "▲" : "▼"}
+          <button type="button" className={`nv-clink ${(showC ? comments.length : item.commentCount) ? "has" : ""}`} onClick={toggleComments}>
+            💬 ความคิดเห็น{(showC ? comments.length : item.commentCount) ? ` (${showC ? comments.length : item.commentCount})` : ""} {showC ? "▲" : "▼"}
           </button>
           {showC && <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Client" />}
         </div>

@@ -583,6 +583,7 @@
 .nv-crow-comments{margin-top:10px;border-top:1px dashed #E5E7EB;padding-top:8px}
 .nv-clink{background:none;border:0;color:#12B39A;font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;cursor:pointer;padding:2px 0;display:inline-flex;align-items:center;gap:4px}
 .nv-clink:hover{text-decoration:underline}
+.nv-clink.has{background:rgba(59,130,246,.12);color:#3B82F6;padding:2px 9px;border-radius:10px}
 .nv-act-body .ts .side{font-weight:700;letter-spacing:.01em}
 .nv-act-list li.nv-act.cli .ts .side{color:#12B39A}
 .nv-act-list li.nv-act.firm .ts .side{color:#6F63E6}
@@ -675,6 +676,7 @@
 .nv-doc-sub{display:flex;align-items:center;gap:10px;margin-top:3px;flex-wrap:wrap}
 .nv-doc-sub .f{font:400 11px 'Inter',sans-serif;color:#12B39A}
 .nv-doc-sub .note{font:500 10px 'Inter','IBM Plex Sans Thai',sans-serif;background:rgba(245,158,11,.12);color:#F59E0B;padding:1px 7px;border-radius:10px}
+.nv-doc-sub .cmt{font:600 10px 'Inter','IBM Plex Sans Thai',sans-serif;background:rgba(59,130,246,.12);color:#3B82F6;padding:1px 7px;border-radius:10px}
 .nv-doc-sub .due{font:400 11px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
 .nv-doc-sub .due.od{color:#EF4444;font-weight:600}
 .nv-st{display:inline-flex;align-items:center;gap:5px;font:600 11.5px 'Inter','IBM Plex Sans Thai',sans-serif;padding:4px 10px;border-radius:16px;white-space:nowrap}

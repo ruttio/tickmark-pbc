@@ -869,6 +869,7 @@ export default function App() {
                               <div className="nv-doc-name">{it.description}{it.required && <span className="req" title="Required">•</span>}</div>
                               <div className="nv-doc-sub">
                                 {it.files.length > 0 && <span className="f">{it.files.length} file{it.files.length > 1 ? "s" : ""}</span>}
+                                {it.commentCount > 0 && <span className="cmt">💬 {it.commentCount}</span>}
                                 {it.firmNote && <span className="note" title={it.firmNote}>โน้ต</span>}
                                 <span className={`due ${od ? "od" : ""}`}>Due {fmtDate(it.dueDate)}</span>
                               </div>
