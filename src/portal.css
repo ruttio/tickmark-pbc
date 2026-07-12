@@ -854,31 +854,31 @@
 /* ---- 3d dashboard: today panel, toolbar controls, footer ---- */
 .nv-avatar{border:0;cursor:pointer;font-family:inherit}
 .nv-menu-email{font:600 12.5px 'Inter',sans-serif;color:#0F172A;padding:9px 12px;word-break:break-all}
-.nv-today{background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:18px;box-shadow:0 16px 40px rgba(8,26,52,.08);margin-bottom:24px}
-.nv-today-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px}
-.nv-today-head h3{font:700 16px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A;margin:0}
-.nv-today-head .sub{font:400 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin-top:4px}
+.nv-today{background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:13px 15px;box-shadow:0 16px 40px rgba(8,26,52,.08);margin-bottom:18px}
+.nv-today-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:11px}
+.nv-today-head h3{font:700 14.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A;margin:0}
+.nv-today-head .sub{font:400 11.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin-top:3px}
 .nv-today-acts{display:flex;gap:10px;flex-wrap:wrap}
 .nv-obtn{font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;background:#fff;border:1px solid #E5E7EB;color:#0F172A;border-radius:10px;padding:8px 14px;cursor:pointer}
 .nv-obtn:hover{border-color:#cbd5e1}
 .nv-obtn.mint{color:#12B39A;border-color:rgba(18,179,154,.4)}
 .nv-obtn:disabled{opacity:.5;cursor:not-allowed}
-.nv-today-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.nv-tc{display:flex;align-items:center;gap:14px;border-radius:14px;padding:14px 16px;cursor:pointer;border:1px solid transparent;text-align:left;font-family:inherit;width:100%}
+.nv-today-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.nv-tc{display:flex;align-items:center;gap:11px;border-radius:12px;padding:10px 13px;cursor:pointer;border:1px solid transparent;text-align:left;font-family:inherit;width:100%}
 .nv-tc.red{background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.16)}
 .nv-tc.amber{background:rgba(245,158,11,.07);border-color:rgba(245,158,11,.18)}
 .nv-tc.mint{background:rgba(18,179,154,.07);border-color:rgba(18,179,154,.18)}
 .nv-tc:hover{filter:brightness(.98)}
-.nv-tc-ic{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex:none}
+.nv-tc-ic{width:33px;height:33px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex:none}
 .nv-tc.red .nv-tc-ic{background:rgba(239,68,68,.14);color:#EF4444}
 .nv-tc.amber .nv-tc-ic{background:rgba(245,158,11,.16);color:#F59E0B}
 .nv-tc.mint .nv-tc-ic{background:rgba(18,179,154,.14);color:#12B39A}
 .nv-tc-main{flex:1;min-width:0}
-.nv-tc-t{font:700 13.5px 'Inter','IBM Plex Sans Thai',sans-serif}
+.nv-tc-t{font:700 12.5px 'Inter','IBM Plex Sans Thai',sans-serif}
 .nv-tc.red .nv-tc-t{color:#EF4444} .nv-tc.amber .nv-tc-t{color:#F59E0B} .nv-tc.mint .nv-tc-t{color:#12B39A}
 .nv-tc-t b{font-weight:800;margin-left:3px}
-.nv-tc-sub{font:400 12px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nv-tc-chev{color:#94A3B8;font-size:16px;flex:none}
+.nv-tc-sub{font:400 11px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nv-tc-chev{color:#94A3B8;font-size:15px;flex:none}
 .nv-colhead-r{display:flex;align-items:center;gap:12px}
 .nv-sortsel-w{display:inline-flex;align-items:center;gap:4px;font:500 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
 .nv-sortsel{font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A;border:0;background:transparent;cursor:pointer;outline:none;-webkit-appearance:none;appearance:none;padding:2px 16px 2px 2px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2364748B' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right center}
