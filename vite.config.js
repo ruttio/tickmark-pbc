@@ -16,4 +16,11 @@ export default defineConfig({
       },
     },
   },
+  // Vitest — unit tests for the pure data-layer / logic helpers.
+  // jsdom so importing the app modules (which touch localStorage via supabase-js)
+  // doesn't blow up; the tests themselves exercise pure functions only.
+  test: {
+    environment: "jsdom",
+    include: ["test/**/*.test.{js,jsx}"],
+  },
 });

@@ -179,11 +179,11 @@ async function hashCode(code) {
     return "fb" + h.toString(16);
   }
 }
-const onlyDigits = (s) => s.replace(/\D+/g, "").slice(0, 16);
-const groupDigits = (s) => s.replace(/(.{4})/g, "$1 ").trim();
+export const onlyDigits = (s) => s.replace(/\D+/g, "").slice(0, 16);
+export const groupDigits = (s) => s.replace(/(.{4})/g, "$1 ").trim();
 const genCode = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)).join("");
 // Initials for a group avatar: first letters of up to two words (or first 2 chars).
-const initialsOf = (name = "") => {
+export const initialsOf = (name = "") => {
   const w = name.trim().split(/\s+/).filter(Boolean);
   return (w.length >= 2 ? w[0][0] + w[1][0] : (name.trim().slice(0, 2))).toUpperCase() || "•";
 };
@@ -211,13 +211,13 @@ function fmtDate(ts) {
   if (!ts) return "—";
   return new Date(ts).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 }
-function fmtSize(bytes) {
+export function fmtSize(bytes) {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1048576) return (bytes / 1024).toFixed(0) + " KB";
   if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + " MB";
   return (bytes / 1073741824).toFixed(2) + " GB";
 }
-function isOverdue(item) {
+export function isOverdue(item) {
   return item.status !== "accepted" && item.dueDate && item.dueDate < Date.now();
 }
 function buildItems(template, baseDue) {
@@ -244,11 +244,11 @@ function buildItems(template, baseDue) {
 /* ---------- Excel (PBC template) parser --------------------------------- */
 const RECEIVED_WORDS = ["ได้รับแล้ว", "received", "complete", "done", "ตรวจแล้ว", "ครบ", "ok"];
 
-function cellStr(row, i) {
+export function cellStr(row, i) {
   const v = row ? row[i] : undefined;
   return v == null ? "" : String(v).trim();
 }
-function mapImportStatus(raw) {
+export function mapImportStatus(raw) {
   const s = String(raw == null ? "" : raw).trim().toLowerCase();
   if (!s) return "outstanding";
   if (RECEIVED_WORDS.some((w) => s.includes(w.toLowerCase()))) return "accepted";
@@ -258,7 +258,7 @@ function toDateInput(ts) {
   const d = new Date(ts), p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-function parseYearEnd(raw) {
+export function parseYearEnd(raw) {
   if (raw instanceof Date) return raw.getTime();
   const s = String(raw || "").trim();
   let m = s.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);   // DD-MM-YYYY
@@ -269,7 +269,7 @@ function parseYearEnd(raw) {
   if (!isNaN(d)) return d.getTime();
   return new Date(new Date().getFullYear() - 1, 11, 31).getTime();
 }
-function findMeta(aoa, labels) {
+export function findMeta(aoa, labels) {
   for (let r = 0; r < aoa.length; r++) {
     const row = aoa[r] || [];
     for (let c = 0; c < row.length; c++) {
@@ -285,7 +285,7 @@ function findMeta(aoa, labels) {
   return "";
 }
 // Reads an array-of-arrays grid and returns { meta, items }
-function parsePBC(aoa) {
+export function parsePBC(aoa) {
   let hr = -1;
   for (let r = 0; r < aoa.length; r++) {
     const cells = (aoa[r] || []).map((x) => String(x == null ? "" : x).trim().toLowerCase());
@@ -1113,7 +1113,7 @@ function PendingApprovalScreen({ email, onSignOut }) {
 }
 
 /* ---------- Firm dashboard: all portals + progress + search + notifs ---- */
-function timeAgo(ts) {
+export function timeAgo(ts) {
   if (!ts) return "";
   const s = Math.floor((Date.now() - ts) / 1000);
   if (s < 60) return "เมื่อสักครู่";
@@ -1122,7 +1122,7 @@ function timeAgo(ts) {
   return `${Math.floor(h / 24)} วันที่แล้ว`;
 }
 // Icon + colour tone + Thai label for an item_history action (client + firm).
-function notifMeta(action) {
+export function notifMeta(action) {
   const a = action || "";
   if (/remove/i.test(a)) return { icon: "🗑", tone: "slate", label: "ลบไฟล์ที่อัปไว้" };
   if (/submit/i.test(a)) return { icon: "↑", tone: "info", label: "อัปโหลดเอกสาร" };
