@@ -484,6 +484,10 @@
 .nv-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .nv-card-type{font-size:10.5px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#64748B}
 .nv-card-name{font-size:17px;font-weight:700;color:#0F172A;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* owner / member badge */
+.nv-role{display:inline-block;vertical-align:middle;margin-left:8px;font:700 10px 'Inter','IBM Plex Sans Thai',sans-serif;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.nv-role.own{background:rgba(18,179,154,.12);color:#12B39A}
+.nv-role.mem{background:rgba(100,116,139,.12);color:#64748B}
 .nv-card-pct{line-height:1;text-align:right;flex:none}
 .nv-card-pct b{font-size:22px;font-weight:700;color:#0F172A}
 .nv-card-pct.done b{color:#12B39A}

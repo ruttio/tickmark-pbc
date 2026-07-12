@@ -773,6 +773,7 @@ export default function App() {
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                   <span className="nv-eh-name">{eng.client}</span>
                   <span className="nv-eh-type">{eng.template}</span>
+                  {eng.myRole && <span className={`nv-role ${eng.myRole === "owner" ? "own" : "mem"}`}>{eng.myRole === "owner" ? "เจ้าของ" : "สมาชิก"}</span>}
                 </div>
                 <div className="nv-eh-meta">
                   งวดสิ้นสุด <b>{fmtDate(eng.periodEnd)}</b> · {stats.total} รายการ
@@ -1664,7 +1665,7 @@ function EngagementCard({ e, onOpen, unread, groupName }) {
         <div className="nv-card-top">
           <div style={{ minWidth: 0 }}>
             <div className="nv-card-type">{e.template}{groupName && <span style={{ marginLeft: 6, color: "#123563", textTransform: "none", letterSpacing: 0 }}>· 👥 {groupName}</span>}</div>
-            <div className="nv-card-name">{e.client}</div>
+            <div className="nv-card-name">{e.client}{e.myRole && <span className={`nv-role ${e.myRole === "owner" ? "own" : "mem"}`}>{e.myRole === "owner" ? "เจ้าของ" : "สมาชิก"}</span>}</div>
           </div>
           <div className={`nv-card-pct ${done ? "done" : ""}`}><b>{e.pct}</b><i>%</i></div>
         </div>
