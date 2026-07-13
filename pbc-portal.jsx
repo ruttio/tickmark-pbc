@@ -1255,6 +1255,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
   const [sortBy, setSortBy] = useState("recent");     // recent | name | progress
   const [viewMode, setViewMode] = useState("grid");   // grid | list
@@ -1389,6 +1390,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
         <div className="nv-brand"><span className="mk"><Tick size={17} /></span><span className="wd">Tickmark</span><span className="nv-pill">PBC Portal · Firm</span></div>
         <div className="nv-search"><span>⌕</span><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาลูกค้า / engagement…" /></div>
         <div className="nv-top-right">
+          <button className="nv-tbtn" onClick={() => setShowAnalytics(true)}>📊 Analytics</button>
           <button className="nv-tbtn" onClick={() => setShowLine(true)}>🟢 LINE</button>
           <div style={{ position: "relative" }}>
             <span className="nv-icon" onClick={() => setShowNotifs((s) => !s)}>🔔{totalUnread > 0 && <span className="nv-cbadge">{totalUnread}</span>}</span>
@@ -1432,6 +1434,11 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
       </div>
 
       {showLine && <LineModal onClose={() => setShowLine(false)} />}
+      {showAnalytics && (
+        <Modal title="📊 สถิติภาพรวม" onClose={() => setShowAnalytics(false)} wide>
+          {analytics ? <Analytics data={analytics} /> : <p className="tk-muted" style={{ padding: 20, textAlign: "center" }}>ยังไม่มีข้อมูลสถิติ</p>}
+        </Modal>
+      )}
       {showReminder && <ReminderModal candidates={reminderCandidates} onClose={() => setShowReminder(false)} />}
       {statusView && (
         <StatusListModal
@@ -1486,13 +1493,6 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
             );
           })()}
         </div>
-
-        {dash.length > 0 && analytics && (
-          <div className="nv-panel nv-analytics-panel">
-            <div className="nv-panel-head"><span className="t">📊 สถิติภาพรวม</span></div>
-            <Analytics data={analytics} />
-          </div>
-        )}
 
         {dash.length === 0 ? (
           <div className="nv-empty">
