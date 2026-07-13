@@ -12,6 +12,14 @@ const data = {
     waiting: { d0_7: 1, d7_14: 0, d14_30: 0, d30: 0 },
     overdue: { d0_7: 0, d7_14: 0, d14_30: 0, d30: 0 },
   },
+  submissionTiming: { early15: 1, d8_14: 2, d4_7: 0, d1_3: 3, late: 4 },
+  responseTimes: {
+    clientRespond: { avg: 2.5, n: 10 },
+    firmReview: { avg: 1.2, n: 8 },
+    firmView: { avg: 0.5, n: 6 },
+    firmReply: { avg: 0.8, n: 4 },
+    clientReply: { avg: 3.1, n: 3 },
+  },
 };
 // Static render → useEffect doesn't fire, so initialData is shown as-is.
 const render = (props) =>
@@ -36,6 +44,14 @@ describe("Analytics", () => {
     const out = render();
     expect(out).toContain("0–7 วัน");
     expect(out).toContain("30+ วัน");
+  });
+
+  it("renders submission timing + response-time rows", () => {
+    const out = render();
+    expect(out).toContain("ตรง/สายกว่ากำหนด");
+    expect(out).toContain("เวลาตอบสนองเฉลี่ย");
+    expect(out).toContain("2.5 วัน"); // clientRespond avg
+    expect(out).toContain("เปิดดูเอกสาร");
   });
 
   it("renders a client filter with the given engagements", () => {

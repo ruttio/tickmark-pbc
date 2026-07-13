@@ -12,6 +12,15 @@ const MODES = [
   { key: "overdue", label: "เกินกำหนด", desc: "งานที่ยังไม่ตรวจรับและเลยกำหนดส่ง · จำนวนวันที่เกิน" },
 ];
 const EMPTY_AGE = { d0_7: 0, d7_14: 0, d14_30: 0, d30: 0 };
+const TIME_LABELS = ["ล่วงหน้า >14 วัน", "8–14 วัน", "4–7 วัน", "1–3 วัน (ชิดเส้น)", "ตรง/สายกว่ากำหนด"];
+const TIME_COLORS = ["#12B39A", "#5EB38F", "#F59E0B", "#FB923C", "#EF4444"];
+const RT_ROWS = [
+  { key: "clientRespond", icon: "🧑‍💼", label: "ลูกค้าตอบสนอง · ขอ → อัปโหลด" },
+  { key: "firmReview", icon: "🏢", label: "สำนักงานตรวจ · อัปโหลด → ตรวจรับ" },
+  { key: "firmView", icon: "👀", label: "เปิดดูเอกสาร · อัปโหลด → เปิดครั้งแรก" },
+  { key: "firmReply", icon: "💬", label: "สำนักงานตอบคอมเมนต์" },
+  { key: "clientReply", icon: "💬", label: "ลูกค้าตอบคอมเมนต์" },
+];
 
 function fmtWeek(iso) { const d = new Date(iso); return `${d.getDate()}/${d.getMonth() + 1}`; }
 
@@ -33,6 +42,9 @@ const S = {
   agingRow: { display: "flex", alignItems: "center", gap: 8, marginTop: 7, fontSize: 11.5, color: "#334155" },
   dot: (c) => ({ width: 9, height: 9, borderRadius: 3, background: c, flex: "none" }),
   agingBar: { display: "flex", height: 12, borderRadius: 6, overflow: "hidden", background: "#F1F5F9", marginBottom: 4 },
+  rtRow: { display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderBottom: "1px solid #F1F5F9", fontSize: 12, color: "#334155" },
+  rtVal: { font: "800 13px 'Inter',sans-serif", color: "#0F172A" },
+  rtN: { fontSize: 10.5, color: SLATE, width: 34, textAlign: "right" },
 };
 
 export function Analytics({ initialData = null, engagements = [], fetchAnalytics }) {
@@ -59,6 +71,11 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
   const maxN = Math.max(1, ...weekly.map((w) => w.n));
   const W = Math.max(weekly.length, 1) * 42;
   const modeMeta = MODES.find((m) => m.key === mode);
+
+  const timing = data?.submissionTiming || {};
+  const timeVals = [timing.early15, timing.d8_14, timing.d4_7, timing.d1_3, timing.late].map((n) => n || 0);
+  const timeTotal = timeVals.reduce((a, b) => a + b, 0);
+  const rt = data?.responseTimes || {};
 
   return (
     <div>
@@ -138,6 +155,47 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
               </>
             )}
           </div>
+        </div>
+      </div>
+
+      <div style={{ ...S.grid, marginTop: 14 }} className="nv-analytics">
+        {/* Submission timing vs due date */}
+        <div style={S.card}>
+          <p style={S.h}>📅 ลูกค้าส่งเอกสารเทียบกำหนดส่ง ({timeTotal})</p>
+          {timeTotal === 0 ? (
+            <div style={S.empty}>ยังไม่มีข้อมูลการส่ง</div>
+          ) : (
+            <>
+              <div style={S.agingBar}>
+                {timeVals.map((n, i) => n > 0 && (
+                  <span key={i} title={`${TIME_LABELS[i]}: ${n}`} style={{ width: `${(n / timeTotal) * 100}%`, background: TIME_COLORS[i] }} />
+                ))}
+              </div>
+              {timeVals.map((n, i) => (
+                <div key={i} style={S.agingRow}>
+                  <span style={S.dot(TIME_COLORS[i])} />
+                  <span style={{ flex: 1 }}>{TIME_LABELS[i]}</span>
+                  <b>{n}</b>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+
+        {/* Response times by side */}
+        <div style={S.card}>
+          <p style={S.h}>⏱️ เวลาตอบสนองเฉลี่ย (วัน)</p>
+          {RT_ROWS.map((r) => {
+            const v = rt[r.key] || {};
+            return (
+              <div key={r.key} style={S.rtRow}>
+                <span>{r.icon}</span>
+                <span style={{ flex: 1 }}>{r.label}</span>
+                <span style={S.rtVal}>{v.avg != null ? `${v.avg} วัน` : "—"}</span>
+                <span style={S.rtN}>{v.n ? `(${v.n})` : ""}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
