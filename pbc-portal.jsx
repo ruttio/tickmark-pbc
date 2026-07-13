@@ -1436,7 +1436,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
       {showLine && <LineModal onClose={() => setShowLine(false)} />}
       {showAnalytics && (
         <Modal title="📊 สถิติภาพรวม" onClose={() => setShowAnalytics(false)} wide>
-          {analytics ? <Analytics data={analytics} /> : <p className="tk-muted" style={{ padding: 20, textAlign: "center" }}>ยังไม่มีข้อมูลสถิติ</p>}
+          <Analytics initialData={analytics} engagements={dash || []} fetchAnalytics={(id) => firmApi.getAnalytics(id)} />
         </Modal>
       )}
       {showReminder && <ReminderModal candidates={reminderCandidates} onClose={() => setShowReminder(false)} />}
