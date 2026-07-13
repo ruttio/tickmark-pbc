@@ -14,8 +14,17 @@
 //    confirm       { token, item_id, name, size, type, storage_path }
 // =====================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { presignGet, presignPut, deleteObjects } from "../_shared/r2.ts";
+import { presignGet, presignPut, deleteObjects, headObject } from "../_shared/r2.ts";
 import { linePush } from "../_shared/line.ts";
+
+// ---- Upload guardrails ----
+const MAX_FILE = 50 * 1024 * 1024;           // 50 MB per file
+const MAX_PORTAL = 2 * 1024 * 1024 * 1024;   // 2 GB total per portal
+const ALLOWED_EXT = new Set([
+  "pdf", "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "heic",
+  "xlsx", "xls", "xlsm", "csv", "docx", "doc", "pptx", "ppt", "txt", "zip",
+]);
+const extOf = (name: string) => (name.includes(".") ? name.split(".").pop()!.toLowerCase() : "");
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -212,10 +221,17 @@ Deno.serve(async (req) => {
     if (action === "upload_url") {
       const item_id = String(body.item_id || "");
       const filename = String(body.filename || "file").replace(/[^\w.\-]/g, "_");
-      // make sure the item really belongs to this portal
+      const size = Number(body.size || 0);
       const { data: item } = await admin.from("request_items")
-        .select("id").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
+        .select("id, status").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!item) return json({ error: "item not in this portal" }, 403);
+      if (item.status === "accepted") return json({ error: "รายการนี้ตรวจรับแล้ว อัปโหลดเพิ่มไม่ได้" }, 409);
+      if (!ALLOWED_EXT.has(extOf(filename))) return json({ error: "ชนิดไฟล์นี้ไม่รองรับ" }, 415);
+      if (size > MAX_FILE) return json({ error: "ไฟล์ใหญ่เกิน 50 MB" }, 413);
+      // Per-portal storage quota.
+      const { data: existing } = await admin.from("item_files").select("size").eq("engagement_id", engagement_id);
+      const used = (existing || []).reduce((s: number, f: any) => s + Number(f.size || 0), 0);
+      if (used + size > MAX_PORTAL) return json({ error: "พื้นที่จัดเก็บของพอร์ทัลเต็ม" }, 413);
 
       const path = `${engagement_id}/${item_id}/${Date.now()}_${filename}`;
       const put_url = await presignPut(path);   // client PUTs the file bytes to this R2 URL
@@ -225,14 +241,28 @@ Deno.serve(async (req) => {
     // ---- confirm: record the uploaded file + advance the item ----
     if (action === "confirm") {
       const item_id = String(body.item_id || "");
+      const storage_path = String(body.storage_path || "");
       const { data: item } = await admin.from("request_items")
-        .select("id").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
+        .select("id, status").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!item) return json({ error: "item not in this portal" }, 403);
+      if (item.status === "accepted") return json({ error: "รายการนี้ตรวจรับแล้ว" }, 409);
+      // The path must live inside THIS item's folder — never trust a client path elsewhere.
+      if (!storage_path.startsWith(`${engagement_id}/${item_id}/`)) return json({ error: "invalid path" }, 400);
+      if (!ALLOWED_EXT.has(extOf(storage_path))) return json({ error: "ชนิดไฟล์นี้ไม่รองรับ" }, 415);
+
+      // Authoritative check: read the REAL object from R2 (verifies it exists +
+      // gives trustworthy size/type/checksum instead of client-declared values).
+      const meta = await headObject(storage_path);
+      if (!meta) return json({ error: "ไม่พบไฟล์ที่อัปโหลด ลองใหม่อีกครั้ง" }, 404);
+      if (meta.size > MAX_FILE) { await deleteObjects([storage_path]); return json({ error: "ไฟล์ใหญ่เกิน 50 MB" }, 413); }
 
       await admin.from("item_files").insert({
         item_id, engagement_id,
-        name: String(body.name || ""), size: Number(body.size || 0),
-        type: String(body.type || ""), storage_path: String(body.storage_path || ""),
+        name: String(body.name || "").slice(0, 255),
+        size: meta.size,
+        type: meta.contentType || String(body.type || ""),
+        storage_path,
+        checksum: meta.etag,
       });
       await admin.from("request_items").update({ status: "submitted", note: "" }).eq("id", item_id);
       await admin.from("item_history").insert({ item_id, by: "Client", action: "Submitted" });

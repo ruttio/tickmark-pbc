@@ -22,6 +22,7 @@ import { clientApi } from "../lib/portalApi.js";
 import { SUPABASE_CONFIGURED } from "../lib/supabaseClient.js";
 import { FilePreviewModal, isPreviewable } from "./FilePreview.jsx";
 import { CommentThread } from "./CommentThread.jsx";
+import { fileError } from "./uploadRules.js";
 import "./portal.css";
 
 /* ---------- status model (mirrors the firm app) ------------------------ */
@@ -557,6 +558,11 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
   const upload = async (fileList) => {
     const files = Array.from(fileList);
     if (!files.length) return;
+    // Advisory pre-check (the Edge Function enforces the same rules authoritatively).
+    for (const f of files) {
+      const bad = fileError(f);
+      if (bad) { setErr(`${f.name}: ${bad}`); return; }
+    }
     setBusy(true);
     setErr("");
     try {

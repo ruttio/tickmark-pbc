@@ -45,6 +45,21 @@ export async function presignPut(key: string, expiresIn = 600): Promise<string> 
   return signed.url;
 }
 
+// HEAD an object → its REAL size / content-type / etag (checksum). null if absent.
+// Used to verify a client actually uploaded, and to trust server-side metadata
+// instead of client-declared values.
+export async function headObject(
+  key: string,
+): Promise<{ size: number; contentType: string; etag: string } | null> {
+  const res = await aws.fetch(objUrl(key), { method: "HEAD" });
+  if (!res.ok) { await res.body?.cancel?.(); return null; }
+  return {
+    size: Number(res.headers.get("content-length") || 0),
+    contentType: res.headers.get("content-type") || "",
+    etag: (res.headers.get("etag") || "").replace(/"/g, ""),
+  };
+}
+
 // Delete objects (signed request, server-side).
 export async function deleteObjects(keys: string[]): Promise<void> {
   await Promise.all(keys.map((k) => aws.fetch(objUrl(k), { method: "DELETE" })));
