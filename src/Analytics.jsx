@@ -12,8 +12,30 @@ const MODES = [
   { key: "overdue", label: "เกินกำหนด", desc: "งานที่ยังไม่ตรวจรับและเลยกำหนดส่ง · จำนวนวันที่เกิน" },
 ];
 const EMPTY_AGE = { d0_7: 0, d7_14: 0, d14_30: 0, d30: 0 };
-const TIME_LABELS = ["ล่วงหน้า >14 วัน", "8–14 วัน", "4–7 วัน", "1–3 วัน (ชิดเส้น)", "ตรง/สายกว่ากำหนด"];
-const TIME_COLORS = ["#12B39A", "#5EB38F", "#F59E0B", "#FB923C", "#EF4444"];
+// Submission timing distribution — bins of days-before-due, ordered
+// left (submitted early) → right (submitted late). "due" = on the due date.
+const TIMING_BINS = [
+  { key: "e22", label: "≥22" },
+  { key: "e15", label: "15–21" },
+  { key: "e8", label: "8–14" },
+  { key: "e4", label: "4–7" },
+  { key: "e1", label: "1–3" },
+  { key: "due", label: "กำหนด", due: true },
+  { key: "l1", label: "สาย 1–3" },
+  { key: "l4", label: "สาย 4–6" },
+  { key: "l7", label: "สาย ≥7" },
+];
+
+// Smooth SVG path (Catmull-Rom → cubic bezier) through points for a density curve.
+function smoothPath(pts) {
+  if (pts.length < 2) return "";
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    d += ` C ${p1.x + (p2.x - p0.x) / 6} ${p1.y + (p2.y - p0.y) / 6} ${p2.x - (p3.x - p1.x) / 6} ${p2.y - (p3.y - p1.y) / 6} ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
 const RT_ROWS = [
   { key: "clientRespond", icon: "🧑‍💼", label: "ลูกค้าตอบสนอง · ขอ → อัปโหลด" },
   { key: "firmReview", icon: "🏢", label: "สำนักงานตรวจ · อัปโหลด → ตรวจรับ" },
@@ -73,8 +95,8 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
   const modeMeta = MODES.find((m) => m.key === mode);
 
   const timing = data?.submissionTiming || {};
-  const timeVals = [timing.early15, timing.d8_14, timing.d4_7, timing.d1_3, timing.late].map((n) => n || 0);
-  const timeTotal = timeVals.reduce((a, b) => a + b, 0);
+  const timingBins = TIMING_BINS.map((b) => ({ ...b, n: timing[b.key] || 0 }));
+  const timeTotal = timingBins.reduce((a, b) => a + b.n, 0);
   const rt = data?.responseTimes || {};
 
   return (
@@ -159,27 +181,46 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
       </div>
 
       <div style={{ ...S.grid, marginTop: 14 }} className="nv-analytics">
-        {/* Submission timing vs due date */}
+        {/* Submission timing vs due date — density curve */}
         <div style={S.card}>
           <p style={S.h}>📅 ลูกค้าส่งเอกสารเทียบกำหนดส่ง ({timeTotal})</p>
           {timeTotal === 0 ? (
             <div style={S.empty}>ยังไม่มีข้อมูลการส่ง</div>
-          ) : (
-            <>
-              <div style={S.agingBar}>
-                {timeVals.map((n, i) => n > 0 && (
-                  <span key={i} title={`${TIME_LABELS[i]}: ${n}`} style={{ width: `${(n / timeTotal) * 100}%`, background: TIME_COLORS[i] }} />
+          ) : (() => {
+            const VW = 360, VH = 150, padL = 14, padR = 14, base = 112, top = 20;
+            const maxN = Math.max(1, ...timingBins.map((b) => b.n));
+            const plotW = VW - padL - padR;
+            const pts = timingBins.map((b, i) => ({ x: padL + (i * plotW) / (timingBins.length - 1), y: base - (b.n / maxN) * (base - top), n: b.n, due: b.due, label: b.label }));
+            const dueX = pts.find((p) => p.due)?.x ?? VW / 2;
+            const curve = smoothPath(pts);
+            const area = `${curve} L ${pts[pts.length - 1].x} ${base} L ${pts[0].x} ${base} Z`;
+            return (
+              <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" height="150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="การกระจายเวลาส่งเทียบกำหนดส่ง">
+                <defs>
+                  <linearGradient id="tmg" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#12B39A" stopOpacity="0.85" />
+                    <stop offset="55%" stopColor="#F59E0B" stopOpacity="0.8" />
+                    <stop offset="100%" stopColor="#EF4444" stopOpacity="0.85" />
+                  </linearGradient>
+                </defs>
+                <line x1={padL} y1={base} x2={VW - padR} y2={base} stroke="#E5E7EB" strokeWidth="1" />
+                <path d={area} fill="url(#tmg)" opacity="0.28" />
+                <path d={curve} fill="none" stroke="url(#tmg)" strokeWidth="2.5" />
+                {/* due-date marker */}
+                <line x1={dueX} y1={top - 6} x2={dueX} y2={base} stroke="#EF4444" strokeWidth="1.3" strokeDasharray="3 3" />
+                <text x={dueX} y={top - 9} textAnchor="middle" fontSize="9" fontWeight="700" fill="#EF4444">กำหนดส่ง</text>
+                {pts.map((p, i) => (
+                  <g key={i}>
+                    <circle cx={p.x} cy={p.y} r={p.n > 0 ? 2.6 : 0} fill="#fff" stroke="#0F172A" strokeWidth="1.2" />
+                    {p.n > 0 && <text x={p.x} y={p.y - 6} textAnchor="middle" fontSize="8" fontWeight="700" fill="#0F172A">{p.n}</text>}
+                    <text x={p.x} y={base + 12} textAnchor="middle" fontSize="7.5" fill="#94A3B8">{p.label}</text>
+                  </g>
                 ))}
-              </div>
-              {timeVals.map((n, i) => (
-                <div key={i} style={S.agingRow}>
-                  <span style={S.dot(TIME_COLORS[i])} />
-                  <span style={{ flex: 1 }}>{TIME_LABELS[i]}</span>
-                  <b>{n}</b>
-                </div>
-              ))}
-            </>
-          )}
+                <text x={padL} y={VH - 3} textAnchor="start" fontSize="8.5" fill="#12B39A" fontWeight="600">← ส่งล่วงหน้า</text>
+                <text x={VW - padR} y={VH - 3} textAnchor="end" fontSize="8.5" fill="#EF4444" fontWeight="600">ส่งสาย →</text>
+              </svg>
+            );
+          })()}
         </div>
 
         {/* Response times by side */}

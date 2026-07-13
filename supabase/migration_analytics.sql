@@ -106,12 +106,17 @@ returns json language sql stable security definer set search_path = public as $$
       'waiting',   (select json_build_object('d0_7',count(*) filter (where now()-ts< interval '7 days'),'d7_14',count(*) filter (where now()-ts>=interval '7 days' and now()-ts<interval '14 days'),'d14_30',count(*) filter (where now()-ts>=interval '14 days' and now()-ts<interval '30 days'),'d30',count(*) filter (where now()-ts>=interval '30 days')) from age_wait),
       'overdue',   (select json_build_object('d0_7',count(*) filter (where now()-ts< interval '7 days'),'d7_14',count(*) filter (where now()-ts>=interval '7 days' and now()-ts<interval '14 days'),'d14_30',count(*) filter (where now()-ts>=interval '14 days' and now()-ts<interval '30 days'),'d30',count(*) filter (where now()-ts>=interval '30 days')) from age_over)
     ),
+    -- distribution of days-before-due, binned around the due date (0)
     'submissionTiming', (select json_build_object(
-        'early15', count(*) filter (where db > 14),
-        'd8_14',   count(*) filter (where db between 8 and 14),
-        'd4_7',    count(*) filter (where db between 4 and 7),
-        'd1_3',    count(*) filter (where db between 1 and 3),
-        'late',    count(*) filter (where db <= 0)
+        'e22', count(*) filter (where db >= 22),
+        'e15', count(*) filter (where db between 15 and 21),
+        'e8',  count(*) filter (where db between 8 and 14),
+        'e4',  count(*) filter (where db between 4 and 7),
+        'e1',  count(*) filter (where db between 1 and 3),
+        'due', count(*) filter (where db = 0),
+        'l1',  count(*) filter (where db between -3 and -1),
+        'l4',  count(*) filter (where db between -6 and -4),
+        'l7',  count(*) filter (where db <= -7)
       ) from timing),
     'responseTimes', json_build_object(
       'clientRespond', (select json_build_object('avg', round(avg(days)::numeric,1), 'n', count(*)::int) from client_respond),

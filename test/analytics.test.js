@@ -12,7 +12,7 @@ const data = {
     waiting: { d0_7: 1, d7_14: 0, d14_30: 0, d30: 0 },
     overdue: { d0_7: 0, d7_14: 0, d14_30: 0, d30: 0 },
   },
-  submissionTiming: { early15: 1, d8_14: 2, d4_7: 0, d1_3: 3, late: 4 },
+  submissionTiming: { e22: 1, e15: 2, e8: 0, e4: 1, e1: 3, due: 2, l1: 1, l4: 0, l7: 4 },
   responseTimes: {
     clientRespond: { avg: 2.5, n: 10 },
     firmReview: { avg: 1.2, n: 8 },
@@ -46,11 +46,13 @@ describe("Analytics", () => {
     expect(out).toContain("30+ วัน");
   });
 
-  it("renders submission timing + response-time rows", () => {
+  it("renders the submission-timing distribution + response-time rows", () => {
     const out = render();
-    expect(out).toContain("ตรง/สายกว่ากำหนด");
+    expect(out).toContain("กำหนดส่ง");     // due-date marker on the curve
+    expect(out).toContain("ส่งล่วงหน้า");   // axis label
+    expect(out).toContain("<path");         // density curve
     expect(out).toContain("เวลาตอบสนองเฉลี่ย");
-    expect(out).toContain("2.5 วัน"); // clientRespond avg
+    expect(out).toContain("2.5 วัน");       // clientRespond avg
     expect(out).toContain("เปิดดูเอกสาร");
   });
 
