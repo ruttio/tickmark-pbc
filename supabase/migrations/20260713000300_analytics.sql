@@ -1,5 +1,5 @@
 -- =====================================================================
---  Dashboard analytics for the firm. Optional p_engagement scopes to one
+--  Migration 20260713000300: dashboard analytics. Optional p_engagement scopes to one
 --  client's portal (null = all). Membership-scoped via my_portals().
 --  Returns:
 --    weekly            — accepted items per week (last 8 weeks)
@@ -12,7 +12,7 @@
 --        firmView        first upload → firm first opens file (firm)
 --        firmReply       client comment → firm reply        (firm)
 --        clientReply     firm comment → client reply        (client)
---  Idempotent: safe to re-run.
+--  Versioned migration; depends on comments and item history.
 -- =====================================================================
 drop function if exists firm_analytics();
 drop function if exists firm_analytics(uuid);

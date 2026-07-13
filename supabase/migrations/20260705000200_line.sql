@@ -1,6 +1,6 @@
 -- =====================================================================
---  LINE notifications (PER USER) — each user links their own LINE chat and
---  gets notified for portals they're a member of. Idempotent; run once.
+--  LINE notifications (20260705000200, PER USER) — each user links their own LINE chat and
+--  gets notified for portals they're a member of.
 -- =====================================================================
 alter table profiles add column if not exists line_target text;      -- this user's linked userId/groupId
 alter table profiles add column if not exists line_link_code text;   -- one-time linking code

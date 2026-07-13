@@ -1,121 +1,95 @@
-# Tickmark PBC portal — Supabase backend
+# Tickmark PBC — Supabase backend
 
-A deployable starting point that moves the prototype off browser storage and onto a
-real multi-tenant backend, with the 16-digit code checked **server-side** and per-portal
-isolation enforced by the database.
+The backend is managed as versioned database migrations plus five Edge
+Functions. Do not paste schema changes into the production SQL editor after
+adopting this workflow; create a new file under `supabase/migrations/` instead.
 
-## What's here
+## Repository layout
 
-```
+```text
 supabase/
-  schema.sql                 ← tables, RLS, passcode RPCs, storage bucket, 90-day auto-delete cron
-  functions/portal/index.ts  ← the client gateway (unlock / data / upload / confirm)
+  config.toml                  JWT policy for every Edge Function
+  migrations/                 ordered database history (source of truth)
+  functions/
+    portal/                    client code/session gateway
+    firmfiles/                 authenticated firm-side R2 operations
+    notify/                    authenticated client email delivery
+    line-webhook/              public LINE webhook, signature verified
+    purge/                     public scheduler endpoint, secret verified
+    _shared/                   R2 and LINE helpers
 ```
 
-## How access works
+`supabase/config.toml` deliberately disables JWT verification only for
+`portal`, `line-webhook`, and `purge`. Those endpoints perform their own code,
+signature, or secret checks. `firmfiles` and `notify` require a firm JWT.
 
-- **Firm staff** sign in with Supabase Auth (email + password). Row Level Security
-  limits them to engagements belonging to **their own firm** — they use the normal
-  `supabase-js` client and never see another firm's data.
-- **Clients** are *not* Supabase users. They open a portal link, type the 16-digit code,
-  and the `portal` Edge Function verifies it (bcrypt, in the database) and returns a
-  short-lived **session token** (8h). Every client read/upload goes through that function,
-  which runs with the service role. Because RLS denies the anon key, a client can only ever
-  reach the one portal whose code they hold.
+## Fresh environment
 
-## Setup (about 15 minutes)
+Prerequisites: Docker and the Supabase CLI.
 
-1. **Create a project** at supabase.com and grab the Project URL + anon key
-   (Settings → API). The service-role key is set automatically for Edge Functions.
-2. **Run the schema.** Open the SQL editor, paste `schema.sql`, run it. This also
-   creates the private `pbc` storage bucket and schedules the nightly purge.
-   - If `pg_cron`/`cron.schedule` errors, enable it under Database → Extensions first.
-3. **Deploy the function:**
-   ```bash
-   supabase link --project-ref <your-ref>
-   supabase functions deploy portal --no-verify-jwt
-   ```
-   `--no-verify-jwt` is required: clients have no Supabase JWT — we authenticate them
-   with the code instead.
-4. **Sign up a firm user.** In your app's sign-up call, pass firm/full name as metadata
-   so the trigger provisions a firm + profile:
-   ```js
-   await supabase.auth.signUp({
-     email, password,
-     options: { data: { firm_name: "Your Firm Co.", full_name: "Jane CPA" } },
-   });
-   ```
-
-## Wiring the React prototype to it
-
-Replace the `window.storage` calls. Add a client:
-
-```js
-// supabaseClient.js
-import { createClient } from "@supabase/supabase-js";
-export const supabase = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
+```bash
+supabase login
+supabase link --project-ref <project-ref>
+supabase db push --dry-run
+supabase db push
+supabase functions deploy --project-ref <project-ref>
 ```
 
-**Firm side** (authenticated — RLS does the scoping):
+For local development, start Supabase and rebuild the database from the full
+migration history:
 
-```js
-// create a portal (hashing happens in the DB)
-const { data: engagementId } = await supabase.rpc("create_engagement", {
-  p_client: "Northwind Trading Co.", p_template: "Annual Financial Statement Audit",
-  p_period_end: "2025-12-31", p_code: "1234123412341234",
-  p_retention_days: 90, p_auto_delete: true,
-});
-
-// list your firm's portals
-const { data: engagements } = await supabase.from("engagements").select("*");
-
-// change a code later
-await supabase.rpc("set_portal_code", { p_engagement: engagementId, p_code: "9999..." });
-
-// download a client's file (private bucket -> signed URL)
-const { data } = await supabase.storage.from("pbc").createSignedUrl(file.storage_path, 60);
-window.open(data.signedUrl);
+```bash
+supabase start
+npm run db:reset
 ```
 
-**Client side** (no login — code + session token, all via the function):
+The CI migration job performs the same clean rebuild on every pull request.
 
-```js
-const call = (action, payload) =>
-  fetch(`${SUPABASE_URL}/functions/v1/portal`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
-    body: JSON.stringify({ action, ...payload }),
-  }).then((r) => r.json());
+## Edge Function secrets
 
-// 1) unlock with the 16-digit code
-const { token } = await call("unlock", { engagement_id, code });
+Set these in each Supabase environment before deploying functions:
 
-// 2) load the request list
-const { engagement, items } = await call("data", { token });
-
-// 3) upload a document
-const { path, signed } = await call("upload_url", { token, item_id, filename: file.name, type: file.type });
-await supabase.storage.from("pbc").uploadToSignedUrl(path, signed.token, file);
-await call("confirm", { token, item_id, name: file.name, size: file.size, type: file.type, storage_path: path });
+```text
+R2_ACCOUNT_ID
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+R2_BUCKET
+RESEND_API_KEY
+NOTIFY_FROM
+APP_URL
+LINE_CHANNEL_ACCESS_TOKEN
+LINE_CHANNEL_SECRET
+PURGE_SECRET
 ```
 
-## Cost expectations on Supabase
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are
+provided automatically to hosted Edge Functions.
 
-With 90-day retention and downloading files off afterward, your live footprint stays
-small. The Pro plan ($25/mo) includes 100 GB file storage and 250 GB egress — at
-~0.4 GB per client that's headroom for hundreds of active portals before any overage.
-The free tier works for development but **pauses after 7 days of inactivity**, so run
-production on Pro.
+## Existing production database
 
-## Security notes / things to harden before going live
+Production was originally changed through manually-run SQL files, so its
+migration history must be reconciled once before enabling automatic deploys.
+Follow [BASELINE.md](./BASELINE.md). The deploy workflow refuses to run until
+the repository variable `SUPABASE_MIGRATIONS_BASELINED` equals `true`.
 
-- **Rate limiting** on `unlock` is included (5 wrong tries → 15-minute lock per portal).
-  Consider also limiting by IP at the edge/CDN.
-- **Share the code out of band** — phone/SMS, not the same email as the portal link.
-- **Session length** is 8h (`SESSION_HOURS`); shorten if you want tighter control.
-- **Audit retention**: the cron hard-deletes expired auto-delete portals. If professional
-  rules require keeping working papers for years, set `auto_delete = false` on those and
-  archive the downloaded files yourself (your stated plan), or point the purge at cold
-  storage instead of deletion.
-- **Backups**: Pro includes daily backups (7 days). Enable point-in-time recovery if you
-  need finer-grained restore.
+## Deployment order
+
+The production workflow always performs:
+
+1. repository structure verification;
+2. migration baseline guard;
+3. `supabase db push --dry-run`;
+4. `supabase db push`;
+5. deploy all Edge Functions using `config.toml`;
+6. read-only REST and `portal` health checks.
+
+Database changes are applied before functions so newly-deployed code never
+depends on a table or RPC that has not been created yet. The frontend is built
+separately by Cloudflare Pages after its own CI checks pass.
+
+## R2 purge ownership
+
+Files live in Cloudflare R2. Migration `20260713000400` disables the legacy
+Postgres cron purge because it could delete database rows without deleting R2
+objects. `.github/workflows/purge.yml` calls the guarded `purge` Edge Function,
+which deletes R2 objects first and database rows second.

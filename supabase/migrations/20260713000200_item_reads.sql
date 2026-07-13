@@ -1,7 +1,7 @@
 -- =====================================================================
---  Per-item "read" marks so the firm can see an unread-comment notification
+--  Migration 20260713000200: per-item read marks for unread-comment notifications
 --  that disappears once the item is opened. Per firm USER (each staff member
---  has their own read state). Idempotent: safe to re-run.
+--  has their own read state).
 -- =====================================================================
 create table if not exists item_reads (
   item_id uuid not null references request_items(id) on delete cascade,

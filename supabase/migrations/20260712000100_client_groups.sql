@@ -1,9 +1,9 @@
 -- =====================================================================
---  Client Groups — one link + one 16-digit code for several company
+--  Client Groups (20260712000100) — one link + one 16-digit code for several company
 --  portals. A grouped engagement is reached ONLY through its group link
 --  (its individual ?e= link is disabled by the edge function).
 --
---  Idempotent: safe to re-run. Paste into the Supabase SQL editor.
+--  Versioned migration; applied after portal sharing.
 -- =====================================================================
 
 -- 1. Groups ------------------------------------------------------------

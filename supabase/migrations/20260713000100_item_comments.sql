@@ -1,7 +1,7 @@
 -- =====================================================================
---  Per-item conversation: a two-way comment thread on each request item
+--  Migration 20260713000100: per-item two-way comment thread on each request item
 --  (firm ⇄ client), separate from the one-shot `note` / return reason.
---  Idempotent: safe to re-run.
+--  Versioned migration; depends on portal sharing.
 --
 --  The message bodies live here; posting a comment ALSO writes an
 --  item_history row (action 'Commented') so it flows into the existing

@@ -1,0 +1,43 @@
+name: Verify application and database
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-public-anon-key-placeholder-not-a-secret
+      VITE_APP_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:env
+      - run: npm run verify
+      - run: npm run build
+
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Rebuild a clean local database from every migration
+        run: |
+          supabase start
+          supabase db reset
+          supabase db lint --local --level warning
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup

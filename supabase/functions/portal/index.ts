@@ -81,6 +81,10 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   const action = body?.action;
 
+  // Read-only deployment smoke test. It intentionally touches no database or
+  // secret-backed provider so CI can verify routing after every deployment.
+  if (action === "health") return json({ ok: true, service: "portal" });
+
   try {
     // ---- unlock: verify the 16-digit code, hand back a session token ----
     if (action === "unlock") {

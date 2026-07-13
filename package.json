@@ -8,8 +8,17 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "eslint . && vite build",
-    "preview": "vite preview"
+    "build": "npm run verify:env && eslint . && vite build",
+    "preview": "vite preview",
+    "verify:repo": "node scripts/verify-deployment.mjs",
+    "verify:env": "node scripts/verify-env.mjs",
+    "verify": "npm run verify:repo && npm run lint && npm run test",
+    "db:reset": "supabase db reset",
+    "db:status": "supabase migration list",
+    "db:push:dry": "supabase db push --dry-run",
+    "db:push": "supabase db push",
+    "functions:deploy": "supabase functions deploy",
+    "deploy:backend": "npm run verify:repo && npm run db:push:dry && npm run db:push && npm run functions:deploy"
   },
   "dependencies": {
     "@sentry/browser": "^10.65.0",
@@ -26,6 +35,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.7.0",
     "jsdom": "^29.1.1",
+    "supabase": "^2.109.1",
     "vite": "^5.4.0",
     "vitest": "^4.1.10"
   },

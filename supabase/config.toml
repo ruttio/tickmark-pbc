@@ -1,0 +1,18 @@
+project_id = "tickmark-pbc"
+
+# JWT behavior is version-controlled so a deploy-all command cannot
+# accidentally expose an authenticated endpoint or block a public webhook.
+[functions.portal]
+verify_jwt = false
+
+[functions.line-webhook]
+verify_jwt = false
+
+[functions.purge]
+verify_jwt = false
+
+[functions.firmfiles]
+verify_jwt = true
+
+[functions.notify]
+verify_jwt = true

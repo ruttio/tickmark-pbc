@@ -1,6 +1,6 @@
 -- =====================================================================
---  Per-portal sharing migration — access becomes membership-based.
---  Idempotent + preserves existing access (current firm staff are
+--  Per-portal sharing migration (20260705000100) — access becomes membership-based.
+--  Versioned migration; preserves existing access (current firm staff are
 --  backfilled as owners of their firm's portals). Run once in the SQL editor.
 -- =====================================================================
 

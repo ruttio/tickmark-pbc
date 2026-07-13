@@ -1,6 +1,6 @@
 -- =====================================================================
 --  Tickmark PBC portal — Supabase backend schema
---  Run this in the Supabase SQL editor (or via `supabase db push`).
+--  Baseline migration (20260629000100). Applied by reset / push.
 --
 --  Security model in one paragraph:
 --    • Firm staff sign in with Supabase Auth. Row Level Security (RLS)
@@ -13,7 +13,6 @@
 -- =====================================================================
 
 create extension if not exists pgcrypto;   -- bcrypt for the passcode
-create extension if not exists pg_cron;    -- scheduled auto-delete
 
 -- ---------------------------------------------------------------------
 --  Core tables
@@ -293,36 +292,5 @@ create policy firm_delete_pbc on storage.objects
 -- (Clients upload via signed URLs minted by the Edge Function, so they
 --  need no storage policy of their own.)
 
--- ---------------------------------------------------------------------
---  90-day auto-delete: nightly purge of expired auto-delete portals.
---  Deletes the storage objects first, then the engagement row (which
---  cascades items/files/history/sessions).
--- ---------------------------------------------------------------------
-create or replace function purge_expired_portals() returns void
-language plpgsql security definer set search_path = public, storage as $$
-begin
-  delete from storage.objects
-   where bucket_id = 'pbc'
-     and (storage.foldername(name))[1] in (
-       select id::text from engagements
-        where auto_delete and expires_at is not null and expires_at < now()
-     );
-
-  delete from engagements
-   where auto_delete and expires_at is not null and expires_at < now();
-end; $$;
-
--- Unschedule first so re-running this script doesn't error on a duplicate job.
-do $$
-begin
-  perform cron.unschedule('purge-expired-portals');
-exception when others then null;  -- job didn't exist yet
-end $$;
-
-select cron.schedule(
-  'purge-expired-portals',
-  '0 3 * * *',                         -- every day at 03:00 UTC
-  $$ select purge_expired_portals(); $$
-);
-
--- Done.
+-- Expiry cleanup is intentionally not scheduled in Postgres. Files are stored
+-- in R2, so the guarded `purge` Edge Function must delete objects before rows.
