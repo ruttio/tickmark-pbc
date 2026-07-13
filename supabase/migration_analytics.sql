@@ -98,6 +98,15 @@ returns json language sql stable security definer set search_path = public as $$
     from comment_seq where by = 'Client' and prev_by = 'Firm'
   )
   select json_build_object(
+    'statusBreakdown', (select json_build_object(
+        'outstanding', count(*) filter (where status = 'outstanding'),
+        'submitted',   count(*) filter (where status = 'submitted'),
+        'review',      count(*) filter (where status = 'review'),
+        'accepted',    count(*) filter (where status = 'accepted'),
+        'returned',    count(*) filter (where status = 'returned'),
+        'reopened',    count(*) filter (where status = 'reopened'),
+        'total',       count(*)
+      ) from my_items where archived_at is null),
     'weekly',          (select coalesce(json_agg(json_build_object('week', wk, 'n', n) order by wk), '[]'::json) from weekly),
     'avgTurnaround',   (select round(avg(days)::numeric, 1) from turn),
     'turnaroundCount', (select count(*)::int from turn),

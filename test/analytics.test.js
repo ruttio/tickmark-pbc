@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Analytics } from "../src/Analytics.jsx";
 
 const data = {
-  weekly: [{ week: "2026-06-01", n: 3 }, { week: "2026-06-08", n: 5 }],
+  statusBreakdown: { outstanding: 4, submitted: 2, review: 1, accepted: 6, returned: 1, reopened: 0, total: 14 },
   avgTurnaround: 4.2,
   turnaroundCount: 8,
   aging: {
@@ -26,9 +26,10 @@ const render = (props) =>
   renderToStaticMarkup(React.createElement(Analytics, { initialData: data, engagements: [], fetchAnalytics: async () => data, ...props }));
 
 describe("Analytics", () => {
-  it("renders trend bars + turnaround stat", () => {
+  it("renders the status pipeline + turnaround stat", () => {
     const out = render();
-    expect(out).toContain("<rect");
+    expect(out).toContain("สรุปสถานะปัจจุบัน");
+    expect(out).toContain("ตรวจรับแล้ว");
     expect(out).toContain("4.2");
     expect(out).toContain("8 รายการ");
   });
@@ -64,9 +65,9 @@ describe("Analytics", () => {
 
   it("shows empty states when there is no activity", () => {
     const out = render({
-      initialData: { weekly: [], avgTurnaround: null, turnaroundCount: 0, aging: { requested: { d0_7: 0, d7_14: 0, d14_30: 0, d30: 0 } } },
+      initialData: { statusBreakdown: { total: 0 }, avgTurnaround: null, turnaroundCount: 0, aging: { requested: { d0_7: 0, d7_14: 0, d14_30: 0, d30: 0 } } },
     });
-    expect(out).toContain("ยังไม่มีข้อมูลการตรวจรับ");
+    expect(out).toContain("ยังไม่มีรายการ");
     expect(out).toContain("ไม่มีงานค้าง");
   });
 });

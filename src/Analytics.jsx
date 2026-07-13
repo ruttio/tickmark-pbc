@@ -12,6 +12,14 @@ const MODES = [
   { key: "overdue", label: "เกินกำหนด", desc: "งานที่ยังไม่ตรวจรับและเลยกำหนดส่ง · จำนวนวันที่เกิน" },
 ];
 const EMPTY_AGE = { d0_7: 0, d7_14: 0, d14_30: 0, d30: 0 };
+const STATUS_DEFS = [
+  { key: "outstanding", label: "รอลูกค้าส่ง", color: "#94A3B8" },
+  { key: "submitted", label: "รอเราตรวจ", color: "#3B82F6" },
+  { key: "review", label: "กำลังตรวจ", color: "#F59E0B" },
+  { key: "returned", label: "ส่งกลับแก้ไข", color: "#EF4444" },
+  { key: "reopened", label: "เปิดใหม่", color: "#A855F7" },
+  { key: "accepted", label: "ตรวจรับแล้ว", color: "#12B39A" },
+];
 // Submission timing distribution — bins of days-before-due, ordered
 // left (submitted early) → right (submitted late). "due" = on the due date.
 const TIMING_BINS = [
@@ -43,8 +51,6 @@ const RT_ROWS = [
   { key: "firmReply", icon: "💬", label: "สำนักงานตอบคอมเมนต์" },
   { key: "clientReply", icon: "💬", label: "ลูกค้าตอบคอมเมนต์" },
 ];
-
-function fmtWeek(iso) { const d = new Date(iso); return `${d.getDate()}/${d.getMonth() + 1}`; }
 
 const S = {
   toolbar: { display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" },
@@ -86,12 +92,12 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
 
-  const weekly = data?.weekly || [];
+  const sb = data?.statusBreakdown || {};
+  const sbTotal = sb.total || 0;
+  const acceptedPct = sbTotal ? Math.round(((sb.accepted || 0) / sbTotal) * 100) : 0;
   const aging = (data?.aging || {})[mode] || EMPTY_AGE;
   const ageVals = [aging.d0_7, aging.d7_14, aging.d14_30, aging.d30].map((n) => n || 0);
   const ageTotal = ageVals.reduce((a, b) => a + b, 0);
-  const maxN = Math.max(1, ...weekly.map((w) => w.n));
-  const W = Math.max(weekly.length, 1) * 42;
   const modeMeta = MODES.find((m) => m.key === mode);
 
   const timing = data?.submissionTiming || {};
@@ -114,25 +120,28 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
       </div>
 
       <div style={S.grid} className="nv-analytics">
-        {/* Completion trend */}
+        {/* Current status pipeline */}
         <div style={S.card}>
-          <p style={S.h}>📈 รายการที่ตรวจรับ · 8 สัปดาห์ล่าสุด</p>
-          {weekly.length === 0 ? (
-            <div style={S.empty}>ยังไม่มีข้อมูลการตรวจรับ</div>
+          <p style={S.h}>📋 สรุปสถานะปัจจุบัน ({sbTotal})</p>
+          {sbTotal === 0 ? (
+            <div style={S.empty}>ยังไม่มีรายการ</div>
           ) : (
-            <svg viewBox={`0 0 ${W} 104`} width="100%" height="120" preserveAspectRatio="xMidYMid meet" role="img" aria-label="รายการที่ตรวจรับต่อสัปดาห์">
-              {weekly.map((w, i) => {
-                const h = Math.round((w.n / maxN) * 68);
-                const x = i * 42 + 9;
-                return (
-                  <g key={i}>
-                    <rect x={x} y={82 - h} width={24} height={h || 2} rx={3} fill={MINT} />
-                    <text x={x + 12} y={Math.max(10, 82 - h - 4)} textAnchor="middle" fontSize="9" fontWeight="700" fill="#0F172A">{w.n}</text>
-                    <text x={x + 12} y={97} textAnchor="middle" fontSize="8" fill={SLATE}>{fmtWeek(w.week)}</text>
-                  </g>
-                );
-              })}
-            </svg>
+            <>
+              <div style={{ ...S.stat, marginBottom: 2 }}>{acceptedPct}% <span style={{ fontSize: 14, fontWeight: 700 }}>ตรวจรับแล้ว</span></div>
+              <div style={S.statSub}>{sb.accepted || 0} จาก {sbTotal} รายการ</div>
+              <div style={{ ...S.agingBar, marginTop: 10 }}>
+                {STATUS_DEFS.map((s) => (sb[s.key] || 0) > 0 && (
+                  <span key={s.key} title={`${s.label}: ${sb[s.key]}`} style={{ width: `${((sb[s.key] || 0) / sbTotal) * 100}%`, background: s.color }} />
+                ))}
+              </div>
+              {STATUS_DEFS.map((s) => (
+                <div key={s.key} style={S.agingRow}>
+                  <span style={S.dot(s.color)} />
+                  <span style={{ flex: 1 }}>{s.label}</span>
+                  <b>{sb[s.key] || 0}</b>
+                </div>
+              ))}
+            </>
           )}
         </div>
 
