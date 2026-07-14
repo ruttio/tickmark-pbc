@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - run: npx npm@10.9.2 ci
       - run: npm run verify:env
       - run: npm run verify
       - run: npm run build
