@@ -432,6 +432,7 @@ export default function App() {
   const [statusSel, setStatusSel] = useState([]);     // engagement-detail status filters (empty = all; may include "overdue")
   const [itemQ, setItemQ] = useState("");             // engagement-detail text search
   const [catSel, setCatSel] = useState([]);           // engagement-detail category filters (empty = all)
+  const [sel, setSel] = useState(() => new Set());    // bulk selection: item ids checked in the engagement list
   const [busy, setBusy] = useState(false);            // a backend mutation is in flight
   const [err, setErr] = useState("");
   const [view, setView] = useState("dashboard");      // 'dashboard' | 'engagement'
@@ -543,6 +544,7 @@ export default function App() {
     firmApi.listUnreadComments(currentId).then(setUnreadC).catch(() => {});
   };
   useEffect(() => {
+    setSel(new Set());
     if (session && currentId) reloadDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId, session]);
@@ -567,6 +569,24 @@ export default function App() {
       if ((rejectedIds && rejectedIds.length) || (okIds && okIds.length))
         await firmApi.setItemFileRejections(rejectedIds, okIds);
       await firmApi.setItemStatus(itemId, "returned", "Returned", note);
+    }, reloadDetail);
+
+  // Bulk accept / return. One backend call per item (the API has no batch endpoint),
+  // applied in order so a mid-way failure leaves earlier items already committed.
+  const bulkSetStatus = (ids, status, action, note) =>
+    run(async () => {
+      const done = [];
+      try {
+        for (const id of ids) {
+          await firmApi.setItemStatus(id, status, action, note);
+          done.push(id);
+        }
+      } catch (e) {
+        // Keep the ones that failed selected so the user can see what's left and retry.
+        setSel(new Set(ids.filter((id) => !done.includes(id))));
+        throw new Error(`${e.message || e} — สำเร็จ ${done.length}/${ids.length} รายการ ที่เหลือยังเลือกค้างไว้ให้ลองใหม่`);
+      }
+      setSel(new Set());
     }, reloadDetail);
 
   const generateEngagement = ({ client, template, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite, items, groupId }) =>
@@ -726,6 +746,31 @@ export default function App() {
       .filter(([, items]) => items.length > 0);
   }, [grouped, catSel, itemQ]);
 
+  /* ---- bulk selection (engagement list) ---------------------------------- */
+  // Only items the firm can actually act on: something was uploaded, and it isn't signed off yet.
+  const canBulk = (it) => it.files.length > 0 && it.status !== "accepted";
+  // Selectable items currently passing the filters — the scope of "select all".
+  const bulkPool = useMemo(
+    () => viewGroups.flatMap(([, items]) => items).filter(canBulk),
+    [viewGroups]
+  );
+  // Drop ids that scrolled out of the filter or were just accepted, so the count never lies.
+  const selIds = useMemo(
+    () => bulkPool.filter((it) => sel.has(it.id)).map((it) => it.id),
+    [bulkPool, sel]
+  );
+  const toggleSel = (id) => setSel((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const doBulkAccept = () => {
+    if (!selIds.length) return;
+    if (!confirm(`ยืนยันรับ (Accept) ${selIds.length} รายการที่เลือก?`)) return;
+    bulkSetStatus(selIds, "accepted", "Accepted");
+  };
+
   const exportCSV = () => {
     if (!eng) return;
     const head = ["Ref", "Category", "Description", "Required", "Due date", "Status", "Files"];
@@ -884,6 +929,24 @@ export default function App() {
                     onChange={(e) => { const f = e.target.files[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
                 </div>
 
+                {selIds.length > 0 && (
+                  <div className="nv-bulk">
+                    <span className="n">เลือก {selIds.length} รายการ</span>
+                    <button className="nv-btn" disabled={busy} onClick={doBulkAccept}>
+                      <Icon name="check" size={14} />รับทั้งหมด
+                    </button>
+                    <button className="nv-btn" disabled={busy} onClick={() => setModal("bulkReturn")}>
+                      <Icon name="return" size={14} />ตีกลับทั้งหมด
+                    </button>
+                    {selIds.length < bulkPool.length && (
+                      <button className="lk" onClick={() => setSel(new Set(bulkPool.map((it) => it.id)))}>
+                        เลือกทั้งหมดที่กรองอยู่ ({bulkPool.length})
+                      </button>
+                    )}
+                    <button className={`lk ${selIds.length < bulkPool.length ? "" : "far"}`} onClick={() => setSel(new Set())}>ล้างการเลือก</button>
+                  </div>
+                )}
+
                 {viewGroups.length === 0 ? (
                   <div className="nv-list"><div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ไม่พบรายการที่ตรงกับตัวกรอง</div></div>
                 ) : viewGroups.map(([cat, items]) => (
@@ -895,21 +958,31 @@ export default function App() {
                         const rowCls = it.status === "accepted" ? "acc" : od ? "od" : "";
                         const stTone = od ? "red" : STATUS_ST[it.status];
                         const stLabel = od ? "⚠ Overdue" : `${STATUS[it.status].glyph} ${STATUS[it.status].label}`;
+                        const selectable = canBulk(it);
+                        const checked = selectable && sel.has(it.id);
                         return (
-                          <button key={it.id} className={`nv-doc ${rowCls}`} onClick={() => openItemDrawer(it.id)}>
-                            <span className="nv-doc-no">{String(idx + 1).padStart(2, "0")}</span>
-                            <div className="nv-doc-main">
-                              <div className="nv-doc-name">{it.description}{it.required && <span className="req" title="Required">•</span>}</div>
-                              <div className="nv-doc-sub">
-                                {it.files.length > 0 && <span className="f">{it.files.length} file{it.files.length > 1 ? "s" : ""}</span>}
-                                {it.commentCount > 0 && <span className="cmt"><Icon name="chat" size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} />{it.commentCount}</span>}
-                                {it.firmNote && <span className="note" title={it.firmNote}>โน้ต</span>}
-                                <span className={`due ${od ? "od" : ""}`}>Due {fmtDate(it.dueDate)}</span>
+                          <div key={it.id} className={`nv-doc ${rowCls} ${checked ? "sel" : ""}`}>
+                            {selectable ? (
+                              <input type="checkbox" className="nv-doc-ck" checked={checked} disabled={busy}
+                                aria-label={`เลือก ${it.description}`} onChange={() => toggleSel(it.id)} />
+                            ) : (
+                              <span className="nv-doc-ck ph" aria-hidden="true" />
+                            )}
+                            <button className="nv-doc-open" onClick={() => openItemDrawer(it.id)}>
+                              <span className="nv-doc-no">{String(idx + 1).padStart(2, "0")}</span>
+                              <div className="nv-doc-main">
+                                <div className="nv-doc-name">{it.description}{it.required && <span className="req" title="Required">•</span>}</div>
+                                <div className="nv-doc-sub">
+                                  {it.files.length > 0 && <span className="f">{it.files.length} file{it.files.length > 1 ? "s" : ""}</span>}
+                                  {it.commentCount > 0 && <span className="cmt"><Icon name="chat" size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} />{it.commentCount}</span>}
+                                  {it.firmNote && <span className="note" title={it.firmNote}>โน้ต</span>}
+                                  <span className={`due ${od ? "od" : ""}`}>Due {fmtDate(it.dueDate)}</span>
+                                </div>
                               </div>
-                            </div>
-                            <span className={`nv-st ${stTone}`}>{stLabel}</span>
-                            <span className="nv-doc-chev">›</span>
-                          </button>
+                              <span className={`nv-st ${stTone}`}>{stLabel}</span>
+                              <span className="nv-doc-chev">›</span>
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -950,6 +1023,10 @@ export default function App() {
       )}
       {modal === "notify" && eng && (
         <NotifyModal eng={eng} busy={busy} onClose={() => setModal(null)} onSend={sendNotify} />
+      )}
+      {modal === "bulkReturn" && selIds.length > 0 && (
+        <BulkReturnModal count={selIds.length} busy={busy} onClose={() => setModal(null)}
+          onConfirm={(note) => { setModal(null); bulkSetStatus(selIds, "returned", "Returned", note); }} />
       )}
       {modal === "zip" && eng && (
         <ZipModal eng={eng} busy={busy} onClose={() => setModal(null)} onDownload={downloadZip} />
@@ -2362,6 +2439,31 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
         <button className="tk-btn ghost" onClick={onClose}>Cancel</button>
         <button className="tk-btn primary" disabled={!ready || busy} onClick={create}>
           {busy ? "กำลังสร้าง…" : `Generate ${included.length} items`}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// Blanket return for a multi-item selection. Unlike the single-item drawer flow this
+// cannot flag individual files — one reason is written to every item selected.
+function BulkReturnModal({ count, busy, onClose, onConfirm }) {
+  const [note, setNote] = useState("");
+  const ok = note.trim().length > 0;
+  return (
+    <Modal title={`ตีกลับ ${count} รายการ`} onClose={onClose}>
+      <p className="tk-muted" style={{ marginBottom: 12 }}>
+        เหตุผลนี้จะถูกส่งให้ลูกค้าเหมือนกันทุกรายการที่เลือก และทุกรายการจะกลับไปเป็นสถานะ “ตีกลับ”
+        หากต้องระบุว่าไฟล์ไหนผิดเป็นรายไฟล์ ให้ตีกลับทีละรายการจากหน้ารายละเอียดแทน
+      </p>
+      <label className="tk-field"><span>เหตุผลที่ตีกลับ (ลูกค้าเห็น)</span>
+        <textarea className="tk-note" value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="เช่น เอกสารไม่ครบงวด กรุณาแนบฉบับเต็ม…" />
+      </label>
+      <div className="tk-modal-actions">
+        <button className="tk-btn ghost" onClick={onClose}>ยกเลิก</button>
+        <button className="tk-btn rust" disabled={!ok || busy} onClick={() => onConfirm(note.trim())}>
+          {busy ? "กำลังตีกลับ…" : `ตีกลับ ${count} รายการ`}
         </button>
       </div>
     </Modal>

@@ -701,6 +701,22 @@
 .nv-doc.acc{border-left-color:#12B39A}
 .nv-doc.od{border-left-color:#EF4444;background:#FEF5F5}
 .nv-doc.od:hover{background:#FDECEC}
+/* bulk selection: checkbox sits outside the open-drawer button (no nested interactives) */
+.nv-doc-ck{flex:none;width:15px;height:15px;margin:0;accent-color:#12B39A;cursor:pointer}
+.nv-doc-ck.ph{cursor:default}
+.nv-doc-open{flex:1;min-width:0;display:flex;gap:12px;align-items:center;border:0;background:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.nv-doc-open:focus-visible{outline:3px solid rgba(18,179,154,.28);outline-offset:2px;border-radius:8px}
+.nv-doc.sel{background:rgba(18,179,154,.07);border-left-color:#12B39A}
+.nv-doc.sel:hover{background:rgba(18,179,154,.12)}
+.nv-bulk{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#0F172A;border-radius:12px;padding:10px 14px;margin-bottom:12px}
+.nv-bulk .n{font:600 13px 'Inter','IBM Plex Sans Thai',sans-serif;color:#fff;margin-right:4px}
+.nv-bulk .nv-btn{background:rgba(255,255,255,.10);border-color:rgba(229,231,235,.28);color:#fff}
+.nv-bulk .nv-btn:hover:not(:disabled){background:rgba(255,255,255,.18);border-color:rgba(229,231,235,.45)}
+.nv-bulk .nv-btn:disabled{opacity:.45;cursor:not-allowed}
+.nv-bulk .lk{background:none;border:0;color:#5EEAD0;font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;cursor:pointer;padding:2px 0}
+.nv-bulk .lk:hover{text-decoration:underline}
+.nv-bulk .lk:first-of-type{margin-left:auto}
+.nv-bulk .lk.far{margin-left:auto}
 .nv-doc-no{font:400 12px 'Inter',sans-serif;color:#64748B;min-width:22px}
 .nv-doc-main{flex:1;min-width:0}
 .nv-doc-name{font:500 14px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
