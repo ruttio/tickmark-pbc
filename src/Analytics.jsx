@@ -2,6 +2,7 @@
 // aging in three toggleable modes, optionally filtered to one client.
 // Self-contained inline styles + SVG (no chart library).
 import React, { useEffect, useState } from "react";
+import { buildReportHtml, openReport } from "./analyticsReport.js";
 
 const MINT = "#12B39A", SLATE = "#64748B";
 const AGE_COLORS = ["#12B39A", "#F59E0B", "#FB923C", "#EF4444"];
@@ -73,13 +74,35 @@ const S = {
   rtRow: { display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderBottom: "1px solid #F1F5F9", fontSize: 12, color: "#334155" },
   rtVal: { font: "800 13px 'Inter',sans-serif", color: "#0F172A" },
   rtN: { fontSize: 10.5, color: SLATE, width: 34, textAlign: "right" },
+  pdfBtn: { marginLeft: "auto", font: "600 12px 'Inter','IBM Plex Sans Thai',sans-serif", border: "1px solid #E5E7EB", borderRadius: 9, padding: "7px 12px", color: "#0F172A", background: "#fff", cursor: "pointer" },
+  err: { fontSize: 11.5, color: "#EF4444" },
 };
 
-export function Analytics({ initialData = null, engagements = [], fetchAnalytics }) {
+export function Analytics({ initialData = null, engagements = [], fetchAnalytics, fetchEvidence }) {
   const [client, setClient] = useState("");
   const [mode, setMode] = useState("requested");
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportErr, setExportErr] = useState("");
+
+  // Pull the log rows behind the numbers, then hand the report to the print
+  // dialog. Fetched on demand: it is a lot of rows, and most dashboard visits
+  // never export.
+  async function exportPdf() {
+    if (!fetchEvidence) return;
+    setExporting(true); setExportErr("");
+    try {
+      const evidence = await fetchEvidence(client || null);
+      const scope = client ? engagements.find((e) => e.id === client)?.client || "ลูกค้าที่เลือก" : "ทุกลูกค้า";
+      const ok = openReport(buildReportHtml({ data, evidence, scopeLabel: scope }));
+      if (!ok) setExportErr("เบราว์เซอร์บล็อกป๊อปอัป — อนุญาตป๊อปอัปของเว็บนี้แล้วลองใหม่");
+    } catch {
+      setExportErr("ดึง log ไม่สำเร็จ ลองใหม่อีกครั้ง");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     if (!fetchAnalytics) return;
@@ -117,6 +140,12 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
           </select>
         </label>
         {loading && <span style={S.loading}>กำลังโหลด…</span>}
+        {fetchEvidence && (
+          <button style={S.pdfBtn} onClick={exportPdf} disabled={exporting || loading}>
+            {exporting ? "กำลังรวบรวม log…" : "📄 ส่งออก PDF (พร้อมวิธีคำนวณ)"}
+          </button>
+        )}
+        {exportErr && <span style={S.err}>{exportErr}</span>}
       </div>
 
       <div style={S.grid} className="nv-analytics">

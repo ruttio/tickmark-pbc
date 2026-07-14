@@ -18,6 +18,7 @@ const expectedMigrations = [
   "20260713000200_item_reads.sql",
   "20260713000300_analytics.sql",
   "20260713000400_disable_legacy_pg_cron_purge.sql",
+  "20260715000100_analytics_evidence.sql",
 ];
 
 if (!existsSync(migrationDir)) failures.push("missing supabase/migrations");

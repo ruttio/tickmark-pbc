@@ -1543,7 +1543,12 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
       {showLine && <LineModal onClose={() => setShowLine(false)} />}
       {showAnalytics && (
         <Modal title="📊 สถิติภาพรวม" onClose={() => setShowAnalytics(false)} wide>
-          <Analytics initialData={analytics} engagements={dash || []} fetchAnalytics={(id) => firmApi.getAnalytics(id)} />
+          <Analytics
+            initialData={analytics}
+            engagements={dash || []}
+            fetchAnalytics={(id) => firmApi.getAnalytics(id)}
+            fetchEvidence={(id) => firmApi.getAnalyticsEvidence(id)}
+          />
         </Modal>
       )}
       {showReminder && <ReminderModal candidates={reminderCandidates} onClose={() => setShowReminder(false)} />}
