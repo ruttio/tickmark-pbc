@@ -1469,7 +1469,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
           </div>
         </div>
 
-        <div className="nv-today">
+        <div className="nv-today nv-today-summary">
           <div className="nv-today-head">
             <div>
               <h3>สิ่งที่ต้องจัดการวันนี้</h3>
