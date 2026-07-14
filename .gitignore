@@ -6,3 +6,18 @@ dist
 .DS_Store
 .claude/settings.local.json
 supabase/.temp/
+
+# Local AI tooling / agent scaffolding (not project code)
+.agents/
+.codex/
+.codex-pet-runs/
+.impeccable/
+.claude/skills/
+.github/hooks/
+.github/skills/
+
+# Local design-handoff exports & scratch previews
+design_handoff_*/
+Tickmark website UI review*/
+Dashboard*Group/
+_iconpreview.html
