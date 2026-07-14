@@ -112,10 +112,14 @@ describe("small pure helpers", () => {
     expect(fmtSize(2 * 1073741824)).toBe("2.00 GB");
   });
   it("isOverdue only for past-due, not-accepted items", () => {
-    const past = Date.now() - 1000, future = Date.now() + 1e6;
-    expect(isOverdue({ status: "outstanding", dueDate: past })).toBe(true);
-    expect(isOverdue({ status: "accepted", dueDate: past })).toBe(false);
-    expect(isOverdue({ status: "outstanding", dueDate: future })).toBe(false);
+    const now = new Date(2026, 6, 14, 12).getTime();
+    const yesterday = new Date("2026-07-13").getTime();
+    const today = new Date("2026-07-14").getTime();
+    const tomorrow = new Date("2026-07-15").getTime();
+    expect(isOverdue({ status: "outstanding", dueDate: yesterday }, now)).toBe(true);
+    expect(isOverdue({ status: "accepted", dueDate: yesterday }, now)).toBe(false);
+    expect(isOverdue({ status: "outstanding", dueDate: today }, now)).toBe(false);
+    expect(isOverdue({ status: "outstanding", dueDate: tomorrow }, now)).toBe(false);
     expect(isOverdue({ status: "outstanding", dueDate: null })).toBeFalsy();
   });
   it("onlyDigits / groupDigits", () => {
@@ -136,7 +140,7 @@ describe("notifMeta", () => {
     expect(notifMeta("Renamed")).toMatchObject({ label: "แก้ไขชื่อรายการ" });
   });
   it("falls back to the raw action for unknown types", () => {
-    expect(notifMeta("weird_action")).toEqual({ icon: "•", tone: "slate", label: "weird_action" });
+    expect(notifMeta("weird_action")).toEqual({ icon: "doc", tone: "slate", label: "weird_action" });
   });
 });
 

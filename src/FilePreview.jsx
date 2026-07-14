@@ -2,6 +2,7 @@
 // and the client portal (ClientPortal.jsx). Styles are inline + self-contained
 // so it doesn't depend on either app's CSS scoping (tk- vs nv-).
 import React from "react";
+import { Icon } from "./icons.jsx";
 
 const IMAGE_EXT = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"];
 
@@ -54,7 +55,7 @@ export function FilePreviewModal({ file, url, onClose }) {
       <div style={S.panel} onClick={(e) => e.stopPropagation()}>
         <div style={S.head}>
           <span style={S.name}>{file?.name}</span>
-          {url && <a style={S.link} href={url} target="_blank" rel="noreferrer">เปิดแท็บใหม่ ↗</a>}
+          {url && <a style={{ ...S.link, display: "inline-flex", alignItems: "center", gap: 4 }} href={url} target="_blank" rel="noreferrer">เปิดแท็บใหม่ <Icon name="external" size={13} /></a>}
           <button style={S.close} onClick={onClose} aria-label="ปิด">✕</button>
         </div>
         <div style={S.body}>

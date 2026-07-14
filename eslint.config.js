@@ -15,6 +15,9 @@ export default [
       "**/*.min.js",
       "Dashboard*/**", // design-handoff scratch folders
       "Tickmark website*/**",
+      ".claude/**", ".agents/**", ".codex/**", ".codex-pet-runs/**", // agent/skill tooling, not project source
+      ".github/skills/**", ".github/hooks/**",
+      "_*.html",
     ],
   },
   js.configs.recommended,
