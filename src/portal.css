@@ -480,6 +480,7 @@
 .nv-eng-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .nv-card{position:relative;background:#fff;border:1px solid #E5E7EB;border-radius:14px;padding:16px;box-shadow:0 16px 40px rgba(8,26,52,.08);display:flex;flex-direction:column;gap:12px;text-align:left;cursor:pointer;transition:box-shadow .15s,border-color .15s;width:100%;font-family:inherit}
 .nv-card:hover{border-color:#cbd5e1;box-shadow:0 20px 46px rgba(8,26,52,.12)}
+.nv-card:focus-visible{outline:3px solid rgba(18,179,154,.28);outline-offset:3px}
 .nv-card-bang{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;background:#EF4444;color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px rgba(239,68,68,.28)}
 .nv-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .nv-card-type{font-size:10.5px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#64748B}
@@ -504,6 +505,22 @@
 .nv-tag2.info{background:rgba(59,130,246,.12);color:#3B82F6}
 .nv-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid #E5E7EB;padding-top:12px;margin-top:2px}
 .nv-card-foot .open{font-size:12.5px;font-weight:700;color:#123563}
+.nv-copy-link{background:transparent;border:none;cursor:pointer;padding:4px 6px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:background-color .15s;color:inherit}
+.nv-copy-link:hover{background-color:rgba(18,179,154,.1)}
+.nv-group-card-foot{min-height:38px;padding-top:8px;gap:10px}
+.nv-group-copy-icon{display:inline-flex}
+.nv-group-copy-button{width:32px;height:32px;padding:0;border-radius:8px;color:var(--text-secondary)}
+.nv-group-copy-button:hover{background:var(--pine-tint);color:var(--mint-600)}
+.nv-group-copy-button:focus-visible{outline:3px solid rgba(18,179,154,.28);outline-offset:2px}
+.nv-group-open{display:inline-flex;align-items:center;gap:6px;min-height:32px;margin-left:auto}
+.nv-portal-card-foot{min-height:40px;padding-top:8px;gap:10px}
+.nv-portal-icon-action{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;flex:none;border-radius:8px;color:var(--text-secondary);transition:background .15s ease,color .15s ease}
+.nv-portal-icon-action:hover{background:var(--pine-tint);color:var(--mint-600)}
+.nv-portal-icon-action:focus-visible{outline:3px solid rgba(18,179,154,.28);outline-offset:2px}
+.nv-portal-open{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:12.5px;font-weight:750;color:var(--navy-700)}
+.nv-portal-open span{color:var(--mint-600);transition:transform .15s ease}
+.nv-portal-card-foot:hover .nv-portal-open span{transform:translateX(2px)}
+.nv-portal-more{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;flex:none;border:1px solid var(--border);border-radius:8px;color:var(--text-secondary);font-size:15px}
 /* segmented toggle (ทั้งหมด / เฉพาะกลุ่ม) */
 .nv-seg{display:inline-flex;background:rgba(100,116,139,.12);border-radius:10px;padding:3px}
 .nv-seg button{border:0;background:none;font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;padding:6px 14px;border-radius:8px;cursor:pointer}
