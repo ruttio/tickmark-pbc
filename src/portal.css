@@ -911,6 +911,15 @@
 .nv-tc-t b{font-weight:800;margin-left:3px}
 .nv-tc-sub{font:400 11px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nv-tc-chev{color:#94A3B8;font-size:15px;flex:none}
+.nv-today-summary{padding:14px}
+.nv-today-summary .nv-today-head{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
+.nv-today-summary .nv-today-acts,.nv-today-summary .nv-obtn{width:100%}
+.nv-today-summary .nv-obtn{min-height:44px}
+.nv-today-summary .nv-today-cards{grid-template-columns:1fr;gap:8px}
+.nv-today-summary .nv-tc{min-height:56px}
+.nv-today-summary .nv-obtn:focus-visible,.nv-today-summary .nv-tc:focus-visible{outline:3px solid rgba(18,179,154,.28);outline-offset:2px}
+.nv-today-summary .nv-tc:active{filter:brightness(.96)}
+.nv-today-summary .nv-tc:disabled{cursor:not-allowed;opacity:.58;filter:none}
 .nv-colhead-r{display:flex;align-items:center;gap:12px}
 .nv-sortsel-w{display:inline-flex;align-items:center;gap:4px;font:500 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
 .nv-sortsel{font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A;border:0;background:transparent;cursor:pointer;outline:none;-webkit-appearance:none;appearance:none;padding:2px 16px 2px 2px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2364748B' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right center}
@@ -921,7 +930,25 @@
 .nv-grid-foot{text-align:center;color:#64748B;font-size:12px;margin:18px 0 0}
 .nv-pagefoot{text-align:center;color:#94A3B8;font-size:12px;margin:36px 0 0;padding-top:20px;border-top:1px solid #E5E7EB}
 .nv-pagefoot span{margin:0 8px;color:#cbd5e1}
-@media(max-width:900px){ .nv-today-cards{grid-template-columns:1fr} }
+@media(min-width:640px){
+  .nv-today-summary .nv-today-head{display:flex;align-items:center;margin-bottom:12px}
+  .nv-today-summary .nv-today-acts,.nv-today-summary .nv-obtn{width:auto}
+  .nv-today-summary .nv-today-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .nv-today-summary .nv-tc:last-child{grid-column:1 / -1}
+}
+@media(min-width:1024px){
+  .nv-today-summary{display:grid;grid-template-columns:minmax(220px,250px) minmax(0,1fr);align-items:center;gap:16px;padding:14px 16px}
+  .nv-today-summary .nv-today-head{display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:10px;margin:0}
+  .nv-today-summary .nv-today-head .sub{max-width:22ch}
+  .nv-today-summary .nv-today-acts,.nv-today-summary .nv-obtn{width:100%}
+  .nv-today-summary .nv-obtn{min-height:38px}
+  .nv-today-summary .nv-today-cards{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .nv-today-summary .nv-tc{min-height:58px;padding:9px 11px}
+  .nv-today-summary .nv-tc:last-child{grid-column:auto}
+}
+@media(pointer:coarse){
+  .nv-today-summary .nv-obtn,.nv-today-summary .nv-tc{min-height:44px}
+}
 
 /* status drill-in list (สิ่งที่ต้องจัดการวันนี้ → item list), grouped by portal */
 .nv-slg-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#e9edf4;border-top:1px solid var(--line);padding:10px 14px;font:800 15px 'Inter','IBM Plex Sans Thai',sans-serif;color:var(--ink)}
