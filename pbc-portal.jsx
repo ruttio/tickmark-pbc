@@ -6,6 +6,7 @@ import { FilePreviewModal, isPreviewable } from "./src/FilePreview.jsx";
 import { CommentThread } from "./src/CommentThread.jsx";
 import { Analytics } from "./src/Analytics.jsx";
 import { Icon } from "./src/icons.jsx";
+import { isPastDueDate } from "./lib/dateUtils.js";
 import "./src/portal.css"; // shared stylesheet (also used by the client portal)
 
 /* =========================================================================
@@ -221,8 +222,8 @@ export function fmtSize(bytes) {
   if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + " MB";
   return (bytes / 1073741824).toFixed(2) + " GB";
 }
-export function isOverdue(item) {
-  return item.status !== "accepted" && item.dueDate && item.dueDate < Date.now();
+export function isOverdue(item, now = Date.now()) {
+  return item.status !== "accepted" && isPastDueDate(item.dueDate, now);
 }
 function buildItems(template, baseDue) {
   const items = [];
@@ -474,7 +475,6 @@ export default function App() {
   useEffect(() => {
     if (session) reloadList();
     else { setEngagements([]); setCurrentId(null); setEng(null); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   /* ---- dashboard: all portals + their progress ---- */
@@ -494,7 +494,6 @@ export default function App() {
   };
   useEffect(() => {
     if (session && profile?.approved && view === "dashboard") loadDashboard();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, profile, view]);
 
   // navigation between the dashboard and a single engagement
@@ -2593,7 +2592,7 @@ function ClientGroupsModal({ onClose, onChanged }) {
       setGroups(g); setEngs(e);
     } catch (ex) { setErr(ex.message || "โหลดไม่สำเร็จ"); }
   };
-  useEffect(() => { reload(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { reload(); }, []);
 
   const doRun = async (fn) => {
     setBusy(true); setErr("");
@@ -2686,7 +2685,7 @@ function LineModal({ onClose }) {
   const [err, setErr] = useState("");
 
   const load = () => firmApi.lineStatus().then(setStatus).catch((e) => { setErr(e.message || ""); setStatus({ linked: false, code: null }); });
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []);
   const run = async (fn) => { setBusy(true); setErr(""); try { await fn(); await load(); } catch (e) { setErr(e.message || "ไม่สำเร็จ"); } finally { setBusy(false); } };
 
   return (
