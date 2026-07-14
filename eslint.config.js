@@ -15,8 +15,7 @@ export default [
       "**/*.min.js",
       "Dashboard*/**", // design-handoff scratch folders
       "Tickmark website*/**",
-      ".claude/**", ".agents/**", ".codex/**", ".codex-pet-runs/**", // agent/skill tooling, not project source
-      ".github/skills/**", ".github/hooks/**",
+      ".agents/**", ".claude/**", ".codex/**", ".codex-pet-runs/**", ".github/hooks/**", ".github/skills/**", ".impeccable/**", // tooling artifacts
       "_*.html",
     ],
   },
