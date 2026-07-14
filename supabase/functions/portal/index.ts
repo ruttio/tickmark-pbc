@@ -16,16 +16,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { presignGet, presignPut, deleteObjects, headObject } from "../_shared/r2.ts";
 import { linePush } from "../_shared/line.ts";
+import {
+  MAX_FILE_BYTES,
+  exceedsPortalQuota,
+  isAllowedUploadName,
+} from "../_shared/uploadPolicy.ts";
 
 // ---- Upload guardrails ----
-const MAX_FILE = 50 * 1024 * 1024;           // 50 MB per file
-const MAX_PORTAL = 2 * 1024 * 1024 * 1024;   // 2 GB total per portal
-const ALLOWED_EXT = new Set([
-  "pdf", "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "heic",
-  "xlsx", "xls", "xlsm", "csv", "docx", "doc", "pptx", "ppt", "txt", "zip",
-]);
-const extOf = (name: string) => (name.includes(".") ? name.split(".").pop()!.toLowerCase() : "");
-
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
@@ -226,12 +223,12 @@ Deno.serve(async (req) => {
         .select("id, status").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!item) return json({ error: "item not in this portal" }, 403);
       if (item.status === "accepted") return json({ error: "รายการนี้ตรวจรับแล้ว อัปโหลดเพิ่มไม่ได้" }, 409);
-      if (!ALLOWED_EXT.has(extOf(filename))) return json({ error: "ชนิดไฟล์นี้ไม่รองรับ" }, 415);
-      if (size > MAX_FILE) return json({ error: "ไฟล์ใหญ่เกิน 50 MB" }, 413);
+      if (!Number.isFinite(size) || size < 0) return json({ error: "ขนาดไฟล์ไม่ถูกต้อง" }, 400);
+      if (!isAllowedUploadName(filename)) return json({ error: "ชนิดไฟล์นี้ไม่รองรับ" }, 415);
+      if (size > MAX_FILE_BYTES) return json({ error: "ไฟล์ใหญ่เกิน 50 MB" }, 413);
       // Per-portal storage quota.
       const { data: existing } = await admin.from("item_files").select("size").eq("engagement_id", engagement_id);
-      const used = (existing || []).reduce((s: number, f: any) => s + Number(f.size || 0), 0);
-      if (used + size > MAX_PORTAL) return json({ error: "พื้นที่จัดเก็บของพอร์ทัลเต็ม" }, 413);
+      if (exceedsPortalQuota(existing, size)) return json({ error: "พื้นที่จัดเก็บของพอร์ทัลเต็ม" }, 413);
 
       const path = `${engagement_id}/${item_id}/${Date.now()}_${filename}`;
       const put_url = await presignPut(path);   // client PUTs the file bytes to this R2 URL
@@ -248,15 +245,31 @@ Deno.serve(async (req) => {
       if (item.status === "accepted") return json({ error: "รายการนี้ตรวจรับแล้ว" }, 409);
       // The path must live inside THIS item's folder — never trust a client path elsewhere.
       if (!storage_path.startsWith(`${engagement_id}/${item_id}/`)) return json({ error: "invalid path" }, 400);
-      if (!ALLOWED_EXT.has(extOf(storage_path))) return json({ error: "ชนิดไฟล์นี้ไม่รองรับ" }, 415);
+      if (!isAllowedUploadName(storage_path)) return json({ error: "ชนิดไฟล์นี้ไม่รองรับ" }, 415);
+
+      // Retrying confirm must not create duplicate rows/history for one object.
+      const { data: recorded, error: recordedError } = await admin.from("item_files")
+        .select("id").eq("storage_path", storage_path).maybeSingle();
+      if (recordedError) throw recordedError;
+      if (recorded) return json({ ok: true });
 
       // Authoritative check: read the REAL object from R2 (verifies it exists +
       // gives trustworthy size/type/checksum instead of client-declared values).
       const meta = await headObject(storage_path);
       if (!meta) return json({ error: "ไม่พบไฟล์ที่อัปโหลด ลองใหม่อีกครั้ง" }, 404);
-      if (meta.size > MAX_FILE) { await deleteObjects([storage_path]); return json({ error: "ไฟล์ใหญ่เกิน 50 MB" }, 413); }
+      if (meta.size > MAX_FILE_BYTES) { await deleteObjects([storage_path]); return json({ error: "ไฟล์ใหญ่เกิน 50 MB" }, 413); }
 
-      await admin.from("item_files").insert({
+      // Re-check using the authoritative R2 size. The browser-declared size in
+      // upload_url is advisory and can be stale or deliberately falsified.
+      const { data: existing, error: existingError } = await admin.from("item_files")
+        .select("size").eq("engagement_id", engagement_id);
+      if (existingError) throw existingError;
+      if (exceedsPortalQuota(existing, meta.size)) {
+        await deleteObjects([storage_path]);
+        return json({ error: "พื้นที่จัดเก็บของพอร์ทัลเต็ม" }, 413);
+      }
+
+      const { error: insertError } = await admin.from("item_files").insert({
         item_id, engagement_id,
         name: String(body.name || "").slice(0, 255),
         size: meta.size,
@@ -264,8 +277,13 @@ Deno.serve(async (req) => {
         storage_path,
         checksum: meta.etag,
       });
-      await admin.from("request_items").update({ status: "submitted", note: "" }).eq("id", item_id);
-      await admin.from("item_history").insert({ item_id, by: "Client", action: "Submitted" });
+      if (insertError) throw insertError;
+      const { error: itemError } = await admin.from("request_items")
+        .update({ status: "submitted", note: "" }).eq("id", item_id);
+      if (itemError) throw itemError;
+      const { error: historyError } = await admin.from("item_history")
+        .insert({ item_id, by: "Client", action: "Submitted" });
+      if (historyError) throw historyError;
 
       // LINE notify every portal member who has linked LINE (fire-and-forget)
       try {

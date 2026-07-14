@@ -17,13 +17,14 @@
 //    => Editing the URL to Client B's id just lands on B's lock screen,
 //       which still demands B's 16-digit code. No code, no data.
 // =====================================================================
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clientApi } from "../lib/portalApi.js";
 import { SUPABASE_CONFIGURED } from "../lib/supabaseClient.js";
 import { FilePreviewModal, isPreviewable } from "./FilePreview.jsx";
 import { CommentThread } from "./CommentThread.jsx";
 import { fileError } from "./uploadRules.js";
 import { Icon } from "./icons.jsx";
+import { isPastDueDate } from "../lib/dateUtils.js";
 import "./portal.css";
 
 /* ---------- status model (mirrors the firm app) ------------------------ */
@@ -57,7 +58,7 @@ const fmtDate = (ts) =>
 const fmtSize = (b) =>
   b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0) + " KB"
     : b < 1073741824 ? (b / 1048576).toFixed(1) + " MB" : (b / 1073741824).toFixed(2) + " GB";
-const isOverdue = (it) => it.status !== "accepted" && it.dueDate && it.dueDate < Date.now();
+const isOverdue = (it) => it.status !== "accepted" && isPastDueDate(it.dueDate);
 const fileExt = (name) => (name.includes(".") ? name.split(".").pop().slice(0, 4).toUpperCase() : "ไฟล์");
 
 // The client has no login, so "which firm comments have I read" lives in
@@ -826,7 +827,7 @@ function GroupCompany({ token, engagementId, onBack }) {
   const [phase, setPhase] = useState("loading");
   const [loadErr, setLoadErr] = useState("");
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setPhase("loading"); setLoadErr("");
     try {
       const { engagement, items } = await clientApi.fetchData(token, engagementId);
@@ -834,8 +835,8 @@ function GroupCompany({ token, engagementId, onBack }) {
     } catch (e) {
       setLoadErr(e.message || "โหลดข้อมูลไม่สำเร็จ"); setPhase("ready");
     }
-  };
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [engagementId]);
+  }, [token, engagementId]);
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <>
