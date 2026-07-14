@@ -5,6 +5,7 @@ import { SUPABASE_CONFIGURED } from "./lib/supabaseClient.js";
 import { FilePreviewModal, isPreviewable } from "./src/FilePreview.jsx";
 import { CommentThread } from "./src/CommentThread.jsx";
 import { Analytics } from "./src/Analytics.jsx";
+import { Icon } from "./src/icons.jsx";
 import "./src/portal.css"; // shared stylesheet (also used by the client portal)
 
 /* =========================================================================
@@ -816,7 +817,7 @@ export default function App() {
                 <div className="nv-isearch"><span>⌕</span><input value={itemQ} onChange={(e) => setItemQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
                 {stats.overdue > 0 && (
                   <div className="nv-alert" onClick={() => { setStatusSel(["overdue"]); setCatSel([]); }}>
-                    <span className="ic">⚠</span>
+                    <span className="ic"><Icon name="alert" size={14} /></span>
                     <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{(() => { const f = eng.items.find(isOverdue); return f ? ` — ${f.description}` : ""; })()} · คลิกเพื่อดู</span>
                   </div>
                 )}
@@ -827,7 +828,7 @@ export default function App() {
                   const first = eng.items.find((it) => unreadC[it.id]);
                   return (
                     <div className="nv-alert cmt" onClick={() => first && openItemDrawer(first.id)}>
-                      <span className="ic">💬</span>
+                      <span className="ic"><Icon name="chat" size={14} /></span>
                       <span>มี <b>{total}</b> ความคิดเห็นใหม่จากลูกค้า{first ? ` — ${first.description}` : ""} · คลิกเพื่ออ่าน</span>
                     </div>
                   );
@@ -851,21 +852,21 @@ export default function App() {
                     <button className="nv-mitem" onClick={() => setModal("add")}>＋ เพิ่มรายการเดี่ยว</button>
                     <button className="nv-mitem" onClick={() => importRef.current?.click()}>↓ นำเข้าจาก Excel</button>
                   </NvMenu>
-                  <NvMenu label="👥 แชร์กับลูกค้า" variant="light">
+                  <NvMenu label={<><Icon name="users" size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />แชร์กับลูกค้า</>} variant="light">
                     <button className="nv-mitem" onClick={() => {
                       const link = `${location.origin}/client.html?e=${eng.id}`;
                       navigator.clipboard?.writeText(link).catch(() => {});
                       alert("คัดลอกลิงก์สำหรับลูกค้าแล้ว (ส่งรหัส 16 หลักแยกช่องทาง):\n\n" + link);
-                    }}>🔗 คัดลอกลิงก์ลูกค้า</button>
-                    <button className="nv-mitem" onClick={notifyClient}>📧 แจ้งลูกค้า</button>
+                    }}><Icon name="link" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />คัดลอกลิงก์ลูกค้า</button>
+                    <button className="nv-mitem" onClick={notifyClient}><Icon name="mail" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />แจ้งลูกค้า</button>
                   </NvMenu>
                   <button className="nv-btn" onClick={() => setModal("zip")}>↓ โหลดไฟล์ (.zip)</button>
                   {busy && <span className="nv-search-note">กำลังบันทึก…</span>}
                   <div style={{ marginLeft: "auto" }}>
                     <NvMenu label="เพิ่มเติม" variant="dark" align="right">
-                      <button className="nv-mitem" onClick={() => openGenerate(buildRollSource(eng))}>🔁 สร้างพอร์ทัลปีถัดไป</button>
-                      <button className="nv-mitem" onClick={exportCSV}>↓ Export CSV</button>
-                      {(eng.myRole === "owner" || eng.myCanDelete) && <button className="nv-mitem" onClick={() => setModal("archived")}>🗄 Archived</button>}
+                      <button className="nv-mitem" onClick={() => openGenerate(buildRollSource(eng))}><Icon name="repeat" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />สร้างพอร์ทัลปีถัดไป</button>
+                      <button className="nv-mitem" onClick={exportCSV}><Icon name="doc" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />Export CSV</button>
+                      {(eng.myRole === "owner" || eng.myCanDelete) && <button className="nv-mitem" onClick={() => setModal("archived")}><Icon name="archive" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />Archived</button>}
                       <div className="nv-msep" />
                       {eng.myRole === "owner" && <button className="nv-mitem" onClick={() => setModal("share")}>＋ เชิญสมาชิก / แชร์</button>}
                       <button className="nv-mitem" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
@@ -893,7 +894,7 @@ export default function App() {
                               <div className="nv-doc-name">{it.description}{it.required && <span className="req" title="Required">•</span>}</div>
                               <div className="nv-doc-sub">
                                 {it.files.length > 0 && <span className="f">{it.files.length} file{it.files.length > 1 ? "s" : ""}</span>}
-                                {it.commentCount > 0 && <span className="cmt">💬 {it.commentCount}</span>}
+                                {it.commentCount > 0 && <span className="cmt"><Icon name="chat" size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} />{it.commentCount}</span>}
                                 {it.firmNote && <span className="note" title={it.firmNote}>โน้ต</span>}
                                 <span className={`due ${od ? "od" : ""}`}>Due {fmtDate(it.dueDate)}</span>
                               </div>
@@ -1100,7 +1101,7 @@ function SetNewPasswordScreen({ busy, onSave, onSignOut }) {
       <AuthFrame role="firm">
         <div className="tk-lock">
           <div className="tk-lock-card tk-auth-card tk-auth-firm-card" style={{ textAlign: "left" }}>
-            <div className="tk-lock-icon" style={{ textAlign: "center" }}>🔑</div>
+            <div className="tk-lock-icon" style={{ textAlign: "center" }}><Icon name="key" size={30} /></div>
             <h2 style={{ textAlign: "center" }}>ตั้งรหัสผ่านใหม่</h2>
             <p className="tk-muted" style={{ textAlign: "center", marginBottom: 18 }}>กรอกรหัสผ่านใหม่สำหรับบัญชีของคุณ</p>
             <label className="tk-field"><span>รหัสผ่านใหม่ (≥ 6 ตัว)</span>
@@ -1127,7 +1128,7 @@ function PendingApprovalScreen({ email, onSignOut }) {
       <AuthFrame role="firm">
         <div className="tk-lock">
           <div className="tk-lock-card tk-auth-card tk-auth-firm-card">
-            <div className="tk-lock-icon">⏳</div>
+            <div className="tk-lock-icon"><Icon name="hourglass" size={30} /></div>
             <h2>บัญชีรอการอนุมัติ</h2>
             <p className="tk-muted">
               สมัครสำเร็จแล้ว — บัญชี <b>{email}</b> กำลังรอผู้ดูแลระบบอนุมัติ
@@ -1154,20 +1155,20 @@ export function timeAgo(ts) {
 // Icon + colour tone + Thai label for an item_history action (client + firm).
 export function notifMeta(action) {
   const a = action || "";
-  if (/remove/i.test(a)) return { icon: "🗑", tone: "slate", label: "ลบไฟล์ที่อัปไว้" };
-  if (/submit/i.test(a)) return { icon: "↑", tone: "info", label: "อัปโหลดเอกสาร" };
-  if (/accept/i.test(a)) return { icon: "✓", tone: "mint", label: "ตรวจรับ" };
-  if (/return/i.test(a)) return { icon: "↩", tone: "amber", label: "ส่งกลับแก้ไข" };
-  if (/reopen/i.test(a)) return { icon: "↻", tone: "amber", label: "เปิดใหม่" };
-  if (/review/i.test(a)) return { icon: "◐", tone: "info", label: "เริ่มตรวจ" };
-  if (/comment/i.test(a)) return { icon: "💬", tone: "info", label: "แสดงความคิดเห็น" };
-  if (/note/i.test(a)) return { icon: "📝", tone: "amber", label: "เพิ่มโน้ต" };
-  if (/renam/i.test(a)) return { icon: "✎", tone: "slate", label: "แก้ไขชื่อรายการ" };
-  if (/reschedul/i.test(a)) return { icon: "🗓", tone: "amber", label: "แก้ไขกำหนดส่ง" };
-  if (/archiv/i.test(a)) return { icon: "🗄", tone: "slate", label: "ย้ายไปที่เก็บถาวร" };
-  if (/restor/i.test(a)) return { icon: "↺", tone: "info", label: "กู้คืนจากที่เก็บ" };
-  if (/request/i.test(a)) return { icon: "＋", tone: "info", label: "เพิ่มรายการ" };
-  return { icon: "•", tone: "slate", label: a };
+  if (/remove/i.test(a)) return { icon: "trash", tone: "slate", label: "ลบไฟล์ที่อัปไว้" };
+  if (/submit/i.test(a)) return { icon: "upload", tone: "info", label: "อัปโหลดเอกสาร" };
+  if (/accept/i.test(a)) return { icon: "check", tone: "mint", label: "ตรวจรับ" };
+  if (/return/i.test(a)) return { icon: "return", tone: "amber", label: "ส่งกลับแก้ไข" };
+  if (/reopen/i.test(a)) return { icon: "reopen", tone: "amber", label: "เปิดใหม่" };
+  if (/review/i.test(a)) return { icon: "eye", tone: "info", label: "เริ่มตรวจ" };
+  if (/comment/i.test(a)) return { icon: "chat", tone: "info", label: "แสดงความคิดเห็น" };
+  if (/note/i.test(a)) return { icon: "note", tone: "amber", label: "เพิ่มโน้ต" };
+  if (/renam/i.test(a)) return { icon: "note", tone: "slate", label: "แก้ไขชื่อรายการ" };
+  if (/reschedul/i.test(a)) return { icon: "calendar", tone: "amber", label: "แก้ไขกำหนดส่ง" };
+  if (/archiv/i.test(a)) return { icon: "archive", tone: "slate", label: "ย้ายไปที่เก็บถาวร" };
+  if (/restor/i.test(a)) return { icon: "restore", tone: "info", label: "กู้คืนจากที่เก็บ" };
+  if (/request/i.test(a)) return { icon: "plus", tone: "info", label: "เพิ่มรายการ" };
+  return { icon: "doc", tone: "slate", label: a };
 }
 const notifLabel = (a) => notifMeta(a).label;
 const notifIcon = (a) => notifMeta(a).icon;
@@ -1390,10 +1391,10 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
         <div className="nv-brand"><span className="mk"><Tick size={17} /></span><span className="wd">Tickmark</span><span className="nv-pill">PBC Portal · Firm</span></div>
         <div className="nv-search"><span>⌕</span><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาลูกค้า / engagement…" /></div>
         <div className="nv-top-right">
-          <button className="nv-tbtn" onClick={() => setShowAnalytics(true)}>📊 Analytics</button>
-          <button className="nv-tbtn" onClick={() => setShowLine(true)}>🟢 LINE</button>
+          <button className="nv-tbtn" onClick={() => setShowAnalytics(true)}><Icon name="chart" size={15} style={{ verticalAlign: "-3px", marginRight: 6 }} />Analytics</button>
+          <button className="nv-tbtn" onClick={() => setShowLine(true)}><Icon name="line" size={15} style={{ verticalAlign: "-3px", marginRight: 6 }} />LINE</button>
           <div style={{ position: "relative" }}>
-            <span className="nv-icon" onClick={() => setShowNotifs((s) => !s)}>🔔{totalUnread > 0 && <span className="nv-cbadge">{totalUnread}</span>}</span>
+            <span className="nv-icon" onClick={() => setShowNotifs((s) => !s)}><Icon name="bell" size={18} />{totalUnread > 0 && <span className="nv-cbadge">{totalUnread}</span>}</span>
             {showNotifs && (
               <div className="tk-notif-panel">
                 <div className="tk-notif-head">
@@ -1415,7 +1416,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
                         <ul className="tk-notif-sub">
                           {g.items.slice(0, 3).map((n) => (
                             <li key={n.id} className={n.unread ? "unread" : ""}>
-                              <span>{notifIcon(n.action)}</span>
+                              <span><Icon name={notifIcon(n.action)} size={14} /></span>
                               <span>{notifLabel(n.action)} · <i>{n.itemDescription}</i></span>
                             </li>
                           ))}
@@ -1455,7 +1456,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
             <div className="sub">ภาพรวมพอร์ทัล คำขอเอกสาร และสถานะล่าสุดของลูกค้า{q && ` · พบ ${feedCount} จาก ${dash.length}`}</div>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="nv-btn" onClick={onGroups}>👥 กลุ่มลูกค้า</button>
+            <button className="nv-btn" onClick={onGroups}><Icon name="users" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />กลุ่มลูกค้า</button>
             <button className="nv-cta" onClick={onNew}>+ สร้างพอร์ทัลใหม่</button>
           </div>
         </div>
@@ -1468,7 +1469,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
             </div>
             <div className="nv-today-acts">
               <button className="nv-obtn mint" disabled={reminderCandidates.length === 0}
-                onClick={() => setShowReminder(true)}>✈ ส่ง reminder</button>
+                onClick={() => setShowReminder(true)}><Icon name="send" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />ส่ง reminder</button>
             </div>
           </div>
           {(() => {
@@ -1476,7 +1477,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
             const join = (a) => a.slice(0, 2).join(" · ") + (a.length > 2 ? ` +${a.length - 2}` : "");
             const card = (tone, ic, label, count, names, kind) => (
               <button className={`nv-tc ${tone}`} disabled={!count} onClick={() => count && setStatusView(kind)}>
-                <span className="nv-tc-ic">{ic}</span>
+                <span className="nv-tc-ic"><Icon name={ic} size={16} /></span>
                 <div className="nv-tc-main">
                   <div className="nv-tc-t">{label} <b>{count}</b></div>
                   <div className="nv-tc-sub">{names.length ? join(names) : "ไม่มี"}</div>
@@ -1486,9 +1487,9 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
             );
             return (
               <div className="nv-today-cards">
-                {card("red", "!", "เกินกำหนด", follow.overdue.length, uniq(follow.overdue.map((x) => x.client)), "overdue")}
-                {card("amber", "◷", "ใกล้ครบกำหนด", follow.soon.length, uniq(follow.soon.map((x) => x.client)), "soon")}
-                {card("mint", "✓", "รอตรวจ", follow.reviewTotal, uniq(follow.reviewItems.map((x) => x.client)), "review")}
+                {card("red", "alert", "เกินกำหนด", follow.overdue.length, uniq(follow.overdue.map((x) => x.client)), "overdue")}
+                {card("amber", "clock", "ใกล้ครบกำหนด", follow.soon.length, uniq(follow.soon.map((x) => x.client)), "soon")}
+                {card("mint", "inbox", "รอตรวจ", follow.reviewTotal, uniq(follow.reviewItems.map((x) => x.client)), "review")}
               </div>
             );
           })()}
@@ -1593,7 +1594,7 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
                         const m = notifMeta(n.action);
                         return (
                           <li key={n.id} className={`nv-act ${n.by === "Client" ? "cli" : "firm"}`} onClick={() => onOpen(n.engagementId)}>
-                            <span className={`nv-act-ic ${m.tone}`}>{m.icon}</span>
+                            <span className={`nv-act-ic ${m.tone}`}><Icon name={m.icon} size={15} /></span>
                             <div className="nv-act-body">
                               <div className="tx"><b>{n.client}</b> {n.actor && <>· {n.actor} </>}{m.label}{n.itemDescription && <span style={{ color: "#64748B" }}> · {n.itemDescription}</span>}</div>
                               <div className="ts"><span className="side">{n.by === "Client" ? "ลูกค้า" : "สำนักงาน"}</span> · {timeAgo(n.at)}</div>
@@ -1793,7 +1794,7 @@ function LockScreen({ eng, role, onUnlock, onSetPasscode }) {
     return (
       <div className="tk-lock">
         <div className="tk-lock-card">
-          <div className="tk-lock-icon">🔒</div>
+          <div className="tk-lock-icon"><Icon name="lock" size={30} /></div>
           <h2>พอร์ทัลนี้ยังไม่ได้ตั้งรหัส</h2>
           <p className="tk-muted">โปรดติดต่อทางสำนักงาน (Firm) เพื่อให้ตั้งรหัสเข้าพอร์ทัลก่อนใช้งาน</p>
         </div>
@@ -1804,7 +1805,7 @@ function LockScreen({ eng, role, onUnlock, onSetPasscode }) {
   return (
     <div className="tk-lock">
       <div className="tk-lock-card">
-        <div className="tk-lock-icon">🔒</div>
+        <div className="tk-lock-icon"><Icon name="lock" size={30} /></div>
         <p className="tk-lock-eyebrow">{eng.template}</p>
         <h2>{eng.client}</h2>
         <p className="tk-muted">
@@ -2012,7 +2013,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
           <ul className="tk-filelist">
             {clientFiles.map((f, i) => (
               <li key={i}>
-                <span className="tk-fileicon">▤</span>
+                <span className="tk-fileicon"><Icon name="doc" size={16} /></span>
                 <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
                 {f.rejected && <span className="tk-file-rejected">ต้องแก้ไข</span>}
                 {role === "firm" && f.downloadedAt && (
@@ -2042,12 +2043,12 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
         {/* Sample / reference files (firm-uploaded, visible to the client) */}
         {role === "firm" && onUploadSample && (
           <div className="tk-block">
-            <p className="tk-block-h">📎 รายการที่เลือก / ตัวอย่าง · ลูกค้าเห็นได้</p>
+            <p className="tk-block-h"><Icon name="paperclip" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />รายการที่เลือก / ตัวอย่าง · ลูกค้าเห็นได้</p>
             {sampleFiles.length === 0 && <p className="tk-muted">ยังไม่มี — อัปโหลดไฟล์ที่ต้องการให้ลูกค้าเห็น (เช่น รายการสุ่มที่เลือก)</p>}
             <ul className="tk-filelist">
               {sampleFiles.map((f) => (
                 <li key={f.id}>
-                  <span className="tk-fileicon">📎</span>
+                  <span className="tk-fileicon"><Icon name="paperclip" size={16} /></span>
                   <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
                   {onPreviewUrl && isPreviewable(f) && <button className="tk-x" onClick={() => openPreview(f)}>ดู</button>}
                   {onDownload && <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>download</button>}
@@ -2077,7 +2078,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
         {/* Per-item conversation with the client */}
         {onListComments && (
           <div className="tk-block">
-            <p className="tk-block-h">💬 การสนทนา · ลูกค้าเห็นได้</p>
+            <p className="tk-block-h"><Icon name="chat" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />การสนทนา · ลูกค้าเห็นได้</p>
             <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Firm" />
             {commentErr && <p className="tk-muted" style={{ color: "#EF4444", marginTop: 6 }}>{commentErr}</p>}
           </div>
@@ -2459,7 +2460,7 @@ function ReminderModal({ candidates, onClose }) {
     <Modal title="ส่ง reminder ให้ลูกค้า" onClose={onClose} wide>
       {done ? (
         <div style={{ textAlign: "center", padding: "16px 8px" }}>
-          <div style={{ fontSize: 40 }}>✅</div>
+          <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(18,179,154,.12)", color: "#12B39A", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon name="check" size={28} /></div>
           <p style={{ fontSize: 15, margin: "8px 0 4px" }}>ส่งอีเมลเตือนแล้ว <b>{done.ok}</b> ฉบับ{done.fail > 0 && <> · ล้มเหลว <b style={{ color: "#EF4444" }}>{done.fail}</b></>}</p>
           <button className="tk-btn primary" style={{ marginTop: 12 }} onClick={onClose}>เสร็จสิ้น</button>
         </div>
@@ -2652,7 +2653,7 @@ function ClientGroupsModal({ onClose, onChanged }) {
               <label className="tk-field"><span>ลิงก์กลุ่ม (ส่งรหัสกลุ่มแยกช่องทาง)</span>
                 <input readOnly value={link} onFocus={(e) => e.target.select()} /></label>
               <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                <button className="tk-btn" onClick={() => { navigator.clipboard?.writeText(link).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "คัดลอกแล้ว ✓" : "🔗 คัดลอกลิงก์"}</button>
+                <button className="tk-btn" onClick={() => { navigator.clipboard?.writeText(link).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "คัดลอกแล้ว ✓" : <><Icon name="link" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />คัดลอกลิงก์</>}</button>
                 <button className="tk-btn ghost" onClick={() => resetCode(selGroup.id)}>สุ่มรหัสกลุ่มใหม่</button>
               </div>
               <p className="tk-hint" style={{ marginBottom: 8 }}>ติ๊กพอร์ทัลที่จะอยู่ในกลุ่มนี้ — พอร์ทัลในกลุ่มจะเข้าผ่านลิงก์กลุ่มเท่านั้น (ลิงก์เดี่ยวปิด)</p>
@@ -2827,8 +2828,8 @@ function ZipModal({ eng, busy, onClose, onDownload }) {
   const total = allFiles.length;
   const news = allFiles.filter((f) => !f.downloadedAt).length;
   const opts = [
-    { onlyNew: false, icon: "📦", label: "ดาวน์โหลดทั้งหมด", desc: "ทุกไฟล์ในพอร์ทัลนี้ (จัดโฟลเดอร์ตามหมวด)", n: total, disabled: total === 0 },
-    { onlyNew: true, icon: "🆕", label: "เฉพาะที่ยังไม่ได้โหลด", desc: "ข้ามไฟล์ที่เคยโหลดไปแล้ว", n: news, disabled: news === 0 },
+    { onlyNew: false, icon: "folder", label: "ดาวน์โหลดทั้งหมด", desc: "ทุกไฟล์ในพอร์ทัลนี้ (จัดโฟลเดอร์ตามหมวด)", n: total, disabled: total === 0 },
+    { onlyNew: true, icon: "inbox", label: "เฉพาะที่ยังไม่ได้โหลด", desc: "ข้ามไฟล์ที่เคยโหลดไปแล้ว", n: news, disabled: news === 0 },
   ];
   return (
     <Modal title="ดาวน์โหลดไฟล์ (.zip)" onClose={onClose}>
@@ -2836,7 +2837,7 @@ function ZipModal({ eng, busy, onClose, onDownload }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {opts.map((o) => (
           <button key={String(o.onlyNew)} className="tk-notify-opt" disabled={busy || o.disabled} onClick={() => onDownload(o.onlyNew)}>
-            <span className="ic">{o.icon}</span>
+            <span className="ic"><Icon name={o.icon} size={17} /></span>
             <span className="body">
               <b>{o.label}<i className="cnt">{o.n}</i></b>
               <em>{o.disabled ? "— ไม่มีไฟล์" : o.desc}</em>
@@ -2853,9 +2854,9 @@ function NotifyModal({ eng, busy, onClose, onSend }) {
   const returned = (eng.items || []).filter((i) => i.status === "returned").length;
   const outstanding = (eng.items || []).filter((i) => i.status === "outstanding").length;
   const opts = [
-    { kind: "invite", icon: "📂", label: "แจ้งเปิดพอร์ทัล (เชิญอัปโหลด)", desc: "ส่งลิงก์พอร์ทัล + ขอให้เริ่มอัปโหลดเอกสาร" },
-    { kind: "returned", icon: "↩️", label: "เตือนเอกสารที่ต้องแก้ไข", desc: "รวมทุกข้อที่ส่งกลับ (returned) เป็นเมลเดียว", n: returned, disabled: returned === 0 },
-    { kind: "reminder", icon: "⏰", label: "เตือนเอกสารที่ยังไม่ส่ง", desc: "รวมทุกข้อที่ยังค้าง (outstanding) เป็นเมลเดียว", n: outstanding, disabled: outstanding === 0 },
+    { kind: "invite", icon: "folder", label: "แจ้งเปิดพอร์ทัล (เชิญอัปโหลด)", desc: "ส่งลิงก์พอร์ทัล + ขอให้เริ่มอัปโหลดเอกสาร" },
+    { kind: "returned", icon: "return", label: "เตือนเอกสารที่ต้องแก้ไข", desc: "รวมทุกข้อที่ส่งกลับ (returned) เป็นเมลเดียว", n: returned, disabled: returned === 0 },
+    { kind: "reminder", icon: "clock", label: "เตือนเอกสารที่ยังไม่ส่ง", desc: "รวมทุกข้อที่ยังค้าง (outstanding) เป็นเมลเดียว", n: outstanding, disabled: outstanding === 0 },
   ];
   return (
     <Modal title="แจ้งเตือนลูกค้า" onClose={onClose}>
@@ -2863,7 +2864,7 @@ function NotifyModal({ eng, busy, onClose, onSend }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {opts.map((o) => (
           <button key={o.kind} className="tk-notify-opt" disabled={busy || o.disabled} onClick={() => onSend(o.kind)}>
-            <span className="ic">{o.icon}</span>
+            <span className="ic"><Icon name={o.icon} size={17} /></span>
             <span className="body">
               <b>{o.label}{o.n != null && <i className="cnt">{o.n}</i>}</b>
               <em>{o.disabled ? "— ไม่มีรายการ" : o.desc}</em>

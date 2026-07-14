@@ -136,7 +136,7 @@ describe("notifMeta", () => {
     expect(notifMeta("Renamed")).toMatchObject({ label: "แก้ไขชื่อรายการ" });
   });
   it("falls back to the raw action for unknown types", () => {
-    expect(notifMeta("weird_action")).toEqual({ icon: "•", tone: "slate", label: "weird_action" });
+    expect(notifMeta("weird_action")).toEqual({ icon: "doc", tone: "slate", label: "weird_action" });
   });
 });
 

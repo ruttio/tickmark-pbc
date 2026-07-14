@@ -23,6 +23,7 @@ import { SUPABASE_CONFIGURED } from "../lib/supabaseClient.js";
 import { FilePreviewModal, isPreviewable } from "./FilePreview.jsx";
 import { CommentThread } from "./CommentThread.jsx";
 import { fileError } from "./uploadRules.js";
+import { Icon } from "./icons.jsx";
 import "./portal.css";
 
 /* ---------- status model (mirrors the firm app) ------------------------ */
@@ -180,7 +181,7 @@ function SinglePortal({ engagementId }) {
         <div className="nv-lockwrap">
           <div className="nv-lockcard">
             <div className="nv-lock-hd">
-              <span className="nv-lock-ic">🔗</span>
+              <span className="nv-lock-ic"><Icon name="link" size={28} /></span>
               <div className="nv-lock-eyebrow">Secure document access</div>
               <div className="nv-lock-title">ลิงก์ไม่สมบูรณ์</div>
             </div>
@@ -231,7 +232,7 @@ function Shell({ children, onLock, secure = false }) {
           <span className="nv-pill">PBC Portal</span>
         </div>
         <div className="nv-top-right">
-          {secure && <span className="nv-secure"><span className="lk">🔒</span>การเชื่อมต่อปลอดภัย</span>}
+          {secure && <span className="nv-secure"><span className="lk"><Icon name="lock" size={12} /></span>การเชื่อมต่อปลอดภัย</span>}
           {onLock && (
             <span className="nv-icon" title="ออกจากพอร์ทัล" onClick={onLock}>⎋</span>
           )}
@@ -273,7 +274,7 @@ function LockScreen({ onUnlock }) {
     <div className="nv-lockwrap">
       <div className="nv-lockcard">
         <div className="nv-lock-hd">
-          <span className="nv-lock-ic">🔒</span>
+          <span className="nv-lock-ic"><Icon name="lock" size={28} /></span>
           <div className="nv-lock-eyebrow">Secure document access</div>
           <div className="nv-lock-title">เอกสารที่ต้องจัดเตรียม</div>
         </div>
@@ -312,7 +313,7 @@ function LockScreen({ onUnlock }) {
             {busy ? "กำลังตรวจสอบ…" : <>เข้าสู่พอร์ทัล →</>}
           </button>
           <p className="nv-lock-note">
-            <span style={{ flex: "none" }}>🔒</span>
+            <span style={{ flex: "none" }}><Icon name="lock" size={13} /></span>
             รหัสนี้ใช้ได้เฉพาะพอร์ทัลของคุณเท่านั้น — ไม่ต้องสมัครสมาชิก
           </p>
           {!SUPABASE_CONFIGURED && (
@@ -473,7 +474,7 @@ function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploade
             )}
             {unreadC.length > 0 && (
               <div className="nv-alert cmt" onClick={() => { setOpenCommentsId(unreadC[0].id); setStatusSel([]); setCatSel([]); setQ(""); }}>
-                <span className="ic">💬</span>
+                <span className="ic"><Icon name="chat" size={14} /></span>
                 <span>มี <b>{unreadC.length}</b> ความคิดเห็นใหม่จากสำนักงาน — {unreadC[0].description} · คลิกเพื่ออ่าน</span>
               </div>
             )}
@@ -640,12 +641,12 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
           <div className="nv-cnote rust"><b>ส่งกลับจากสำนักงาน:</b> {item.note}</div>
         )}
         {item.firmNote && (
-          <div className="nv-cnote note"><b>📝 หมายเหตุจากสำนักงาน:</b> {item.firmNote}</div>
+          <div className="nv-cnote note"><b><Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />หมายเหตุจากสำนักงาน:</b> {item.firmNote}</div>
         )}
 
         {sampleFiles.length > 0 && (
           <div className="nv-cnote note">
-            <b>📎 รายการที่สำนักงานเลือก / ตัวอย่าง:</b>
+            <b><Icon name="paperclip" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />รายการที่สำนักงานเลือก / ตัวอย่าง:</b>
             <ul className="nv-fchips">
               {sampleFiles.map((f) => (
                 <li key={f.id} className="nv-fchip">
@@ -695,7 +696,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
         )}
         <div className="nv-crow-comments">
           <button type="button" className={`nv-clink ${(showC ? comments.length : item.commentCount) ? "has" : ""}`} onClick={toggleComments}>
-            💬 ความคิดเห็น{(showC ? comments.length : item.commentCount) ? ` (${showC ? comments.length : item.commentCount})` : ""} {showC ? "▲" : "▼"}
+            <Icon name="chat" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />ความคิดเห็น{(showC ? comments.length : item.commentCount) ? ` (${showC ? comments.length : item.commentCount})` : ""} {showC ? "▲" : "▼"}
           </button>
           {showC && <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Client" />}
         </div>
