@@ -42,6 +42,14 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Bin an upload we are about to reject. Unlike every other deleteObjects call
+// site there is no DB row to protect here (none was written yet), so a failure
+// must not turn an honest 413 into a 500 — the orphan sweep reclaims leftovers.
+async function binRejected(storagePath: string): Promise<void> {
+  try { await deleteObjects([storagePath]); }
+  catch (e) { console.error("binRejected: R2 delete failed", storagePath, String(e)); }
+}
+
 async function sha256(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -257,7 +265,11 @@ Deno.serve(async (req) => {
       // gives trustworthy size/type/checksum instead of client-declared values).
       const meta = await headObject(storage_path);
       if (!meta) return json({ error: "ไม่พบไฟล์ที่อัปโหลด ลองใหม่อีกครั้ง" }, 404);
-      if (meta.size > MAX_FILE_BYTES) { await deleteObjects([storage_path]); return json({ error: "ไฟล์ใหญ่เกิน 50 MB" }, 413); }
+      // Rejected uploads: bin the object, but never let a failed R2 delete mask
+      // WHY the upload was rejected. No item_files row is ever written for these,
+      // so a leftover object is unreferenced by construction — the `purge`
+      // function's orphan sweep is the backstop that reclaims it.
+      if (meta.size > MAX_FILE_BYTES) { await binRejected(storage_path); return json({ error: "ไฟล์ใหญ่เกิน 50 MB" }, 413); }
 
       // Re-check using the authoritative R2 size. The browser-declared size in
       // upload_url is advisory and can be stale or deliberately falsified.
@@ -265,7 +277,7 @@ Deno.serve(async (req) => {
         .select("size").eq("engagement_id", engagement_id);
       if (existingError) throw existingError;
       if (exceedsPortalQuota(existing, meta.size)) {
-        await deleteObjects([storage_path]);
+        await binRejected(storage_path);
         return json({ error: "พื้นที่จัดเก็บของพอร์ทัลเต็ม" }, 413);
       }
 

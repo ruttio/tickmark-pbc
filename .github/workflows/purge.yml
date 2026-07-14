@@ -2,10 +2,25 @@ name: Purge expired portals
 
 # Deletes R2 objects before database rows. The endpoint is additionally guarded
 # by PURGE_SECRET; its JWT verification is disabled in supabase/config.toml.
+#
+# The nightly schedule runs `portals` (expire auto-delete portals). The other two
+# modes are manual (Actions -> Run workflow) and reconcile the bucket against the
+# DB: `orphans-dry` only REPORTS objects no item_files row points at;
+# `orphans-apply` deletes them. Always run the dry run first and read the list.
 on:
   schedule:
     - cron: "23 4 * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "What to run"
+        type: choice
+        required: true
+        default: portals
+        options:
+          - portals
+          - orphans-dry
+          - orphans-apply
 
 permissions:
   contents: read
@@ -17,13 +32,28 @@ jobs:
       PURGE_SECRET: ${{ secrets.PURGE_SECRET }}
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      MODE: ${{ inputs.mode || 'portals' }}
     steps:
+      - name: Build request body
+        run: |
+          case "$MODE" in
+            portals)       body='{"secret":"'"$PURGE_SECRET"'"}' ;;
+            orphans-dry)   body='{"secret":"'"$PURGE_SECRET"'","action":"orphans"}' ;;
+            orphans-apply) body='{"secret":"'"$PURGE_SECRET"'","action":"orphans","apply":true}' ;;
+            *) echo "unknown mode: $MODE"; exit 1 ;;
+          esac
+          echo "$body" > /tmp/body.json
+          echo "mode: $MODE"
+
       - name: Call purge Edge Function
         run: |
           code=$(curl -sS -o /tmp/out -w "%{http_code}" -X POST \
             -H "apikey: $SUPABASE_ANON_KEY" -H "Content-Type: application/json" \
-            -d "{\"secret\":\"$PURGE_SECRET\"}" \
+            --data-binary @/tmp/body.json \
             "$SUPABASE_URL/functions/v1/purge")
           echo "HTTP $code"
-          cat /tmp/out
+          cat /tmp/out; echo
+          # 207 = some portals could not be purged (their R2 objects refused to
+          # delete, so their rows were deliberately kept). Fail loudly: a silent
+          # partial purge is what orphaned objects in the first place.
           test "$code" = "200"

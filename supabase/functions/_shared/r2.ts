@@ -60,9 +60,51 @@ export async function headObject(
   };
 }
 
-// Delete objects (signed request, server-side).
+// Delete objects (signed request, server-side). Throws if ANY object survives:
+// callers delete the DB rows that hold storage_path right after this, and those
+// rows are the only record an object exists — a silent failure here orphans the
+// object in the bucket forever. 404 counts as success (S3 delete is idempotent).
 export async function deleteObjects(keys: string[]): Promise<void> {
-  await Promise.all(keys.map((k) => aws.fetch(objUrl(k), { method: "DELETE" })));
+  const failed: string[] = [];
+  await Promise.all(keys.map(async (k) => {
+    const res = await aws.fetch(objUrl(k), { method: "DELETE" });
+    await res.body?.cancel?.();
+    if (!res.ok && res.status !== 404) failed.push(`${k} (${res.status})`);
+  }));
+  if (failed.length) {
+    throw new Error(`R2 delete failed for ${failed.length}/${keys.length} object(s): ${failed.join(", ")}`);
+  }
+}
+
+// Every object in the bucket, with key + size + last-modified. Same paginated
+// ListObjectsV2 as bucketUsage, but keeps the keys so callers can reconcile the
+// bucket against the DB. Shared bucket: this returns EVERY firm's objects.
+export async function listObjects(): Promise<{ key: string; size: number; lastModified: number }[]> {
+  const out: { key: string; size: number; lastModified: number }[] = [];
+  let token: string | undefined;
+  do {
+    const u = new URL(`${ENDPOINT}/`);
+    u.searchParams.set("list-type", "2");
+    u.searchParams.set("max-keys", "1000");
+    if (token) u.searchParams.set("continuation-token", token);
+    const res = await aws.fetch(u.toString(), { method: "GET" });
+    if (!res.ok) throw new Error(`R2 list failed (${res.status})`);
+    const xml = await res.text();
+    for (const m of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+      const c = m[1];
+      const key = c.match(/<Key>([\s\S]*?)<\/Key>/)?.[1];
+      if (!key) continue;
+      out.push({
+        key: key.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'"),
+        size: Number(c.match(/<Size>(\d+)<\/Size>/)?.[1] || 0),
+        lastModified: Date.parse(c.match(/<LastModified>([^<]+)<\/LastModified>/)?.[1] || "") || 0,
+      });
+    }
+    token = /<IsTruncated>true<\/IsTruncated>/.test(xml)
+      ? xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/)?.[1]?.replace(/&amp;/g, "&")
+      : undefined;
+  } while (token);
+  return out;
 }
 
 // Total stored bytes + object count for the whole bucket (shared across all
