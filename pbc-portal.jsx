@@ -1391,6 +1391,27 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
 
   const email = session?.user?.email || "";
   const initials = (email.slice(0, 2) || "NF").toUpperCase();
+  const renderTodayVariant = (variantClass, subtitle) => {
+    const uniq = (a) => [...new Set(a)];
+    const join = (a) => a.slice(0, 2).join(" · ") + (a.length > 2 ? ` +${a.length - 2}` : "");
+    const card = (tone, ic, label, count, names, kind) => (
+      <button className={`nv-tc ${tone}`} disabled={!count} aria-label={`${label} ${count}`} onClick={() => count && setStatusView(kind)}>
+        <span className="nv-tc-ic"><Icon name={ic} size={16} /></span>
+        <div className="nv-tc-main"><div className="nv-tc-t">{label} <b>{count}</b></div><div className="nv-tc-sub">{names.length ? join(names) : "ไม่มี"}</div></div>
+        <span className="nv-tc-chev">›</span>
+      </button>
+    );
+    return (
+      <div className={`nv-today nv-today-summary ${variantClass}`}>
+        <div className="nv-today-head"><div><h3>สิ่งที่ต้องจัดการวันนี้</h3><div className="sub">{subtitle}</div></div></div>
+        <div className="nv-today-cards">
+          {card("red", "alert", "เกินกำหนด", follow.overdue.length, uniq(follow.overdue.map((x) => x.client)), "overdue")}
+          {card("amber", "clock", "ใกล้ครบกำหนด", follow.soon.length, uniq(follow.soon.map((x) => x.client)), "soon")}
+          {card("mint", "inbox", "รอตรวจ", follow.reviewTotal, uniq(follow.reviewItems.map((x) => x.client)), "review")}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="nv">
@@ -1463,45 +1484,16 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
             <h2>Engagements</h2>
             <div className="sub">ภาพรวมพอร์ทัล คำขอเอกสาร และสถานะล่าสุดของลูกค้า{q && ` · พบ ${feedCount} จาก ${dash.length}`}</div>
           </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div className="nv-phead-actions">
             <button className="nv-btn" onClick={onGroups}><Icon name="users" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />กลุ่มลูกค้า</button>
+            <button className="nv-btn nv-reminder-btn" disabled={reminderCandidates.length === 0}
+              title={reminderCandidates.length ? `ส่ง Reminder ${reminderCandidates.length} รายการ` : "ไม่มีรายการที่ต้องส่ง Reminder"}
+              onClick={() => setShowReminder(true)}><Icon name="send" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />ส่ง Reminder{reminderCandidates.length > 0 && <span className="nv-reminder-count">{reminderCandidates.length}</span>}</button>
             <button className="nv-cta" onClick={onNew}>+ สร้างพอร์ทัลใหม่</button>
           </div>
         </div>
 
-        <div className="nv-today nv-today-summary">
-          <div className="nv-today-head">
-            <div>
-              <h3>สิ่งที่ต้องจัดการวันนี้</h3>
-              <div className="sub">สรุปรายการสำคัญที่ควรติดตามในวันนี้</div>
-            </div>
-            <div className="nv-today-acts">
-              <button className="nv-obtn mint" disabled={reminderCandidates.length === 0}
-                onClick={() => setShowReminder(true)}><Icon name="send" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />ส่ง reminder</button>
-            </div>
-          </div>
-          {(() => {
-            const uniq = (a) => [...new Set(a)];
-            const join = (a) => a.slice(0, 2).join(" · ") + (a.length > 2 ? ` +${a.length - 2}` : "");
-            const card = (tone, ic, label, count, names, kind) => (
-              <button className={`nv-tc ${tone}`} disabled={!count} onClick={() => count && setStatusView(kind)}>
-                <span className="nv-tc-ic"><Icon name={ic} size={16} /></span>
-                <div className="nv-tc-main">
-                  <div className="nv-tc-t">{label} <b>{count}</b></div>
-                  <div className="nv-tc-sub">{names.length ? join(names) : "ไม่มี"}</div>
-                </div>
-                <span className="nv-tc-chev">›</span>
-              </button>
-            );
-            return (
-              <div className="nv-today-cards">
-                {card("red", "alert", "เกินกำหนด", follow.overdue.length, uniq(follow.overdue.map((x) => x.client)), "overdue")}
-                {card("amber", "clock", "ใกล้ครบกำหนด", follow.soon.length, uniq(follow.soon.map((x) => x.client)), "soon")}
-                {card("mint", "inbox", "รอตรวจ", follow.reviewTotal, uniq(follow.reviewItems.map((x) => x.client)), "review")}
-              </div>
-            );
-          })()}
-        </div>
+        {renderTodayVariant("nv-today-live-c", "ติดตามรายการสำคัญในวันนี้")}
 
         {dash.length === 0 ? (
           <div className="nv-empty">

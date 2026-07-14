@@ -453,6 +453,18 @@
 .nv-phead{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:24px}
 .nv-phead h2{font-size:24px;font-weight:700;color:#0F172A;margin:0;line-height:1.1}
 .nv-phead .sub{font-size:13.5px;color:#64748B;margin-top:6px}
+.nv-phead-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.nv-reminder-btn{color:#0B7F70;border-color:rgba(18,179,154,.32)}
+.nv-reminder-btn:hover:not(:disabled){color:#09695E;border-color:rgba(18,179,154,.55);background:rgba(18,179,154,.06)}
+.nv-reminder-btn:focus-visible{outline:3px solid rgba(18,179,154,.22);outline-offset:2px}
+.nv-reminder-btn:disabled{color:#94A3B8;border-color:#E5E7EB;background:#F8FAFC;cursor:not-allowed}
+.nv-reminder-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:rgba(18,179,154,.12);color:#0B7F70;font-size:11px;font-weight:800;line-height:1}
+.nv-reminder-btn:disabled .nv-reminder-count{background:#E5E7EB;color:#64748B}
+@media(max-width:640px){
+  .nv-phead-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);width:100%}
+  .nv-phead-actions .nv-btn{justify-content:center}
+  .nv-phead-actions .nv-cta{grid-column:1 / -1;justify-content:center}
+}
 
 /* KPI cards */
 .nv-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
@@ -948,6 +960,20 @@
 }
 @media(pointer:coarse){
   .nv-today-summary .nv-obtn,.nv-today-summary .nv-tc{min-height:44px}
+}
+
+/* Today summary — variant C: horizontal cards with hover lift (desktop layout) */
+.nv-today-live-c .nv-tc{transition:transform 170ms cubic-bezier(.22,1,.36,1)}
+.nv-today-live-c .nv-tc:hover:not(:disabled){transform:translateY(-1px)}
+.nv-today-live-c .nv-tc-chev{opacity:.68;transform:translateX(1px);transition:transform 170ms cubic-bezier(.22,1,.36,1)}
+@media(min-width:1024px){
+  .nv-today-live-c{grid-template-columns:minmax(245px,275px) minmax(0,1fr);gap:14px;padding:11px 14px;box-shadow:0 8px 20px rgba(8,26,52,.07)}
+  .nv-today-live-c .nv-today-head{display:block;margin:0}
+  .nv-today-live-c .nv-today-cards{display:flex;gap:6px;min-width:0}
+  .nv-today-live-c .nv-tc{flex:1 1 0;min-width:0;min-height:56px;padding:8px 10px}
+}
+@media(prefers-reduced-motion:reduce){
+  .nv-today-live-c .nv-tc,.nv-today-live-c .nv-tc-chev{transition:none}
 }
 
 /* status drill-in list (สิ่งที่ต้องจัดการวันนี้ → item list), grouped by portal */
