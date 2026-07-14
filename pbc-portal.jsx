@@ -9,6 +9,15 @@ import { Icon } from "./src/icons.jsx";
 import { isPastDueDate } from "./lib/dateUtils.js";
 import "./src/portal.css"; // shared stylesheet (also used by the client portal)
 
+const copyToClipboard = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /* =========================================================================
    Tickmark — a Prepared-By-Client (PBC) request portal (prototype)
    Two roles in one screen so you can see both sides of the workflow:
@@ -1629,9 +1638,35 @@ function groupChips(g) {
 // Group card (2a) — same footprint as an EngagementCard, with a purple accent
 // (top ribbon + purple border + progress bar). Clicking it opens the detail.
 function GroupCard({ g, onOpen }) {
+  const [copied, setCopied] = useState(false);
   const chips = groupChips(g);
+
+  const handleCopyLink = async (e) => {
+    e.stopPropagation();
+    const url = new URL(window.location);
+    url.pathname = '/client.html';
+    url.search = `?g=${g.id}`;
+    const result = await copyToClipboard(url.toString());
+    if (result) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   return (
-    <button className="nv-card nv-cardg" onClick={onOpen}>
+    <div
+      className="nv-card nv-cardg"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
       <div className="nv-gc-top">
         <div className="nv-gc-id">
           <span className="nv-gc-av">{g.initials}</span>
@@ -1647,11 +1682,21 @@ function GroupCard({ g, onOpen }) {
         {chips.length ? chips.map((t, i) => <span key={i} className={`nv-tag2 ${t.tone}`}>{t.txt}</span>)
           : <span className="nv-tag2 slate">ยังไม่มีรายการ</span>}
       </div>
-      <div className="nv-card-foot">
-        <span className="open">เปิดกลุ่ม →</span>
-        <span style={{ fontSize: 12, color: "#9aa2b4" }}>ดูพอร์ทัลในกลุ่ม</span>
+      <div className="nv-card-foot nv-group-card-foot">
+        <span className="nv-group-copy-icon">
+          <button
+            className="nv-copy-link nv-group-copy-button"
+            title={copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์กลุ่ม"}
+            aria-label={copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์กลุ่ม"}
+            onClick={handleCopyLink}
+            style={{ color: copied ? "#12B39A" : undefined }}
+          >
+            <Icon name="link" size={16} />
+          </button>
+        </span>
+        <span className="open nv-group-open">เปิดกลุ่ม <span aria-hidden="true">→</span></span>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -1687,6 +1732,7 @@ function GroupDetail({ g, unreadByEng, onBack, onOpen }) {
 }
 
 function EngagementCard({ e, onOpen, unread, groupName }) {
+  const [copied, setCopied] = useState(false);
   const x = engExpiry(e);
   const tags = [];
   if (e.overdue > 0) tags.push({ tone: "red", txt: `⚠ เกินกำหนด ${e.overdue}` });
@@ -1696,8 +1742,33 @@ function EngagementCard({ e, onOpen, unread, groupName }) {
   const awaiting = (e.by?.outstanding || 0) + (e.by?.reopened || 0);
   if (awaiting > 0) tags.push({ tone: "slate", txt: `รออัปโหลด ${awaiting}` });
   const done = e.pct >= 100 && e.total > 0;
+
+  const handleCopyLink = async (evt) => {
+    evt.stopPropagation();
+    const url = new URL(window.location);
+    url.pathname = '/client.html';
+    url.search = `?e=${e.id}`;
+    const result = await copyToClipboard(url.toString());
+    if (result) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   return (
-    <button className="nv-card" onClick={onOpen}>
+    <div
+      className="nv-card"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
       {(unread > 0 || e.overdue > 0) && <span className="nv-card-bang" title={unread > 0 ? `${unread} การแจ้งเตือนใหม่` : "มีรายการเกินกำหนด"}>!</span>}
       <div>
         <div className="nv-card-top">
@@ -1714,11 +1785,20 @@ function EngagementCard({ e, onOpen, unread, groupName }) {
         {tags.length ? tags.map((t, i) => <span key={i} className={`nv-tag2 ${t.tone}`}>{t.txt}</span>)
           : done ? <span className="nv-tag2 mint">✓ ตรวจรับครบทุกรายการ</span> : <span className="nv-tag2 slate">ยังไม่มีรายการ</span>}
       </div>
-      <div className="nv-card-foot">
-        <span className="open">เปิดพอร์ทัล →</span>
-        <span style={{ width: 26, height: 26, borderRadius: 8, border: "1px solid #E5E7EB", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>⋯</span>
+      <div className="nv-card-foot nv-portal-card-foot">
+        <button
+          className="nv-copy-link nv-portal-icon-action"
+          title={copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์พอร์ทัล"}
+          aria-label={copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์พอร์ทัล"}
+          onClick={handleCopyLink}
+          style={{ color: copied ? "#12B39A" : undefined }}
+        >
+          <Icon name="link" size={16} />
+        </button>
+        <span className="nv-portal-open">เปิดพอร์ทัล <span aria-hidden="true">→</span></span>
+        <span className="nv-portal-more" aria-hidden="true">⋯</span>
       </div>
-    </button>
+    </div>
   );
 }
 
