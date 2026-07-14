@@ -171,8 +171,8 @@
 .tk-reject-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);padding:2px 0}
 .tk-note{width:100%;min-height:62px;font-family:'Inter',system-ui,sans-serif;font-size:13px;border:1px solid var(--line);border-radius:var(--space-1);padding:9px;margin-top:10px;resize:vertical}
 .tk-return-reason{width:100%;font-family:'Inter',system-ui,sans-serif;font-size:13px;border:1px solid var(--line);border-radius:var(--space-1);padding:9px 10px;margin-top:10px;background:var(--card);color:var(--ink)}
-.tk-return-reason:focus{outline:none;border-color:var(--pine)}
-.tk-note:focus{outline:none;border-color:var(--pine)}
+.tk-return-reason:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 4px var(--pine-tint)}
+.tk-note:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 4px var(--pine-tint)}
 .tk-timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:11px}
 .tk-timeline li{display:flex;align-items:center;gap:10px;font-size:12.5px}
 .tk-timeline .dot{width:8px;height:8px;border-radius:50%;background:var(--pine);flex:none}
@@ -188,7 +188,7 @@
 .tk-field{display:flex;flex-direction:column;gap:5px;margin-bottom:13px}
 .tk-field>span{font-size:12px;font-weight:600;color:var(--ink-soft)}
 .tk-field input,.tk-field select{font-family:'Inter',system-ui,sans-serif;font-size:14px;border:1px solid var(--line);border-radius:var(--space-1);padding:9px 10px;background:var(--card);color:var(--ink)}
-.tk-field input:focus,.tk-field select:focus{outline:none;border-color:var(--pine)}
+.tk-field input:focus,.tk-field select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 4px var(--pine-tint)}
 .tk-field-row{display:flex;gap:12px}.tk-field-row .tk-field{flex:1}
 .tk-check{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:500;align-self:flex-end;padding-bottom:11px}
 .tk-tplblurb{font-size:12.5px;color:var(--ink-soft);margin:-4px 0 14px;line-height:1.5}
