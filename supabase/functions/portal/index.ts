@@ -63,6 +63,28 @@ async function binRejected(storagePath: string): Promise<void> {
   catch (e) { console.error("binRejected: R2 delete failed", storagePath, String(e)); }
 }
 
+// LINE-push every firm member of a portal who has linked their account.
+// `build` is only called once we know someone is actually listening, so the
+// message's own lookups are skipped when nobody has LINE linked.
+//
+// Fire-and-forget by construction: a notification must never turn a
+// successful client action into an error. The caller has already committed
+// its write by the time this runs.
+async function notifyFirm(engagementId: string, build: () => Promise<string>): Promise<void> {
+  try {
+    const { data: members } = await admin.from("portal_members")
+      .select("user_id").eq("engagement_id", engagementId);
+    const userIds = (members || []).map((m: any) => m.user_id);
+    if (!userIds.length) return;
+    const { data: profs } = await admin.from("profiles")
+      .select("line_target").in("id", userIds).not("line_target", "is", null);
+    const targets = [...new Set((profs || []).map((p: any) => p.line_target).filter(Boolean))];
+    if (!targets.length) return;
+    const msg = await build();
+    await Promise.all(targets.map((t) => linePush(t as string, msg)));
+  } catch (_) { /* never block a client action on a notification */ }
+}
+
 async function sha256(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -393,13 +415,22 @@ Deno.serve(async (req) => {
       const period_id = body.period_id ? String(body.period_id) : null;
       const { data: rows } = await admin.from("deliverables")
         .select(
-          "id, period_id, category, title, note, status, due_date, delivered_at, viewed_at, acknowledged_at, retain_until, sort, deliverable_files(id, name, size, type, uploaded_at)",
+          "id, period_id, category, title, note, status, due_date, delivered_at, viewed_at, acknowledged_at, retain_until, sort, revision, revision_note, deliverable_files(id, name, size, type, uploaded_at, revision)",
         )
         .eq("engagement_id", engagement_id)
         .order("sort");
       const deliverables = (rows ?? [])
         .filter((d: any) => d.status !== "draft")
-        .filter((d: any) => !period_id || d.period_id === period_id);
+        .filter((d: any) => !period_id || d.period_id === period_id)
+        // Files above the RELEASED revision are the firm mid-way through
+        // assembling a correction (see 20260721090000_deliverable_revisions).
+        // Same guarantee as hiding a draft: unreleased work never goes out.
+        .map((d: any) => ({
+          ...d,
+          deliverable_files: (d.deliverable_files || []).filter(
+            (f: any) => (f.revision ?? 1) <= (d.revision ?? 1),
+          ),
+        }));
       return json({ deliverables });
     }
 
@@ -411,15 +442,18 @@ Deno.serve(async (req) => {
     if (action === "deliverable_file_url") {
       const file_id = String(body.file_id || "");
       const { data: file } = await admin.from("deliverable_files")
-        .select("id, deliverable_id, storage_path, type")
+        .select("id, deliverable_id, storage_path, type, revision")
         .eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!file) return json({ error: "file not found" }, 404);
 
       // A draft's files must stay invisible even if a file_id somehow leaked
       // (e.g. a stale/bookmarked link) — same guarantee as the list above.
       const { data: deliverable } = await admin.from("deliverables")
-        .select("id, status, viewed_at").eq("id", file.deliverable_id).eq("engagement_id", engagement_id).maybeSingle();
+        .select("id, status, viewed_at, revision").eq("id", file.deliverable_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!deliverable || deliverable.status === "draft") return json({ error: "file not found" }, 404);
+      // Likewise for a file staged for a revision the firm hasn't released:
+      // the list already hides it, and a leaked id must not be a way around that.
+      if ((file.revision ?? 1) > (deliverable.revision ?? 1)) return json({ error: "file not found" }, 404);
 
       if (!deliverable.viewed_at) {
         await admin.from("deliverables")
@@ -536,6 +570,60 @@ Deno.serve(async (req) => {
         .update({ status: "acknowledged", acknowledged_at: new Date().toISOString() })
         .eq("id", deliverable_id).eq("engagement_id", engagement_id);
       if (error) throw error;
+      return json({ ok: true });
+    }
+
+    // ---- request_deliverable_revision: the client says "this isn't right" ----
+    // The mirror of the firm returning a request item with a reason. Without
+    // it the client's only recourse was to leave the portal and phone in.
+    if (action === "request_deliverable_revision") {
+      const deliverable_id = String(body.deliverable_id || "");
+      const note = String(body.note || "").trim();
+      if (!note) return json({ error: "โปรดระบุสิ่งที่ต้องการให้แก้ไข" }, 400);
+      const { error } = await admin.rpc("request_deliverable_revision", {
+        p_deliverable: deliverable_id, p_engagement: engagement_id, p_note: note.slice(0, 2000),
+      });
+      if (error) return json({ error: "ไม่พบรายการนี้ หรือยังไม่ได้ส่งให้ลูกค้า" }, 404);
+
+      await notifyFirm(engagement_id, async () => {
+        const { data: d } = await admin.from("deliverables")
+          .select("title").eq("id", deliverable_id).maybeSingle();
+        const { data: eng } = await admin.from("engagements")
+          .select("client").eq("id", engagement_id).maybeSingle();
+        return `↩ ${eng?.client} ขอให้แก้ไขงานส่งมอบ\n• ${d?.title || ""}\n"${note.slice(0, 120)}"`;
+      });
+      return json({ ok: true });
+    }
+
+    // ---- deliverable comments: the same two-way thread the request items have ----
+    if (action === "list_deliverable_comments") {
+      const deliverable_id = String(body.deliverable_id || "");
+      const { data: d } = await admin.from("deliverables")
+        .select("id, status").eq("id", deliverable_id).eq("engagement_id", engagement_id).maybeSingle();
+      // Never confirm a draft exists, let alone hand over its thread.
+      if (!d || d.status === "draft") return json({ error: "deliverable not found" }, 404);
+      const { data: comments } = await admin.from("deliverable_comments")
+        .select("id, by, author, body, created_at").eq("deliverable_id", deliverable_id).order("created_at");
+      return json({ comments: comments ?? [] });
+    }
+
+    if (action === "add_deliverable_comment") {
+      const deliverable_id = String(body.deliverable_id || "");
+      const text = String(body.body || "").trim();
+      if (!text) return json({ error: "empty comment" }, 400);
+      const { data: d } = await admin.from("deliverables")
+        .select("id, status, title").eq("id", deliverable_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!d || d.status === "draft") return json({ error: "deliverable not found" }, 404);
+
+      const { error } = await admin.from("deliverable_comments")
+        .insert({ deliverable_id, engagement_id, by: "Client", body: text.slice(0, 2000) });
+      if (error) throw error;
+
+      await notifyFirm(engagement_id, async () => {
+        const { data: eng } = await admin.from("engagements")
+          .select("client").eq("id", engagement_id).maybeSingle();
+        return `💬 ${eng?.client} แสดงความคิดเห็นในงานส่งมอบ\n• ${d.title || ""}\n"${text.slice(0, 120)}"`;
+      });
       return json({ ok: true });
     }
 
