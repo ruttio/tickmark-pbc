@@ -777,8 +777,25 @@ export default function App() {
   const downloadZip = (onlyNew) =>
     run(async () => {
       if (!eng) return;
-      let files = periodItems.flatMap((it) => it.files.map((f) => ({ ...f, category: it.category, ref: it.ref })));
-      if (onlyNew) files = files.filter((f) => !f.downloadedAt);
+      let files = periodItems.flatMap((it) => it.files.map((f) => ({ ...f, folder: it.category, ref: it.ref })));
+      const received = files.length;
+      // Deliverables come too. Offline archiving is now the retention story —
+      // portals expire and their objects are deleted, so the firm's own filed
+      // returns have to be exportable in one action or they are effectively
+      // trapped until they vanish. `onlyNew` is about the client's uploads the
+      // firm hasn't collected yet, so it doesn't apply to the firm's own output.
+      if (onlyNew) {
+        files = files.filter((f) => !f.downloadedAt);
+      } else {
+        files = files.concat(
+          visibleDeliverables.flatMap((d) => d.files.map((f) => ({
+            ...f,
+            folder: `งานส่งมอบ/${d.title}`,
+            // Only meaningful past the first round; keeps v1 filenames untouched.
+            ref: (f.revision ?? 1) > 1 ? `v${f.revision}` : "",
+          }))),
+        );
+      }
       if (files.length === 0) { alert(onlyNew ? "ไม่มีไฟล์ใหม่ที่ยังไม่ได้โหลด" : "ยังไม่มีไฟล์ให้ดาวน์โหลด"); return; }
       setModal(null);
       const JSZip = (await import("jszip")).default;
@@ -788,7 +805,7 @@ export default function App() {
         const url = await firmApi.signedDownloadUrl(f.storagePath, 300);
         const res = await fetch(url);
         if (!res.ok) continue;
-        zip.file(`${safe(f.category)}/${f.ref ? f.ref + "_" : ""}${safe(f.name)}`, await res.blob());
+        zip.file(`${f.folder.split("/").map(safe).join("/")}/${f.ref ? f.ref + "_" : ""}${safe(f.name)}`, await res.blob());
       }
       const blob = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
@@ -796,7 +813,9 @@ export default function App() {
       a.download = `PBC_${safe(eng.client)}${onlyNew ? "_new" : ""}.zip`;
       a.click();
       URL.revokeObjectURL(a.href);
-      await firmApi.markFilesDownloaded(files.map((f) => f.id));
+      // Only client uploads carry a "firm downloaded it" flag — deliverables
+      // came FROM the firm, so there is nothing to mark.
+      await firmApi.markFilesDownloaded(files.slice(0, onlyNew ? files.length : received).map((f) => f.id));
       await reloadDetail();
     });
 
@@ -1979,6 +1998,45 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
         </div>
 
         {renderTodayVariant("nv-today-live-c", "ติดตามรายการสำคัญในวันนี้")}
+
+        {/* Expiry is now the retention mechanism: a portal that lapses has its
+            R2 objects deleted for good, and archiving offline is the plan. So
+            the warning belongs here, on the screen the firm actually opens —
+            the old one lived inside the portal itself, which nobody visits
+            precisely when it is about to lapse. The file count is the point;
+            "expires in 5 days" is not something anyone acts on, "expires in 5
+            days, 23 files not yet exported" is. */}
+        {(() => {
+          const at_risk = (dash || [])
+            .filter((e) => e.autoDelete && (e.unsavedFiles || 0) > 0)
+            .map((e) => ({ e, x: engExpiry(e) }))
+            .filter(({ x }) => x.state === "soon" || x.state === "expired")
+            .sort((a, b) => (a.x.daysLeft || 0) - (b.x.daysLeft || 0));
+          if (!at_risk.length) return null;
+          return (
+            <div className="nv-expiring">
+              <div className="nv-expiring-h">
+                <Icon name="alert" size={15} />
+                <b>เอกสารกำลังจะถูกลบถาวร</b>
+                <span>โหลดเก็บไว้ก่อนหมดอายุ — เมื่อพอร์ทัลถูกลบ ไฟล์ใน R2 จะหายไปด้วยและกู้คืนไม่ได้</span>
+              </div>
+              <ul>
+                {at_risk.map(({ e, x }) => (
+                  <li key={e.id}>
+                    <button onClick={() => onOpen(e.id)}>
+                      <b>{e.client}</b>
+                      <span className="d">
+                        {x.state === "expired" ? "หมดอายุแล้ว — รอลบรอบถัดไป" : `เหลือ ${x.daysLeft} วัน`}
+                      </span>
+                      <span className="n">{e.unsavedFiles} ไฟล์ยังไม่ได้โหลดเก็บ</span>
+                      <span className="go">เปิดเพื่อโหลด →</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
 
         {dash.length === 0 ? (
           <div className="nv-empty">

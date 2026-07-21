@@ -74,3 +74,26 @@
   background:var(--amber-tint);border:1px solid rgba(245,158,11,.35);border-radius:8px;
   font-size:12px;line-height:1.45;color:var(--ink);text-align:left}
 .nv-unsent svg{flex:none;margin-top:1px;color:var(--amber)}
+
+/* ---- "about to be deleted" banner on the dashboard ---------------------
+   Retention is offline archiving: a lapsed portal's R2 objects are gone for
+   good. Red rather than amber — unlike an unsent deliverable, this one has
+   a deadline after which nothing can be done. ---- */
+.nv-expiring{margin:0 0 18px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.06);
+  border-radius:var(--radius-card,14px);padding:14px 16px}
+.nv-expiring-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--exception-red,#EF4444)}
+.nv-expiring-h b{font-size:13.5px}
+.nv-expiring-h span{color:var(--secondary-ink,#64748B);font-size:12px;flex:1 1 100%}
+.nv-expiring ul{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.nv-expiring button{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
+  background:var(--paper-surface,#fff);border:1px solid var(--rule-gray,#E5E7EB);
+  border-radius:var(--radius-control,10px);padding:9px 12px;font-family:inherit;font-size:13px}
+.nv-expiring button:hover{border-color:rgba(239,68,68,.45)}
+.nv-expiring button b{flex:1 1 auto;color:var(--primary-ink,#0F172A)}
+.nv-expiring .d{color:var(--exception-red,#EF4444);font-weight:600;font-size:12px}
+.nv-expiring .n{color:var(--secondary-ink,#64748B);font-size:12px}
+.nv-expiring .go{color:var(--ledger-navy,#123563);font-weight:600;font-size:12px}
+@media(max-width:640px){
+  .nv-expiring button{flex-wrap:wrap;gap:4px 10px}
+  .nv-expiring button b{flex:1 1 100%}
+}
