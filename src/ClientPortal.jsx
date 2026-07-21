@@ -22,10 +22,12 @@ import { clientApi } from "../lib/portalApi.js";
 import { SUPABASE_CONFIGURED } from "../lib/supabaseClient.js";
 import { FilePreviewModal, isPreviewable } from "./FilePreview.jsx";
 import { CommentThread } from "./CommentThread.jsx";
-import { fileError } from "./uploadRules.js";
+import { ALLOWED_EXT, fileError } from "./uploadRules.js";
+import { compressImage } from "./imageCompress.js";
 import { Icon } from "./icons.jsx";
 import { isPastDueDate } from "../lib/dateUtils.js";
 import "./portal.css";
+import "./deliverables.css";
 
 /* ---------- status model (mirrors the firm app) ------------------------ */
 const STATUS = {
@@ -60,6 +62,10 @@ const fmtSize = (b) =>
     : b < 1073741824 ? (b / 1048576).toFixed(1) + " MB" : (b / 1073741824).toFixed(2) + " GB";
 const isOverdue = (it) => it.status !== "accepted" && isPastDueDate(it.dueDate);
 const fileExt = (name) => (name.includes(".") ? name.split(".").pop().slice(0, 4).toUpperCase() : "ไฟล์");
+
+// `accept` for the upload <input>, derived from uploadRules.js's ALLOWED_EXT
+// so the two lists can't drift apart (one source of truth for what's allowed).
+const ACCEPT_ATTR = ALLOWED_EXT.map((e) => `.${e}`).join(",");
 
 // The client has no login, so "which firm comments have I read" lives in
 // localStorage per engagement: { itemId: seenAtMs }.
@@ -101,6 +107,28 @@ function Tick({ size = 16 }) {
   );
 }
 
+// One load cycle's worth of period-aware data: the active period's items,
+// the full period list (for the switcher), and that period's deliverables.
+// Shared by SinglePortal and GroupCompany so their near-identical `load()`
+// functions can't drift on how periods/deliverables get resolved against
+// fetchData's server-chosen `activePeriodId` (omit periodId → newest OPEN
+// period, falling back to newest overall once every month is closed).
+// Deliverables are best-effort: a hiccup there must never block the
+// (more important) request list from loading.
+async function loadPeriodContext(token, engagementId, periodId) {
+  const [{ engagement, items, activePeriodId }, periods] = await Promise.all([
+    clientApi.fetchData(token, engagementId, periodId),
+    clientApi.listPeriods(token, engagementId),
+  ]);
+  let deliverables = [];
+  try {
+    deliverables = await clientApi.listDeliverables(token, engagementId, activePeriodId);
+  } catch {
+    /* deliverables tab will just show its empty state until a refresh works */
+  }
+  return { engagement, items, activePeriodId, periods, deliverables };
+}
+
 /* ======================================================================= */
 export default function ClientPortal() {
   const { engagementId, groupId } = useMemo(() => {
@@ -118,6 +146,9 @@ function SinglePortal({ engagementId }) {
   const [eng, setEng] = useState(null);
   const [items, setItems] = useState([]);
   const [loadErr, setLoadErr] = useState("");
+  const [periods, setPeriods] = useState([]);
+  const [activePeriodId, setActivePeriodId] = useState(null);
+  const [deliverables, setDeliverables] = useState([]);
 
   // Try a cached session on first paint.
   useEffect(() => {
@@ -135,13 +166,19 @@ function SinglePortal({ engagementId }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engagementId]);
 
-  async function load(tok) {
+  // periodId omitted (null) → server resolves the newest open period and
+  // reports it back as activePeriodId; passed explicitly → the client asked
+  // to look at a specific month via the period switcher.
+  async function load(tok, periodId = null) {
     setPhase("loading");
     setLoadErr("");
     try {
-      const { engagement, items } = await clientApi.fetchData(tok);
-      setEng(engagement);
-      setItems(items);
+      const r = await loadPeriodContext(tok, engagementId, periodId);
+      setEng(r.engagement);
+      setItems(r.items);
+      setActivePeriodId(r.activePeriodId);
+      setPeriods(r.periods);
+      setDeliverables(r.deliverables);
       setPhase("ready");
     } catch (e) {
       // Session gone/expired → back to the lock screen.
@@ -168,11 +205,32 @@ function SinglePortal({ engagementId }) {
     setToken(null);
     setEng(null);
     setItems([]);
+    setPeriods([]);
+    setActivePeriodId(null);
+    setDeliverables([]);
     setPhase("locked");
   }
 
+  // Stay on whichever period the client was looking at (uploads etc. don't
+  // change the active period; only the switcher does, via changePeriod).
   async function refresh() {
-    if (token) await load(token);
+    if (token) await load(token, activePeriodId);
+  }
+
+  function changePeriod(periodId) {
+    if (token) void load(token, periodId);
+  }
+
+  // Opening a file stamps viewed_at server-side (that's the whole point —
+  // "was told" vs "actually looked"); mirror it locally so the row's state
+  // flips immediately instead of waiting on a round trip.
+  function markDeliverableOpened(deliverableId) {
+    setDeliverables((ds) => ds.map((d) => (d.id === deliverableId ? { ...d, viewedAt: d.viewedAt || Date.now() } : d)));
+  }
+
+  async function ackDeliverable(deliverableId) {
+    await clientApi.ackDeliverable(token, deliverableId, engagementId);
+    setDeliverables((ds) => ds.map((d) => (d.id === deliverableId ? { ...d, status: "acknowledged", acknowledgedAt: Date.now() } : d)));
   }
 
   /* ---- render ---- */
@@ -216,7 +274,14 @@ function SinglePortal({ engagementId }) {
         items={items}
         loadErr={loadErr}
         token={token}
+        engagementId={engagementId}
         onUploaded={refresh}
+        periods={periods}
+        activePeriodId={activePeriodId}
+        onPeriodChange={changePeriod}
+        deliverables={deliverables}
+        onDeliverableOpened={markDeliverableOpened}
+        onAck={ackDeliverable}
       />
     </Shell>
   );
@@ -373,7 +438,15 @@ function MultiFilter({ label, placeholder, options, selected, onChange }) {
 }
 
 /* ---------- the request list + uploads (3c) ---------------------------- */
-function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploaded }) {
+function ClientList({
+  phase, eng, items, loadErr, token, engagementId, onUploaded,
+  periods, activePeriodId, onPeriodChange,
+  deliverables, onDeliverableOpened, onAck,
+}) {
+  // Which of the two segment views is showing. Local (not lifted) — nothing
+  // outside this component needs to know, and it's fine for it to reset to
+  // "requests" whenever a fresh portal/company mounts.
+  const [view, setView] = useState("requests"); // "requests" | "deliverables"
   const [statusSel, setStatusSel] = useState([]);   // status filters (empty = all; may include "action"/"overdue")
   const [catSel, setCatSel] = useState([]);          // category filters (empty = all)
   const [q, setQ] = useState("");
@@ -428,6 +501,24 @@ function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploade
   const pct = items.length ? Math.round((accepted / items.length) * 100) : 0;
   const firstOverdue = items.find(isOverdue);
 
+  // The period the server actually served. A one-off audit portal has
+  // exactly one period, so periods.length <= 1 is the "no switcher, no
+  // period UI at all" case — it degrades to fully invisible below.
+  const activePeriod = useMemo(
+    () => periods.find((p) => p.id === activePeriodId) || null,
+    [periods, activePeriodId],
+  );
+  const periodClosed = activePeriod?.status === "closed";
+  // Monthly bookkeeping is the only engagement type that runs month after
+  // month and sends work back. An audit portal shows the request list alone,
+  // exactly as it did before periods existed.
+  const monthly = eng?.cadence === "monthly";
+  // "Unopened" = the client hasn't looked at a single file in it yet — the
+  // literal reading of "unopened" for the segment-toggle badge, distinct
+  // from "not yet acknowledged" (a deliverable can be opened but still
+  // awaiting the confirm step).
+  const unopenedCount = useMemo(() => deliverables.filter((d) => !d.viewedAt).length, [deliverables]);
+
   if (phase === "loading" && !eng)
     return <div className="nv-page"><div className="tk-boot" style={{ color: "#64748B" }}>กำลังโหลดรายการเอกสาร…</div></div>;
 
@@ -460,7 +551,27 @@ function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploade
 
       {loadErr && <p className="nv-lock-err" style={{ textAlign: "center" }}>{loadErr}</p>}
 
-      {items.length === 0 ? (
+      {/* Only a monthly-bookkeeping portal has months to switch between or work
+          sent back to show. A one-off audit portal is a single request list and
+          nothing else, so it keeps the plain pre-periods layout — no toggle, no
+          month picker, nothing new for a client to interpret. */}
+      {monthly && (
+        <ViewBar
+          view={view} setView={setView} unopenedCount={unopenedCount}
+          periods={periods} activePeriodId={activePeriodId} onPeriodChange={onPeriodChange}
+        />
+      )}
+
+      {periodClosed && (
+        <div className="dv-closed-note">
+          <span className="ic"><Icon name="lock" size={14} /></span>
+          <span>งวดนี้ปิดแล้ว — ดูเอกสารเดิมได้ตามปกติ แต่อัปโหลดเพิ่มไม่ได้ หากต้องการส่งเอกสารเพิ่มเติม กรุณาติดต่อสำนักงาน</span>
+        </div>
+      )}
+
+      {view === "deliverables" && monthly ? (
+        <DeliverablesList deliverables={deliverables} token={token} engagementId={engagementId} onOpened={onDeliverableOpened} onAck={onAck} />
+      ) : items.length === 0 ? (
         <div className="nv-list"><div style={{ padding: "40px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ยังไม่มีรายการเอกสารในพอร์ทัลนี้</div></div>
       ) : (
         <div className="nv-work">
@@ -505,7 +616,7 @@ function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploade
                   <div className="nv-list">
                     {rows.map((it, idx) => (
                       <ClientRow key={it.id} item={it} index={idx + 1} token={token} engagementId={engagementId} onUploaded={onUploaded}
-                        autoOpen={openCommentsId === it.id} onSeen={() => markItemSeen(it.id)} />
+                        autoOpen={openCommentsId === it.id} onSeen={() => markItemSeen(it.id)} periodClosed={periodClosed} />
                     ))}
                   </div>
                 </div>
@@ -519,8 +630,214 @@ function ClientList({ phase, eng, items, loadErr, token, engagementId, onUploade
   );
 }
 
-function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onSeen }) {
+/* ---------- segment toggle (requests / deliverables) + period switcher --
+   Lives directly under the portal header regardless of which view is
+   active or whether the request list is empty, since it's the only way to
+   reach the deliverables tab. The period switcher degrades to nothing when
+   there's only one period (annual audit portals never see it). --------- */
+function ViewBar({ view, setView, unopenedCount, periods, activePeriodId, onPeriodChange }) {
+  return (
+    <div className="dv-bar">
+      <div className="nv-seg dv-view-seg">
+        <button className={view === "requests" ? "on" : ""} onClick={() => setView("requests")}>เอกสารที่ต้องส่ง</button>
+        <button className={view === "deliverables" ? "on" : ""} onClick={() => setView("deliverables")}>
+          งานส่งมอบ
+          {unopenedCount > 0 && <span className="dv-badge">{unopenedCount}</span>}
+        </button>
+      </div>
+      <PeriodSwitcher periods={periods} activePeriodId={activePeriodId} onChange={onPeriodChange} />
+    </div>
+  );
+}
+
+// Single-select month picker built from the same dropdown shell as
+// MultiFilter (.nv-msf/.nv-msf-panel/.nv-msf-opt) so it inherits identical
+// focus/hover/backdrop behaviour. Sorted by the numeric `sort` field, never
+// by `label` (Thai display text isn't chronological) and never by
+// `periodKey` alone (kept internal — never shown to the client).
+function PeriodSwitcher({ periods, activePeriodId, onChange }) {
+  const [open, setOpen] = useState(false);
+  if (periods.length <= 1) return null; // one-off / annual portal → no period UI at all
+  // A handful of periods at most — a plain sort per render is cheap enough
+  // that memoizing it would just be ceremony (and can't sit before the
+  // early return above without violating the rules of hooks anyway).
+  const sorted = [...periods].sort((a, b) => b.sort - a.sort);
+  const active = periods.find((p) => p.id === activePeriodId) || sorted[0];
+  return (
+    <div className="nv-msf dv-persw">
+      <button className="nv-msf-btn" onClick={() => setOpen((o) => !o)}>
+        <span className="nv-msf-val">
+          {active?.label || "เลือกงวด"}
+          {active?.status === "closed" && <span className="dv-closedtag">ปิดงวด</span>}
+        </span>
+        <span className="nv-msf-cv">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="nv-backdrop" onClick={() => setOpen(false)} />
+          <div className="nv-msf-panel">
+            {sorted.map((p) => (
+              <button key={p.id} className={`nv-msf-opt ${p.id === activePeriodId ? "on" : ""}`}
+                onClick={() => { onChange(p.id); setOpen(false); }}>
+                <span className="nv-msf-ck">{p.id === activePeriodId ? "✓" : ""}</span>
+                <span className="nv-msf-opt-lb">{p.label}</span>
+                {p.status === "closed" && <span className="nv-msf-opt-ct">ปิดแล้ว</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- deliverables view — what the firm sent back ---------------- */
+function DeliverablesList({ deliverables, token, engagementId, onOpened, onAck }) {
+  const grouped = useMemo(() => {
+    const m = new Map();
+    [...deliverables].sort((a, b) => a.sort - b.sort).forEach((d) => {
+      if (!m.has(d.category)) m.set(d.category, []);
+      m.get(d.category).push(d);
+    });
+    return [...m.entries()];
+  }, [deliverables]);
+
+  // The common early case — the firm hasn't sent anything back yet this
+  // period — must read as normal, not broken. No alarm color, no "error"
+  // framing, just a calm explanation of what will appear here later.
+  if (deliverables.length === 0) {
+    return (
+      <div className="nv-list">
+        <div className="dv-empty">
+          <span className="ic"><Icon name="inbox" size={20} /></span>
+          <div>ยังไม่มีงานส่งมอบสำหรับงวดนี้</div>
+          <div className="sub">เมื่อสำนักงานส่งเอกสารหรือรายงานให้ จะแสดงไว้ที่นี่</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {grouped.map(([cat, rows]) => (
+        <div key={cat}>
+          <div className="nv-ghead">
+            <span className="gt">{cat}</span><span className="gline" />
+            <span className="gn">{rows.length} รายการ</span>
+          </div>
+          <div className="nv-list">
+            {rows.map((d) => (
+              <DeliverableRow key={d.id} item={d} token={token} engagementId={engagementId} onOpened={onOpened} onAck={onAck} />
+            ))}
+          </div>
+        </div>
+      ))}
+      <p className="nv-cfoot">เอกสารถูกเก็บอย่างปลอดภัย · เข้าถึงได้เฉพาะพอร์ทัลของคุณ</p>
+    </div>
+  );
+}
+
+function DeliverableRow({ item, token, engagementId, onOpened, onAck }) {
+  const [preview, setPreview] = useState(null);
+  const [err, setErr] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Three states, visually distinct: unopened (new — the whole point of
+  // this view), opened-but-not-acknowledged (waiting on the client), and
+  // acknowledged (done, quiet). Tones follow DESIGN.md's semantic map:
+  // info-blue = new information, amber = pending, mint = accepted/complete.
+  const unopened = item.status === "delivered" && !item.viewedAt;
+  const stateCls = item.status === "acknowledged" ? "done" : unopened ? "new" : "wait";
+  const chipTone = stateCls === "done" ? "mint" : stateCls === "new" ? "info" : "amber";
+  const chipLabel = stateCls === "done" ? "✓ รับทราบแล้ว" : stateCls === "new" ? "● ยังไม่ได้เปิด" : "◐ รอการรับทราบ";
+
+  const openFile = async (f) => {
+    setErr("");
+    try {
+      const url = await clientApi.deliverableFileUrl(token, f.id, engagementId);
+      onOpened(item.id);
+      if (isPreviewable(f)) setPreview({ file: f, url });
+      else window.open(url, "_blank");
+    } catch (e) {
+      setErr(e.message || "เปิดไฟล์ไม่สำเร็จ");
+    }
+  };
+
+  const confirmAck = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      await onAck(item.id);
+      setConfirming(false);
+    } catch (e) {
+      setErr(e.message || "รับทราบไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={`nv-crow dv-drow ${stateCls}`}>
+      <div className="nv-crow-main">
+        <div className="nv-crow-name">
+          {item.title}
+          {unopened && <span className="dv-new">ใหม่</span>}
+        </div>
+        <div className="nv-crow-sub">
+          <span className="dv-cat">{item.category}</span>
+          {item.dueDate != null && <span className="dv-meta">กำหนดส่งภายใน {fmtDate(item.dueDate)}</span>}
+          {item.deliveredAt != null && <span className="dv-meta">ส่งเมื่อ {fmtDate(item.deliveredAt)}</span>}
+        </div>
+
+        {item.note && (
+          <div className="nv-cnote note">
+            <b><Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />หมายเหตุจากสำนักงาน:</b> {item.note}
+          </div>
+        )}
+
+        {item.files.length > 0 && (
+          <ul className="nv-fchips">
+            {item.files.map((f) => (
+              <li key={f.id} className="nv-fchip">
+                <span className="nv-ftype">{fileExt(f.name)}</span>
+                <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
+                <button className="nv-fx" onClick={() => openFile(f)}>{isPreviewable(f) ? "ดู" : "ดาวน์โหลด"}</button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {item.status === "acknowledged" ? (
+          <div className="dv-acked"><Icon name="check" size={13} />รับทราบแล้ว · {fmtDate(item.acknowledgedAt)}</div>
+        ) : confirming ? (
+          // A deliberate two-step confirm, not a single click — acknowledging
+          // is meaningful in a tax context and can't be undone, but the copy
+          // stays plain rather than alarming.
+          <div className="dv-ackconfirm">
+            <p>เมื่อกดยืนยัน ระบบจะบันทึกว่าคุณได้รับเอกสารนี้แล้ว และไม่สามารถยกเลิกภายหลังได้</p>
+            <div className="dv-ackbtns">
+              <button className="nv-btn" disabled={busy} onClick={() => setConfirming(false)}>ยกเลิก</button>
+              <button className="nv-upbtn" style={{ marginTop: 0 }} disabled={busy} onClick={confirmAck}>
+                {busy ? "กำลังบันทึก…" : "ยืนยันรับทราบ"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button className="dv-ackbtn" onClick={() => setConfirming(true)}>กดรับทราบ</button>
+        )}
+
+        {err && <p className="nv-lock-err" style={{ marginTop: 6 }}>{err}</p>}
+      </div>
+      <span className={`nv-st ${chipTone} nv-crow-st`}>{chipLabel}</span>
+      {preview && <FilePreviewModal file={preview.file} url={preview.url} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onSeen, periodClosed = false }) {
   const fileRef = useRef(null);
+  const cameraRef = useRef(null);
   const rowRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -530,7 +847,9 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
   const [comments, setComments] = useState([]);
   const [loadingC, setLoadingC] = useState(false);
   const [sendingC, setSendingC] = useState(false);
-  const canUpload = item.status !== "accepted";
+  // Uploads are refused server-side once the period is closed — say so
+  // calmly below instead of letting the client discover it as an error.
+  const canUpload = item.status !== "accepted" && !periodClosed;
 
   const loadComments = async () => {
     setLoadingC(true);
@@ -568,8 +887,16 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
     setBusy(true);
     setErr("");
     try {
-      // Sequential so a failure is attributable to one file.
-      for (const f of files) await clientApi.uploadDocument(token, item.id, f, engagementId);
+      // Sequential so a failure is attributable to one file. Images are
+      // downscaled/recompressed client-side first (imageCompress.js) — phone
+      // photos of receipts run 3-8MB and clients upload dozens a month, so
+      // this is what keeps a portal under its 2GB quota. Non-images and any
+      // image compression treats as unsafe (SVG, HEIC it can't decode, or a
+      // result that isn't actually smaller) pass through untouched.
+      for (const f of files) {
+        const toSend = await compressImage(f);
+        await clientApi.uploadDocument(token, item.id, toSend, engagementId);
+      }
       await onUploaded();
     } catch (e) {
       if (e.status === 401) {
@@ -677,23 +1004,43 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
 
         {canUpload && (
           <>
-            <input ref={fileRef} type="file" multiple style={{ display: "none" }}
+            <input ref={fileRef} type="file" accept={ACCEPT_ATTR} multiple style={{ display: "none" }}
               onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
-            {clientFiles.length === 0 ? (
-              <div className={`nv-drop ${drag ? "drag" : ""}`}
-                onClick={() => !busy && fileRef.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-                onDragLeave={() => setDrag(false)}
-                onDrop={onDrop}>
-                <div className="t">{busy ? "กำลังอัปโหลด…" : <>ลากไฟล์มาวางที่นี่ หรือ <b>เลือกไฟล์</b></>}</div>
-                <div className="h">PDF, JPG, PNG, XLSX</div>
-              </div>
-            ) : (
-              <button className="nv-upbtn" disabled={busy} onClick={() => fileRef.current?.click()}>
-                {busy ? "กำลังอัปโหลด…" : "↑ อัปโหลดเพิ่ม"}
+            {/* Separate, single-shot input dedicated to the camera. `capture`
+                and `multiple` don't compose safely across browsers: iOS
+                Safari drops the "Photo Library" option from its picker the
+                moment `capture` is present (camera-only, one shot, no
+                gallery multi-select), while putting `capture` on the SAME
+                input clients use to pick several existing receipts from
+                their gallery would silently break that flow. Keeping this
+                as its own input/button means the gallery input above always
+                keeps full multi-select, and this one is free to be
+                camera-only. */}
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
+              onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: clientFiles.length === 0 ? 0 : 8 }}>
+              {clientFiles.length === 0 ? (
+                <div className={`nv-drop ${drag ? "drag" : ""}`} style={{ flex: "1 1 220px", marginTop: 0 }}
+                  onClick={() => !busy && fileRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+                  onDragLeave={() => setDrag(false)}
+                  onDrop={onDrop}>
+                  <div className="t">{busy ? "กำลังอัปโหลด…" : <>ลากไฟล์มาวางที่นี่ หรือ <b>เลือกไฟล์</b></>}</div>
+                  <div className="h">PDF, JPG, PNG, XLSX</div>
+                </div>
+              ) : (
+                <button className="nv-upbtn" style={{ marginTop: 0 }} disabled={busy} onClick={() => fileRef.current?.click()}>
+                  {busy ? "กำลังอัปโหลด…" : "↑ อัปโหลดเพิ่ม"}
+                </button>
+              )}
+              <button type="button" className="nv-fx" style={{ margin: 0 }} disabled={busy} onClick={() => !busy && cameraRef.current?.click()}>
+                <Icon name="camera" size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />ถ่ายรูป
               </button>
-            )}
+            </div>
           </>
+        )}
+        {periodClosed && item.status !== "accepted" && (
+          <div className="dv-closed-inline">งวดนี้ปิดแล้ว จึงอัปโหลดเพิ่มไม่ได้ในขณะนี้</div>
         )}
         <div className="nv-crow-comments">
           <button type="button" className={`nv-clink ${(showC ? comments.length : item.commentCount) ? "has" : ""}`} onClick={toggleComments}>
@@ -826,24 +1173,42 @@ function GroupCompany({ token, engagementId, onBack }) {
   const [items, setItems] = useState([]);
   const [phase, setPhase] = useState("loading");
   const [loadErr, setLoadErr] = useState("");
+  const [periods, setPeriods] = useState([]);
+  const [activePeriodId, setActivePeriodId] = useState(null);
+  const [deliverables, setDeliverables] = useState([]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (periodId = null) => {
     setPhase("loading"); setLoadErr("");
     try {
-      const { engagement, items } = await clientApi.fetchData(token, engagementId);
-      setEng(engagement); setItems(items); setPhase("ready");
+      const r = await loadPeriodContext(token, engagementId, periodId);
+      setEng(r.engagement); setItems(r.items); setActivePeriodId(r.activePeriodId);
+      setPeriods(r.periods); setDeliverables(r.deliverables);
+      setPhase("ready");
     } catch (e) {
       setLoadErr(e.message || "โหลดข้อมูลไม่สำเร็จ"); setPhase("ready");
     }
   }, [token, engagementId]);
   useEffect(() => { void load(); }, [load]);
 
+  function markDeliverableOpened(deliverableId) {
+    setDeliverables((ds) => ds.map((d) => (d.id === deliverableId ? { ...d, viewedAt: d.viewedAt || Date.now() } : d)));
+  }
+  async function ackDeliverable(deliverableId) {
+    await clientApi.ackDeliverable(token, deliverableId, engagementId);
+    setDeliverables((ds) => ds.map((d) => (d.id === deliverableId ? { ...d, status: "acknowledged", acknowledgedAt: Date.now() } : d)));
+  }
+
   return (
     <>
       <div className="nv-page" style={{ paddingBottom: 0 }}>
         <button className="nv-tbtn" style={{ color: "#123563", background: "#fff", border: "1px solid #E5E7EB" }} onClick={onBack}>← กลับไปหน้ากลุ่ม</button>
       </div>
-      <ClientList phase={phase} eng={eng} items={items} loadErr={loadErr} token={token} engagementId={engagementId} onUploaded={load} />
+      <ClientList
+        phase={phase} eng={eng} items={items} loadErr={loadErr} token={token} engagementId={engagementId}
+        onUploaded={() => load(activePeriodId)}
+        periods={periods} activePeriodId={activePeriodId} onPeriodChange={(id) => load(id)}
+        deliverables={deliverables} onDeliverableOpened={markDeliverableOpened} onAck={ackDeliverable}
+      />
     </>
   );
 }

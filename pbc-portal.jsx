@@ -8,6 +8,7 @@ import { Analytics } from "./src/Analytics.jsx";
 import { Icon } from "./src/icons.jsx";
 import { isPastDueDate } from "./lib/dateUtils.js";
 import "./src/portal.css"; // shared stylesheet (also used by the client portal)
+import "./src/firmPeriods.css"; // firm-only: period switcher + deliverables surface
 
 const copyToClipboard = async (text) => {
   try {
@@ -40,6 +41,15 @@ const STATUS = {
   reopened:    { label: "Reopened",        glyph: "↻", tone: "amber" },
 };
 const STATUS_ORDER = ["outstanding", "submitted", "review", "accepted", "returned", "reopened"];
+
+/* ---------- Deliverables (firm -> client output) ------------------------ */
+const DELIVERABLE_CATS = ["ภาษี", "บัญชี", "ประกันสังคม", "อื่นๆ"];
+const DELIVERABLE_STATUS = {
+  draft:        { label: "ร่าง",         tone: "slate" },
+  delivered:    { label: "ส่งแล้ว",       tone: "info"  },
+  acknowledged: { label: "รับทราบแล้ว",   tone: "mint"  },
+};
+const DELIVERABLE_DOT = { draft: "#64748B", delivered: "#3B82F6", acknowledged: "#12B39A" };
 
 /* ---------- PBC template libraries (the "PBC function") ----------------- */
 const TEMPLATES = [
@@ -224,6 +234,28 @@ function engExpiry(eng) {
 function fmtDate(ts) {
   if (!ts) return "—";
   return new Date(ts).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+}
+
+/* ---------- Periods: "open next month" preview helpers ------------------
+   The label a new period will get is computed SERVER-SIDE (portalApi.js's
+   defaultPeriodMeta, used by firmApi.openPeriod when label is omitted) —
+   this is a client-side PREVIEW only, mirroring that same Thai-month /
+   Buddhist-year convention so the confirm modal doesn't show a blank guess. */
+const TH_MONTH_PREVIEW = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+                          "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+function previewPeriodLabel(periodEndMs) {
+  const d = periodEndMs ? new Date(periodEndMs) : new Date();
+  return `${TH_MONTH_PREVIEW[d.getMonth()]} ${d.getFullYear() + 543}`;
+}
+// Default "period end" for the next month = the last day of the month right
+// after the most recent existing period (falls back to today with no periods).
+function nextPeriodEnd(periods) {
+  const last = periods && periods[periods.length - 1];
+  let base;
+  if (last?.periodEnd) base = new Date(last.periodEnd);
+  else if (last?.periodKey) { const [y, m] = last.periodKey.split("-").map(Number); base = new Date(y, m - 1, 1); }
+  else base = new Date();
+  return new Date(base.getFullYear(), base.getMonth() + 2, 0).getTime();
 }
 export function fmtSize(bytes) {
   if (bytes < 1024) return bytes + " B";
@@ -443,6 +475,17 @@ export default function App() {
   const [bucketUsage, setBucketUsage] = useState(null); // whole shared bucket { bytes, count }
   const [analytics, setAnalytics] = useState(null);     // dashboard analytics (firm_analytics RPC)
 
+  /* ---- periods (monthly cadence only — invisible for a one-off 'once' portal) ---- */
+  const [periodId, setPeriodId] = useState(null);     // which month is currently being viewed
+
+  /* ---- deliverables (firm -> client output) ---- */
+  const [surface, setSurface] = useState("items");    // 'items' (request list) | 'deliverables'
+  const [deliverables, setDeliverables] = useState(null);
+  const [openDeliverable, setOpenDeliverable] = useState(null); // deliverable id for its drawer
+  const [dQ, setDQ] = useState("");                   // deliverables text search
+  const [dStatusSel, setDStatusSel] = useState([]);   // deliverables status filter
+  const [dCatSel, setDCatSel] = useState([]);         // deliverables category filter
+
   /* ---- auth session ---- */
   useEffect(() => {
     let alive = true;
@@ -543,11 +586,34 @@ export default function App() {
     catch (e) { setErr(e.message || "โหลดพอร์ทัลไม่สำเร็จ"); }
     firmApi.listUnreadComments(currentId).then(setUnreadC).catch(() => {});
   };
+  // Deliverables: loaded unfiltered (all periods + drafts) alongside the
+  // engagement detail; period-scoping happens client-side (visibleDeliverables
+  // below) so switching months never needs another round trip.
+  const reloadDeliverables = async () => {
+    if (!currentId) { setDeliverables(null); return; }
+    try { setDeliverables(await firmApi.listDeliverables(currentId)); }
+    catch (e) { setErr(e.message || "โหลดงานส่งมอบไม่สำเร็จ"); }
+  };
   useEffect(() => {
     setSel(new Set());
-    if (session && currentId) reloadDetail();
+    setSurface("items"); setOpenDeliverable(null);
+    if (session && currentId) { reloadDetail(); reloadDeliverables(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentId, session]);
+
+  // Which month is being viewed. Recomputed only when `eng` changes (new
+  // engagement, or a period was opened/closed) — not on every periodId set,
+  // which would fight the explicit switch below. Prefers the newest OPEN
+  // period, same rule request_items_default_period() uses server-side, so
+  // opening this screen never disagrees with where a brand-new item would land.
+  useEffect(() => {
+    const periods = eng?.periods || [];
+    if (periods.some((p) => p.id === periodId)) return; // still valid — keep it
+    const openOnes = periods.filter((p) => p.status === "open");
+    const def = openOnes[openOnes.length - 1] || periods[periods.length - 1] || null;
+    setPeriodId(def ? def.id : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eng]);
 
   // Run a backend mutation with a busy flag + error surfacing, then refresh.
   const run = async (fn, after) => {
@@ -589,10 +655,10 @@ export default function App() {
       setSel(new Set());
     }, reloadDetail);
 
-  const generateEngagement = ({ client, template, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite, items, groupId }) =>
+  const generateEngagement = ({ client, template, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite, items, groupId, cadence }) =>
     run(async () => {
       const id = await firmApi.createEngagement(
-        { client, template, periodEnd, code, retentionDays: retDays, autoDelete, clientEmail },
+        { client, template, periodEnd, code, retentionDays: retDays, autoDelete, clientEmail, cadence },
         items.map((it, i) => ({
           ref: String(i + 1).padStart(2, "0"), category: it.category || "General",
           description: it.description, required: it.required ?? true, dueDate: baseDue, status: "outstanding", sort: i,
@@ -626,10 +692,16 @@ export default function App() {
       }
     });
 
+  // New items land in whichever month is currently being viewed (so adding
+  // one while looking at an older/closed month doesn't silently attach it to
+  // whatever the server's default-open-period fallback would have picked).
   const addItem = ({ category, description, required, dueDate }) =>
     run(async () => {
-      const sort = eng?.items?.length || 0;
-      await firmApi.addItem(eng.id, { ref: String(sort + 1).padStart(2, "0"), category, description, required, dueDate }, sort);
+      const sort = periodItems.length;
+      await firmApi.addItem(eng.id, {
+        ref: String(sort + 1).padStart(2, "0"), category, description, required, dueDate,
+        periodId: eng.cadence === "monthly" ? periodId : null,
+      }, sort);
       setModal(null);
     }, reloadDetail);
 
@@ -641,6 +713,41 @@ export default function App() {
   const updateItem = (itemId, patch) => run(() => firmApi.updateItem(itemId, patch), reloadDetail);
   const uploadSample = (itemId, fileList) =>
     run(async () => { for (const f of Array.from(fileList)) await firmApi.uploadSample(eng.id, itemId, f); }, reloadDetail);
+
+  /* ---- periods: switch months, open the next one, close/reopen ---- */
+  const openNextPeriod = ({ periodEnd, dueDate }) =>
+    run(async () => {
+      const id = await firmApi.openPeriod(eng.id, { periodEnd, dueDate });
+      setModal(null);
+      await reloadDetail();
+      setPeriodId(id); // jump straight to the month that was just opened
+    });
+  const setPeriodStatusMut = (id, status) => run(() => firmApi.setPeriodStatus(id, status), reloadDetail);
+
+  /* ---- deliverables: create, edit, attach files, release, delete ---- */
+  const createDeliverable = ({ category, title, note, dueDate }) =>
+    run(async () => {
+      const id = await firmApi.createDeliverable(eng.id, {
+        periodId: eng.cadence === "monthly" ? periodId : null,
+        category, title, note, dueDate,
+      });
+      setModal(null);
+      await reloadDeliverables();
+      setOpenDeliverable(id); // land straight in its editor to attach files
+    });
+  const updateDeliverable = (id, patch) => run(() => firmApi.updateDeliverable(id, patch), reloadDeliverables);
+  const uploadDeliverableFiles = (id, fileList) =>
+    run(async () => { for (const f of Array.from(fileList)) await firmApi.uploadDeliverableFile(eng.id, id, f); }, reloadDeliverables);
+  const removeDeliverableFile = (f) => run(() => firmApi.removeDeliverableFile(f.id, f.storagePath), reloadDeliverables);
+  const deliverDeliverable = (id) => run(() => firmApi.deliverDeliverable(id), reloadDeliverables);
+  const deleteDeliverable = (id) =>
+    run(() => firmApi.deleteDeliverable(id), async () => { setOpenDeliverable(null); await reloadDeliverables(); });
+  // Plain download (no "downloaded" stamp — that concept only exists for
+  // client-submitted item_files; a deliverable's proof trail is deliveredAt/
+  // viewedAt/acknowledgedAt, stamped by the client side instead).
+  const downloadDeliverableFile = (f) =>
+    run(async () => { const url = await firmApi.signedDownloadUrl(f.storagePath, {}); window.open(url, "_blank"); });
+  const setCadence = (cadence) => run(() => firmApi.setCadence(eng.id, cadence), reloadDetail);
   const removeSample = (f) => run(() => firmApi.removeSample(f.id, f.storagePath), reloadDetail);
 
   const setEngPasscode = (id, code) => run(() => firmApi.setPortalCode(id, code));
@@ -660,12 +767,13 @@ export default function App() {
       await reloadDetail();
     });
 
-  // Zip this engagement's files (foldered by category). onlyNew = skip files
-  // the firm already downloaded. Marks the included files downloaded afterwards.
+  // Zip this engagement's files (foldered by category), scoped to the month
+  // currently being viewed for a monthly-cadence portal (periodItems). onlyNew
+  // = skip files the firm already downloaded. Marks included files downloaded after.
   const downloadZip = (onlyNew) =>
     run(async () => {
       if (!eng) return;
-      let files = eng.items.flatMap((it) => it.files.map((f) => ({ ...f, category: it.category, ref: it.ref })));
+      let files = periodItems.flatMap((it) => it.files.map((f) => ({ ...f, category: it.category, ref: it.ref })));
       if (onlyNew) files = files.filter((f) => !f.downloadedAt);
       if (files.length === 0) { alert(onlyNew ? "ไม่มีไฟล์ใหม่ที่ยังไม่ได้โหลด" : "ยังไม่มีไฟล์ให้ดาวน์โหลด"); return; }
       setModal(null);
@@ -710,34 +818,45 @@ export default function App() {
   };
 
   /* ---- derived ---- */
+  // The period currently being viewed (null for a portal with no periods yet).
+  const activePeriod = useMemo(() => (eng?.periods || []).find((p) => p.id === periodId) || null, [eng, periodId]);
+  // For a 'once' cadence portal (or before periods resolve) this is exactly
+  // eng.items, unchanged — every item there already carries the engagement's
+  // single period. For 'monthly' it's narrowed to the month being viewed, so
+  // switching months filters the request list without a second round trip.
+  const periodItems = useMemo(() => {
+    if (eng?.cadence !== "monthly" || !periodId) return eng?.items || [];
+    return (eng.items || []).filter((it) => it.periodId === periodId);
+  }, [eng, periodId]);
+
   const stats = useMemo(() => {
-    const items = eng?.items || [];
+    const items = periodItems;
     const by = Object.fromEntries(STATUS_ORDER.map((s) => [s, 0]));
     items.forEach((it) => { by[it.status]++; });
     const overdue = items.filter(isOverdue).length;
     const pct = items.length ? Math.round((by.accepted / items.length) * 100) : 0;
     return { total: items.length, by, overdue, pct };
-  }, [eng]);
+  }, [periodItems]);
 
   const grouped = useMemo(() => {
-    const items = (eng?.items || []).filter((it) =>
+    const items = periodItems.filter((it) =>
       statusSel.length === 0 ? true : statusSel.some((s) => (s === "overdue" ? isOverdue(it) : it.status === s)));
     const map = new Map();
     items.forEach((it) => { if (!map.has(it.category)) map.set(it.category, []); map.get(it.category).push(it); });
     return [...map.entries()];
-  }, [eng, statusSel]);
+  }, [periodItems, statusSel]);
 
   // Engagement-detail (3e) left panel: category list (all items) + the grouped
   // list further narrowed by the category filter and the text search.
   const detailCats = useMemo(() => {
     const arr = []; const m = new Map();
-    (eng?.items || []).forEach((it) => {
+    periodItems.forEach((it) => {
       let c = m.get(it.category);
       if (!c) { c = { cat: it.category, count: 0, overdue: 0 }; m.set(it.category, c); arr.push(c); }
       c.count++; if (isOverdue(it)) c.overdue++;
     });
     return arr;
-  }, [eng]);
+  }, [periodItems]);
   const viewGroups = useMemo(() => {
     const q = itemQ.trim().toLowerCase();
     return grouped
@@ -745,6 +864,39 @@ export default function App() {
       .map(([cat, items]) => [cat, items.filter((it) => !q || `${it.ref} ${it.description}`.toLowerCase().includes(q))])
       .filter(([, items]) => items.length > 0);
   }, [grouped, catSel, itemQ]);
+
+  /* ---- deliverables: derived (period-filtered, category grouped, searched) ---- */
+  // Ad-hoc deliverables (periodId null — not tied to any month) always show
+  // alongside whichever month is being viewed, since they aren't "in" a period.
+  const visibleDeliverables = useMemo(() => {
+    const list = deliverables || [];
+    if (eng?.cadence !== "monthly" || !periodId) return list;
+    return list.filter((d) => d.periodId === periodId || d.periodId == null);
+  }, [deliverables, eng, periodId]);
+  const draftCount = useMemo(() => visibleDeliverables.filter((d) => d.status === "draft").length, [visibleDeliverables]);
+  const deliverableCats = useMemo(() => {
+    const arr = []; const m = new Map();
+    visibleDeliverables.forEach((d) => {
+      let c = m.get(d.category);
+      if (!c) { c = { cat: d.category, count: 0 }; m.set(d.category, c); arr.push(c); }
+      c.count++;
+    });
+    return arr;
+  }, [visibleDeliverables]);
+  const groupedDeliverables = useMemo(() => {
+    const list = visibleDeliverables.filter((d) => dStatusSel.length === 0 || dStatusSel.includes(d.status));
+    const map = new Map();
+    list.forEach((d) => { if (!map.has(d.category)) map.set(d.category, []); map.get(d.category).push(d); });
+    return [...map.entries()];
+  }, [visibleDeliverables, dStatusSel]);
+  const viewDeliverableGroups = useMemo(() => {
+    const q = dQ.trim().toLowerCase();
+    return groupedDeliverables
+      .filter(([cat]) => dCatSel.length === 0 || dCatSel.includes(cat))
+      .map(([cat, list]) => [cat, list.filter((d) => !q || d.title.toLowerCase().includes(q))])
+      .filter(([, list]) => list.length > 0);
+  }, [groupedDeliverables, dCatSel, dQ]);
+  const drawerDeliverable = (deliverables || []).find((d) => d.id === openDeliverable) || null;
 
   /* ---- bulk selection (engagement list) ---------------------------------- */
   // Only items the firm can actually act on: something was uploaded, and it isn't signed off yet.
@@ -771,10 +923,12 @@ export default function App() {
     bulkSetStatus(selIds, "accepted", "Accepted");
   };
 
+  // Scoped to the currently-viewed month (periodItems) so what exports
+  // matches what's on screen — see periodItems above.
   const exportCSV = () => {
     if (!eng) return;
     const head = ["Ref", "Category", "Description", "Required", "Due date", "Status", "Files"];
-    const rows = eng.items.map((it) => [
+    const rows = periodItems.map((it) => [
       it.ref, it.category, it.description, it.required ? "Required" : "Optional",
       it.dueDate ? new Date(it.dueDate).toISOString().slice(0, 10) : "",
       STATUS[it.status].label, it.files.map((f) => f.name).join(" | "),
@@ -841,6 +995,10 @@ export default function App() {
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                   <span className="nv-eh-name">{eng.client}</span>
                   <span className="nv-eh-type">{eng.template}</span>
+                  {eng.cadence === "monthly" && (
+                    <PeriodSwitcher periods={eng.periods || []} periodId={periodId} busy={busy}
+                      onSwitch={setPeriodId} onOpenNext={() => setModal("openPeriod")} onSetStatus={setPeriodStatusMut} />
+                  )}
                   {eng.myRole && <span className={`nv-role ${eng.myRole === "owner" ? "own" : "mem"}`}>{eng.myRole === "owner" ? "เจ้าของ" : "สมาชิก"}</span>}
                 </div>
                 <div className="nv-eh-meta">
@@ -856,141 +1014,239 @@ export default function App() {
               <div className="nv-eh-right">
                 <div className="nv-eh-pct"><div><b>{stats.pct}</b><i>%</i></div><span>{stats.by.accepted} of {stats.total} accepted</span></div>
                 <div className="nv-dots" aria-hidden="true">
-                  {eng.items.map((it) => (
+                  {periodItems.map((it) => (
                     <span key={it.id} className={it.status === "accepted" ? "done" : isOverdue(it) ? "od" : it.status === "outstanding" ? "" : "wip"} />
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* two-column: left filter panel (dropdowns) + document list */}
-            <div className="nv-work">
-              {/* LEFT: search, alert, status + category dropdown filters */}
-              <aside className="nv-aside">
-                <div className="nv-isearch"><span>⌕</span><input value={itemQ} onChange={(e) => setItemQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
-                {stats.overdue > 0 && (
-                  <div className="nv-alert" onClick={() => { setStatusSel(["overdue"]); setCatSel([]); }}>
-                    <span className="ic"><Icon name="alert" size={14} /></span>
-                    <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{(() => { const f = eng.items.find(isOverdue); return f ? ` — ${f.description}` : ""; })()} · คลิกเพื่อดู</span>
-                  </div>
-                )}
-                {(() => {
-                  const ids = Object.keys(unreadC);
-                  if (!ids.length) return null;
-                  const total = ids.reduce((n, id) => n + (unreadC[id] || 0), 0);
-                  const first = eng.items.find((it) => unreadC[it.id]);
-                  return (
-                    <div className="nv-alert cmt" onClick={() => first && openItemDrawer(first.id)}>
-                      <span className="ic"><Icon name="chat" size={14} /></span>
-                      <span>มี <b>{total}</b> ความคิดเห็นใหม่จากลูกค้า{first ? ` — ${first.description}` : ""} · คลิกเพื่ออ่าน</span>
-                    </div>
-                  );
-                })()}
-                <MultiFilter label="สถานะ" placeholder={`ทุกสถานะ · ${stats.total}`} selected={statusSel} onChange={setStatusSel}
-                  options={[
-                    ...STATUS_ORDER.map((s) => ({ value: s, label: STATUS[s].label, count: stats.by[s], dot: STATUS_DOT[s] })),
-                    { value: "overdue", label: "Overdue", count: stats.overdue, dot: "#EF4444" },
-                  ]} />
-                {detailCats.length > 0 && (
-                  <MultiFilter label="หมวดเอกสาร" placeholder={`ทุกหมวด · ${stats.total}`} selected={catSel} onChange={setCatSel}
-                    options={detailCats.map((c) => ({ value: c.cat, label: c.cat, count: c.count }))} />
-                )}
-              </aside>
-
-              {/* RIGHT: toolbar + document list */}
-              <div>
-                <div className="nv-tools">
-                  <NvMenu label="+ เพิ่มรายการ" variant="mint">
-                    <button className="nv-mitem" onClick={() => openGenerate()}>✓ สร้างรายการคำขอ</button>
-                    <button className="nv-mitem" onClick={() => setModal("add")}>＋ เพิ่มรายการเดี่ยว</button>
-                    <button className="nv-mitem" onClick={() => importRef.current?.click()}>↓ นำเข้าจาก Excel</button>
-                  </NvMenu>
-                  <NvMenu label={<><Icon name="users" size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />แชร์กับลูกค้า</>} variant="light">
-                    <button className="nv-mitem" onClick={() => {
-                      const link = `${location.origin}/client.html?e=${eng.id}`;
-                      navigator.clipboard?.writeText(link).catch(() => {});
-                      alert("คัดลอกลิงก์สำหรับลูกค้าแล้ว (ส่งรหัส 16 หลักแยกช่องทาง):\n\n" + link);
-                    }}><Icon name="link" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />คัดลอกลิงก์ลูกค้า</button>
-                    <button className="nv-mitem" onClick={notifyClient}><Icon name="mail" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />แจ้งลูกค้า</button>
-                  </NvMenu>
-                  <button className="nv-btn" onClick={() => setModal("zip")}>↓ โหลดไฟล์ (.zip)</button>
-                  {busy && <span className="nv-search-note">กำลังบันทึก…</span>}
-                  <div style={{ marginLeft: "auto" }}>
-                    <NvMenu label="เพิ่มเติม" variant="dark" align="right">
-                      <button className="nv-mitem" onClick={() => openGenerate(buildRollSource(eng))}><Icon name="repeat" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />สร้างพอร์ทัลปีถัดไป</button>
-                      <button className="nv-mitem" onClick={exportCSV}><Icon name="doc" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />Export CSV</button>
-                      {(eng.myRole === "owner" || eng.myCanDelete) && <button className="nv-mitem" onClick={() => setModal("archived")}><Icon name="archive" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />Archived</button>}
-                      <div className="nv-msep" />
-                      {eng.myRole === "owner" && <button className="nv-mitem" onClick={() => setModal("share")}>＋ เชิญสมาชิก / แชร์</button>}
-                      <button className="nv-mitem" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
-                    </NvMenu>
-                  </div>
-                  <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
-                    onChange={(e) => { const f = e.target.files[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
+            {/* segment toggle: requests coming FROM the client vs work going TO the
+                client — mirrors the client app's own toggle so both sides share one
+                mental model of "two directions, one portal". Text only, no emoji:
+                PRODUCT.md's anti-references rule out emoji-as-personality in a
+                financial context, and icons.jsx exists for exactly this reason. */}
+            {eng.cadence === "monthly" && (
+              <div className="nv-dseg">
+                <div className="nv-seg">
+                  <button className={surface === "items" ? "on" : ""} onClick={() => setSurface("items")}>
+                    คำขอเอกสาร<span className="nv-seg-ct">{stats.total}</span>
+                  </button>
+                  <button className={surface === "deliverables" ? "on" : ""} onClick={() => setSurface("deliverables")}>
+                    งานส่งมอบ<span className="nv-seg-ct">{visibleDeliverables.length}</span>
+                    {draftCount > 0 && <span className="nv-seg-badge">{draftCount}</span>}
+                  </button>
                 </div>
+              </div>
+            )}
 
-                {selIds.length > 0 && (
-                  <div className="nv-bulk">
-                    <span className="n">เลือก {selIds.length} รายการ</span>
-                    <button className="nv-btn" disabled={busy} onClick={doBulkAccept}>
-                      <Icon name="check" size={14} />รับทั้งหมด
-                    </button>
-                    <button className="nv-btn" disabled={busy} onClick={() => setModal("bulkReturn")}>
-                      <Icon name="return" size={14} />ตีกลับทั้งหมด
-                    </button>
-                    {selIds.length < bulkPool.length && (
-                      <button className="lk" onClick={() => setSel(new Set(bulkPool.map((it) => it.id)))}>
-                        เลือกทั้งหมดที่กรองอยู่ ({bulkPool.length})
-                      </button>
-                    )}
-                    <button className={`lk ${selIds.length < bulkPool.length ? "" : "far"}`} onClick={() => setSel(new Set())}>ล้างการเลือก</button>
+            {/* `|| cadence !== monthly` so switching a portal back to one-off
+                (or opening a 'once' portal while the toggle is still stuck on
+                deliverables from a previous one) can never strand the user on
+                a surface whose toggle is no longer rendered. */}
+            {surface === "items" || eng.cadence !== "monthly" ? (
+              <>
+                {eng.cadence === "monthly" && activePeriod?.status === "closed" && (
+                  <div className="nv-alert closed">
+                    <span className="ic"><Icon name="lock" size={14} /></span>
+                    <span>
+                      งวด <b>{activePeriod.label}</b> ปิดแล้ว — ลูกค้าอัปโหลดเพิ่มไม่ได้ (ฝั่งสำนักงานยังดู/จัดการได้ตามปกติ)
+                      <button type="button" className="nv-inline-link" disabled={busy}
+                        onClick={() => setPeriodStatusMut(activePeriod.id, "open")}>เปิดอีกครั้ง</button>
+                    </span>
                   </div>
                 )}
+                {/* two-column: left filter panel (dropdowns) + document list */}
+                <div className="nv-work">
+                  {/* LEFT: search, alert, status + category dropdown filters */}
+                  <aside className="nv-aside">
+                    <div className="nv-isearch"><span>⌕</span><input value={itemQ} onChange={(e) => setItemQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
+                    {stats.overdue > 0 && (
+                      <div className="nv-alert" onClick={() => { setStatusSel(["overdue"]); setCatSel([]); }}>
+                        <span className="ic"><Icon name="alert" size={14} /></span>
+                        <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{(() => { const f = periodItems.find(isOverdue); return f ? ` — ${f.description}` : ""; })()} · คลิกเพื่อดู</span>
+                      </div>
+                    )}
+                    {(() => {
+                      const ids = Object.keys(unreadC);
+                      if (!ids.length) return null;
+                      const total = ids.reduce((n, id) => n + (unreadC[id] || 0), 0);
+                      const first = periodItems.find((it) => unreadC[it.id]);
+                      return (
+                        <div className="nv-alert cmt" onClick={() => first && openItemDrawer(first.id)}>
+                          <span className="ic"><Icon name="chat" size={14} /></span>
+                          <span>มี <b>{total}</b> ความคิดเห็นใหม่จากลูกค้า{first ? ` — ${first.description}` : ""} · คลิกเพื่ออ่าน</span>
+                        </div>
+                      );
+                    })()}
+                    <MultiFilter label="สถานะ" placeholder={`ทุกสถานะ · ${stats.total}`} selected={statusSel} onChange={setStatusSel}
+                      options={[
+                        ...STATUS_ORDER.map((s) => ({ value: s, label: STATUS[s].label, count: stats.by[s], dot: STATUS_DOT[s] })),
+                        { value: "overdue", label: "Overdue", count: stats.overdue, dot: "#EF4444" },
+                      ]} />
+                    {detailCats.length > 0 && (
+                      <MultiFilter label="หมวดเอกสาร" placeholder={`ทุกหมวด · ${stats.total}`} selected={catSel} onChange={setCatSel}
+                        options={detailCats.map((c) => ({ value: c.cat, label: c.cat, count: c.count }))} />
+                    )}
+                  </aside>
 
-                {viewGroups.length === 0 ? (
-                  <div className="nv-list"><div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ไม่พบรายการที่ตรงกับตัวกรอง</div></div>
-                ) : viewGroups.map(([cat, items]) => (
-                  <div key={cat}>
-                    <div className="nv-ghead"><span className="gt">{cat}</span><span className="gline" /><span className="gn">{items.filter((i) => i.status === "accepted").length}/{items.length}</span></div>
-                    <div className="nv-list">
-                      {items.map((it, idx) => {
-                        const od = isOverdue(it);
-                        const rowCls = it.status === "accepted" ? "acc" : od ? "od" : "";
-                        const stTone = od ? "red" : STATUS_ST[it.status];
-                        const stLabel = od ? "⚠ Overdue" : `${STATUS[it.status].glyph} ${STATUS[it.status].label}`;
-                        const selectable = canBulk(it);
-                        const checked = selectable && sel.has(it.id);
-                        return (
-                          <div key={it.id} className={`nv-doc ${rowCls} ${checked ? "sel" : ""}`}>
-                            {selectable ? (
-                              <input type="checkbox" className="nv-doc-ck" checked={checked} disabled={busy}
-                                aria-label={`เลือก ${it.description}`} onChange={() => toggleSel(it.id)} />
-                            ) : (
-                              <span className="nv-doc-ck ph" aria-hidden="true" />
-                            )}
-                            <button className="nv-doc-open" onClick={() => openItemDrawer(it.id)}>
-                              <span className="nv-doc-no">{String(idx + 1).padStart(2, "0")}</span>
-                              <div className="nv-doc-main">
-                                <div className="nv-doc-name">{it.description}{it.required && <span className="req" title="Required">•</span>}</div>
-                                <div className="nv-doc-sub">
-                                  {it.files.length > 0 && <span className="f">{it.files.length} file{it.files.length > 1 ? "s" : ""}</span>}
-                                  {it.commentCount > 0 && <span className="cmt"><Icon name="chat" size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} />{it.commentCount}</span>}
-                                  {it.firmNote && <span className="note" title={it.firmNote}>โน้ต</span>}
-                                  <span className={`due ${od ? "od" : ""}`}>Due {fmtDate(it.dueDate)}</span>
-                                </div>
-                              </div>
-                              <span className={`nv-st ${stTone}`}>{stLabel}</span>
-                              <span className="nv-doc-chev">›</span>
-                            </button>
-                          </div>
-                        );
-                      })}
+                  {/* RIGHT: toolbar + document list */}
+                  <div>
+                    <div className="nv-tools">
+                      <NvMenu label="+ เพิ่มรายการ" variant="mint">
+                        <button className="nv-mitem" onClick={() => openGenerate()}>✓ สร้างรายการคำขอ</button>
+                        <button className="nv-mitem" onClick={() => setModal("add")}>＋ เพิ่มรายการเดี่ยว</button>
+                        <button className="nv-mitem" onClick={() => importRef.current?.click()}>↓ นำเข้าจาก Excel</button>
+                      </NvMenu>
+                      <NvMenu label={<><Icon name="users" size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />แชร์กับลูกค้า</>} variant="light">
+                        <button className="nv-mitem" onClick={() => {
+                          const link = `${location.origin}/client.html?e=${eng.id}`;
+                          navigator.clipboard?.writeText(link).catch(() => {});
+                          alert("คัดลอกลิงก์สำหรับลูกค้าแล้ว (ส่งรหัส 16 หลักแยกช่องทาง):\n\n" + link);
+                        }}><Icon name="link" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />คัดลอกลิงก์ลูกค้า</button>
+                        <button className="nv-mitem" onClick={notifyClient}><Icon name="mail" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />แจ้งลูกค้า</button>
+                      </NvMenu>
+                      <button className="nv-btn" onClick={() => setModal("zip")}>↓ โหลดไฟล์ (.zip)</button>
+                      {busy && <span className="nv-search-note">กำลังบันทึก…</span>}
+                      <div style={{ marginLeft: "auto" }}>
+                        <NvMenu label="เพิ่มเติม" variant="dark" align="right">
+                          <button className="nv-mitem" onClick={() => openGenerate(buildRollSource(eng))}><Icon name="repeat" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />สร้างพอร์ทัลปีถัดไป</button>
+                          <button className="nv-mitem" onClick={exportCSV}><Icon name="doc" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />Export CSV</button>
+                          {(eng.myRole === "owner" || eng.myCanDelete) && <button className="nv-mitem" onClick={() => setModal("archived")}><Icon name="archive" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />Archived</button>}
+                          <div className="nv-msep" />
+                          {eng.myRole === "owner" && <button className="nv-mitem" onClick={() => setModal("share")}>＋ เชิญสมาชิก / แชร์</button>}
+                          <button className="nv-mitem" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
+                        </NvMenu>
+                      </div>
+                      <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
+                        onChange={(e) => { const f = e.target.files[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
                     </div>
+
+                    {selIds.length > 0 && (
+                      <div className="nv-bulk">
+                        <span className="n">เลือก {selIds.length} รายการ</span>
+                        <button className="nv-btn" disabled={busy} onClick={doBulkAccept}>
+                          <Icon name="check" size={14} />รับทั้งหมด
+                        </button>
+                        <button className="nv-btn" disabled={busy} onClick={() => setModal("bulkReturn")}>
+                          <Icon name="return" size={14} />ตีกลับทั้งหมด
+                        </button>
+                        {selIds.length < bulkPool.length && (
+                          <button className="lk" onClick={() => setSel(new Set(bulkPool.map((it) => it.id)))}>
+                            เลือกทั้งหมดที่กรองอยู่ ({bulkPool.length})
+                          </button>
+                        )}
+                        <button className={`lk ${selIds.length < bulkPool.length ? "" : "far"}`} onClick={() => setSel(new Set())}>ล้างการเลือก</button>
+                      </div>
+                    )}
+
+                    {viewGroups.length === 0 ? (
+                      <div className="nv-list"><div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ไม่พบรายการที่ตรงกับตัวกรอง</div></div>
+                    ) : viewGroups.map(([cat, items]) => (
+                      <div key={cat}>
+                        <div className="nv-ghead"><span className="gt">{cat}</span><span className="gline" /><span className="gn">{items.filter((i) => i.status === "accepted").length}/{items.length}</span></div>
+                        <div className="nv-list">
+                          {items.map((it, idx) => {
+                            const od = isOverdue(it);
+                            const rowCls = it.status === "accepted" ? "acc" : od ? "od" : "";
+                            const stTone = od ? "red" : STATUS_ST[it.status];
+                            const stLabel = od ? "⚠ Overdue" : `${STATUS[it.status].glyph} ${STATUS[it.status].label}`;
+                            const selectable = canBulk(it);
+                            const checked = selectable && sel.has(it.id);
+                            return (
+                              <div key={it.id} className={`nv-doc ${rowCls} ${checked ? "sel" : ""}`}>
+                                {selectable ? (
+                                  <input type="checkbox" className="nv-doc-ck" checked={checked} disabled={busy}
+                                    aria-label={`เลือก ${it.description}`} onChange={() => toggleSel(it.id)} />
+                                ) : (
+                                  <span className="nv-doc-ck ph" aria-hidden="true" />
+                                )}
+                                <button className="nv-doc-open" onClick={() => openItemDrawer(it.id)}>
+                                  <span className="nv-doc-no">{String(idx + 1).padStart(2, "0")}</span>
+                                  <div className="nv-doc-main">
+                                    <div className="nv-doc-name">{it.description}{it.required && <span className="req" title="Required">•</span>}</div>
+                                    <div className="nv-doc-sub">
+                                      {it.files.length > 0 && <span className="f">{it.files.length} file{it.files.length > 1 ? "s" : ""}</span>}
+                                      {it.commentCount > 0 && <span className="cmt"><Icon name="chat" size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} />{it.commentCount}</span>}
+                                      {it.firmNote && <span className="note" title={it.firmNote}>โน้ต</span>}
+                                      <span className={`due ${od ? "od" : ""}`}>Due {fmtDate(it.dueDate)}</span>
+                                    </div>
+                                  </div>
+                                  <span className={`nv-st ${stTone}`}>{stLabel}</span>
+                                  <span className="nv-doc-chev">›</span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                    <p className="nv-foot">Firm workspace · {periodItems.length} items · backed by Supabase (RLS-scoped)</p>
                   </div>
-                ))}
-                <p className="nv-foot">Firm workspace · {eng.items.length} items · backed by Supabase (RLS-scoped)</p>
+                </div>
+              </>
+            ) : (
+              /* 📤 deliverables surface — the firm's output back to the client */
+              <div className="nv-work">
+                <aside className="nv-aside">
+                  <div className="nv-isearch"><span>⌕</span><input value={dQ} onChange={(e) => setDQ(e.target.value)} placeholder="ค้นหางานส่งมอบ…" /></div>
+                  <MultiFilter label="สถานะ" placeholder={`ทุกสถานะ · ${visibleDeliverables.length}`} selected={dStatusSel} onChange={setDStatusSel}
+                    options={Object.keys(DELIVERABLE_STATUS).map((s) => ({
+                      value: s, label: DELIVERABLE_STATUS[s].label,
+                      count: visibleDeliverables.filter((d) => d.status === s).length, dot: DELIVERABLE_DOT[s],
+                    }))} />
+                  {deliverableCats.length > 0 && (
+                    <MultiFilter label="หมวด" placeholder={`ทุกหมวด · ${visibleDeliverables.length}`} selected={dCatSel} onChange={setDCatSel}
+                      options={deliverableCats.map((c) => ({ value: c.cat, label: c.cat, count: c.count }))} />
+                  )}
+                </aside>
+
+                <div>
+                  <div className="nv-tools">
+                    <button className="nv-cta" onClick={() => setModal("createDeliverable")}>+ สร้างงานส่งมอบ</button>
+                    {busy && <span className="nv-search-note">กำลังบันทึก…</span>}
+                  </div>
+
+                  {viewDeliverableGroups.length === 0 ? (
+                    <div className="nv-list">
+                      <div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>
+                        {(deliverables || []).length === 0 ? "ยังไม่มีงานส่งมอบ — เริ่มจาก \"+ สร้างงานส่งมอบ\"" : "ไม่พบรายการที่ตรงกับตัวกรอง"}
+                      </div>
+                    </div>
+                  ) : viewDeliverableGroups.map(([cat, list]) => (
+                    <div key={cat}>
+                      <div className="nv-ghead"><span className="gt">{cat}</span><span className="gline" /><span className="gn">{list.filter((d) => d.status !== "draft").length}/{list.length}</span></div>
+                      <div className="nv-list">
+                        {list.map((d) => {
+                          const st = DELIVERABLE_STATUS[d.status] || DELIVERABLE_STATUS.draft;
+                          return (
+                            <div key={d.id} className="nv-doc">
+                              <span className="nv-doc-ck ph" aria-hidden="true" />
+                              <button className="nv-doc-open" onClick={() => setOpenDeliverable(d.id)}>
+                                <span className="nv-doc-no"><Icon name="doc" size={14} /></span>
+                                <div className="nv-doc-main">
+                                  <div className="nv-doc-name">{d.title}{d.status === "draft" && <span className="nv-draft-tag">ร่าง</span>}</div>
+                                  <div className="nv-doc-sub">
+                                    <span className="f">{d.files.length} ไฟล์</span>
+                                    {d.dueDate && <span className="due">กำหนด {fmtDate(d.dueDate)}</span>}
+                                    {d.status !== "draft" && (
+                                      <DeliveryTrail compact deliveredAt={d.deliveredAt} viewedAt={d.viewedAt} acknowledgedAt={d.acknowledgedAt} />
+                                    )}
+                                  </div>
+                                </div>
+                                <span className={`nv-st ${st.tone}`}>{st.label}</span>
+                                <span className="nv-doc-chev">›</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  <p className="nv-foot">Deliverables · {visibleDeliverables.length} รายการ · backed by Supabase (RLS-scoped)</p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -1007,18 +1263,39 @@ export default function App() {
           canDelete={eng.myRole === "owner" || eng.myCanDelete} />
       )}
 
+      {/* Deliverable drawer */}
+      {drawerDeliverable && (
+        <DeliverableDrawer key={drawerDeliverable.id} d={drawerDeliverable} eng={eng} busy={busy}
+          onClose={() => setOpenDeliverable(null)}
+          onUpdate={updateDeliverable} onUpload={uploadDeliverableFiles} onRemoveFile={removeDeliverableFile}
+          onDeliver={deliverDeliverable} onDelete={deleteDeliverable} onDownload={downloadDeliverableFile}
+          onPreviewUrl={(f) => firmApi.signedDownloadUrl(f.storagePath, { inline: true, contentType: f.type })} />
+      )}
+
       {/* Modals */}
       {modal === "generate" && <GenerateModal busy={busy} source={rollSource} onClose={() => { setModal(null); setRollSource(null); }} onCreate={generateEngagement} />}
       {modal === "groups" && <ClientGroupsModal onClose={() => setModal(null)} onChanged={loadDashboard} />}
-      {modal === "add" && eng && <AddItemModal eng={eng} onClose={() => setModal(null)} onAdd={addItem} />}
+      {modal === "add" && eng && (
+        <AddItemModal eng={{ ...eng, items: periodItems }}
+          periodLabel={eng.cadence === "monthly" ? activePeriod?.label : null}
+          onClose={() => setModal(null)} onAdd={addItem} />
+      )}
       {modal === "import" && importDraft && (
         <ImportModal draft={importDraft} onClose={() => { setModal(null); setImportDraft(null); }} onImport={importEngagement} />
+      )}
+      {modal === "openPeriod" && eng && (
+        <OpenPeriodModal periods={eng.periods || []} busy={busy} onClose={() => setModal(null)} onConfirm={openNextPeriod} />
+      )}
+      {modal === "createDeliverable" && eng && (
+        <CreateDeliverableModal periodLabel={eng.cadence === "monthly" ? activePeriod?.label : null}
+          busy={busy} onClose={() => setModal(null)} onCreate={createDeliverable} />
       )}
       {modal === "settings" && eng && (
         <PortalSettingsModal eng={eng} onClose={() => setModal(null)}
           onSavePasscode={(code) => setEngPasscode(eng.id, code)}
           onSaveRetention={(days, autoDelete) => setEngRetention(eng.id, days, autoDelete)}
           onSaveClientEmail={(email) => run(() => firmApi.setClientEmail(eng.id, email), reloadDetail)}
+          onSaveCadence={setCadence}
           onDelete={() => deleteEng(eng.id)} />
       )}
       {modal === "notify" && eng && (
@@ -1029,7 +1306,9 @@ export default function App() {
           onConfirm={(note) => { setModal(null); bulkSetStatus(selIds, "returned", "Returned", note); }} />
       )}
       {modal === "zip" && eng && (
-        <ZipModal eng={eng} busy={busy} onClose={() => setModal(null)} onDownload={downloadZip} />
+        // Scoped to periodItems so the counts shown here match what downloadZip
+        // actually zips (the month currently being viewed, for monthly cadence).
+        <ZipModal eng={{ ...eng, items: periodItems }} busy={busy} onClose={() => setModal(null)} onDownload={downloadZip} />
       )}
       {modal === "share" && eng && (
         <ShareModal eng={eng} onClose={() => setModal(null)} />
@@ -1320,6 +1599,78 @@ function MultiFilter({ label, placeholder, options, selected, onChange }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Month switcher for a monthly-cadence portal, sitting inline in the
+// engagement header. Reuses NvMenu (the file's one dropdown pattern) rather
+// than inventing a second popover mechanism. Never rendered for a 'once'
+// cadence portal — the caller guards that, so this component has no
+// "annual audit" branch to keep straight.
+function PeriodSwitcher({ periods, periodId, busy, onSwitch, onOpenNext, onSetStatus }) {
+  const current = periods.find((p) => p.id === periodId) || periods[periods.length - 1];
+  if (!current) return null;
+  return (
+    <NvMenu variant="light" label={
+      <span className="nv-pswitch-label">
+        <Icon name="calendar" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+        {current.label}
+        <span className={`nv-pdot ${current.status}`} aria-hidden="true" />
+        {current.status === "closed" && <span className="nv-pclosed">ปิดแล้ว</span>}
+      </span>
+    }>
+      <div className="nv-mlabel">สลับงวด</div>
+      {periods.slice().reverse().map((p) => (
+        <button key={p.id} className={`nv-mitem ${p.id === periodId ? "cur" : ""}`} onClick={() => onSwitch(p.id)}>
+          <span className={`nv-pdot ${p.status}`} aria-hidden="true" /> {p.label}
+          {p.id === periodId ? (
+            <span className="nv-mitem-tag on">กำลังดู</span>
+          ) : p.status === "closed" ? (
+            <span className="nv-mitem-tag">ปิด</span>
+          ) : null}
+        </button>
+      ))}
+      <div className="nv-msep" />
+      <button className="nv-mitem" onClick={onOpenNext}>
+        <Icon name="plus" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />เปิดเดือนถัดไป
+      </button>
+      {current.status === "open" ? (
+        <button className="nv-mitem warn" disabled={busy}
+          onClick={() => {
+            if (confirm(`ปิดงวด ${current.label}? ลูกค้าจะอัปโหลดเอกสารเพิ่มไม่ได้ (เปิดใหม่ภายหลังได้เสมอ)`)) onSetStatus(current.id, "closed");
+          }}>
+          <Icon name="lock" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />ปิดงวดนี้
+        </button>
+      ) : (
+        <button className="nv-mitem" disabled={busy} onClick={() => onSetStatus(current.id, "open")}>
+          <Icon name="reopen" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />เปิดงวดนี้อีกครั้ง
+        </button>
+      )}
+    </NvMenu>
+  );
+}
+
+// Delivery evidence, at a glance: sent -> viewed -> acknowledged. This is the
+// firm's proof trail in a dispute ("I never received it"), so all three states
+// need to be legible without opening the drawer — `compact` renders just the
+// three dots (used on the list row); the full form (used in the drawer) adds
+// the label and timestamp for whichever steps have actually happened.
+function DeliveryTrail({ deliveredAt, viewedAt, acknowledgedAt, compact }) {
+  const steps = [
+    { key: "delivered", label: "ส่งแล้ว", at: deliveredAt },
+    { key: "viewed", label: "ลูกค้าเปิดดูแล้ว", at: viewedAt },
+    { key: "acknowledged", label: "ลูกค้ารับทราบแล้ว", at: acknowledgedAt },
+  ];
+  return (
+    <div className={`nv-trail ${compact ? "sm" : ""}`} aria-label="สถานะการส่งมอบ">
+      {steps.map((s) => (
+        <span key={s.key} className={`nv-trail-step ${s.at ? "on" : ""}`}
+          title={s.at ? `${s.label} · ${fmtDate(s.at)}` : `ยังไม่มีเหตุการณ์นี้`}>
+          <span className="dot" />
+          <span className="lb">{s.label}{s.at ? ` · ${fmtDate(s.at)}` : ""}</span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -2012,7 +2363,7 @@ function ExpiredScreen({ eng, role, onExtend, onDelete }) {
   );
 }
 
-function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, onSaveClientEmail, onDelete }) {
+function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, onSaveClientEmail, onSaveCadence, onDelete }) {
   const base = eng.createdAt || Date.now();
   const currentDays = eng.expiresAt ? Math.round((eng.expiresAt - base) / DAY) : null;
   const matched = RETENTION_OPTIONS.find((o) => o.days === currentDays);
@@ -2021,10 +2372,28 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   const [showPass, setShowPass] = useState(false);
   const [code, setCode] = useState("");
   const [clientEmail, setClientEmail] = useState(eng.clientEmail || "");
+  const [cadence, setCadenceSel] = useState(eng.cadence === "monthly" ? "monthly" : "once");
   const x = engExpiry(eng);
 
   return (
     <Modal title="ตั้งค่าพอร์ทัล" onClose={onClose}>
+      {onSaveCadence && (
+        <>
+          <p className="tk-block-h">ประเภทพอร์ทัล</p>
+          <p className="tk-tplblurb" style={{ marginTop: 0 }}>
+            รายเดือน = พอร์ทัลเดียวใช้ยาว เปิดงวดใหม่ทุกเดือน (สำหรับงานทำบัญชี/ยื่นภาษีรายเดือน)
+          </p>
+          <label className="tk-field"><span>รูปแบบงวด</span>
+            <select value={cadence} onChange={(e) => setCadenceSel(e.target.value)}>
+              <option value="once">ครั้งเดียว (เช่น ตรวจสอบบัญชีประจำปี)</option>
+              <option value="monthly">รายเดือน (เปิดหลายงวดในพอร์ทัลเดียว)</option>
+            </select>
+          </label>
+          <button className="tk-btn full" disabled={cadence === (eng.cadence === "monthly" ? "monthly" : "once")}
+            onClick={() => onSaveCadence(cadence)}>บันทึกประเภทพอร์ทัล</button>
+          <div style={{ height: 18 }} />
+        </>
+      )}
       <p className="tk-block-h">อายุพอร์ทัล (retention)</p>
       <p className="tk-tplblurb" style={{ marginTop: 0 }}>
         {x.state === "none"
@@ -2301,6 +2670,120 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
   );
 }
 
+// The deliverable editor: create -> attach files -> edit details -> release.
+// Mirrors Drawer's slide-over shape (same .tk-scrim/.tk-drawer classes) so a
+// deliverable and a request item read as the same kind of surface, just for
+// the opposite direction of the workflow.
+function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemoveFile, onDeliver, onDelete, onDownload, onPreviewUrl }) {
+  const fileRef = useRef(null);
+  const [title, setTitle] = useState(d.title);
+  const [category, setCategory] = useState(d.category);
+  const [note, setNote] = useState(d.note || "");
+  const [dueDate, setDueDate] = useState(d.dueDate ? new Date(d.dueDate).toISOString().slice(0, 10) : "");
+  const [preview, setPreview] = useState(null);
+  const st = DELIVERABLE_STATUS[d.status] || DELIVERABLE_STATUS.draft;
+  const periodLabel = d.periodId ? (eng?.periods || []).find((p) => p.id === d.periodId)?.label : null;
+  const dirty = title.trim() !== d.title || category !== d.category || note !== (d.note || "")
+    || (dueDate ? new Date(dueDate).getTime() : null) !== d.dueDate;
+
+  const openPreview = async (f) => {
+    setPreview({ file: f, url: null });
+    try { setPreview({ file: f, url: await onPreviewUrl(f) }); }
+    catch { setPreview(null); }
+  };
+  const saveEdits = () => onUpdate(d.id, {
+    title: title.trim(), category, note: note.trim(),
+    dueDate: dueDate ? new Date(dueDate).getTime() : null,
+  });
+
+  return (
+    <>
+      <div className="tk-scrim" onClick={onClose} />
+      <aside className="tk-drawer" role="dialog" aria-label="Deliverable detail">
+        <div className="tk-drawer-top">
+          <div><span className={`nv-st ${st.tone}`}>{st.label}</span></div>
+          <button className="tk-icon" onClick={onClose}>✕</button>
+        </div>
+        <p className="tk-drawer-meta" style={{ marginTop: -6 }}>
+          {periodLabel ? <>งวด <b>{periodLabel}</b></> : "ไม่ผูกกับงวด (เอกสารเดี่ยว)"}
+        </p>
+
+        {/* Details */}
+        <div className="tk-block">
+          <p className="tk-block-h">รายละเอียด</p>
+          <label className="tk-field"><span>ชื่องาน</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+          <div className="tk-field-row">
+            <label className="tk-field"><span>หมวด</span>
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                {DELIVERABLE_CATS.map((c) => <option key={c}>{c}</option>)}
+              </select></label>
+            <label className="tk-field"><span>กำหนดส่ง</span>
+              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label>
+          </div>
+          <label className="tk-field"><span>ข้อความถึงลูกค้า</span>
+            <textarea className="tk-note" placeholder="ข้อความที่ลูกค้าจะเห็นพร้อมงานนี้…" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+          <button className="tk-btn full" disabled={busy || !dirty || !title.trim()} onClick={saveEdits}>
+            {busy ? "กำลังบันทึก…" : "บันทึกการแก้ไข"}
+          </button>
+        </div>
+
+        {/* Files */}
+        <div className="tk-block">
+          <p className="tk-block-h">ไฟล์แนบ · ลูกค้าดาวน์โหลดได้เมื่อส่งแล้ว</p>
+          {d.files.length === 0 && <p className="tk-muted">ยังไม่มีไฟล์ — ต้องแนบอย่างน้อย 1 ไฟล์ก่อนจึงจะส่งให้ลูกค้าได้</p>}
+          <ul className="tk-filelist">
+            {d.files.map((f) => (
+              <li key={f.id}>
+                <span className="tk-fileicon"><Icon name="doc" size={16} /></span>
+                <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
+                {isPreviewable(f) && <button className="tk-x" onClick={() => openPreview(f)}>ดู</button>}
+                <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>download</button>
+                <button className="tk-x" disabled={busy} onClick={() => onRemoveFile(f)}>remove</button>
+              </li>
+            ))}
+          </ul>
+          <input ref={fileRef} type="file" multiple style={{ display: "none" }}
+            onChange={(e) => { if (e.target.files.length) onUpload(d.id, e.target.files); e.target.value = ""; }} />
+          <button className="tk-btn full" disabled={busy} onClick={() => fileRef.current?.click()}>↑ แนบไฟล์</button>
+        </div>
+
+        {/* Delivery evidence */}
+        {d.status !== "draft" && (
+          <div className="tk-block">
+            <p className="tk-block-h">หลักฐานการส่งมอบ</p>
+            <DeliveryTrail deliveredAt={d.deliveredAt} viewedAt={d.viewedAt} acknowledgedAt={d.acknowledgedAt} />
+          </div>
+        )}
+
+        {/* Release / delete */}
+        <div className="tk-block">
+          {d.status === "draft" ? (
+            <>
+              <button className="tk-btn primary full" disabled={busy || d.files.length === 0}
+                title={d.files.length === 0 ? "แนบไฟล์อย่างน้อย 1 ไฟล์ก่อนส่ง" : undefined}
+                onClick={() => {
+                  if (confirm(`ส่ง "${d.title}" ให้ลูกค้า?\n\nลูกค้าจะเห็นและดาวน์โหลดได้ทันที — ยกเลิกไม่ได้`)) onDeliver(d.id);
+                }}>
+                <Icon name="send" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />ส่งให้ลูกค้า
+              </button>
+              <button className="tk-btn danger full" style={{ marginTop: 8 }} disabled={busy}
+                onClick={() => { if (confirm(`ลบร่างงานนี้ถาวร?`)) onDelete(d.id); }}>
+                ลบร่างนี้
+              </button>
+            </>
+          ) : (
+            <p className="tk-muted" style={{ margin: 0 }}>
+              ส่งให้ลูกค้าแล้วเมื่อ {fmtDate(d.deliveredAt)} — แก้ไขไฟล์/รายละเอียดยังทำได้ แต่ลูกค้าจะเห็นการเปลี่ยนแปลงทันที
+            </p>
+          )}
+        </div>
+      </aside>
+      {preview && <FilePreviewModal file={preview.file} url={preview.url} onClose={() => setPreview(null)} />}
+    </>
+  );
+}
+
 function GenerateModal({ onClose, onCreate, busy, source }) {
   const flatten = (t) => t.groups.flatMap(([category, rows]) =>
     rows.map(([description, required]) => ({ id: uid(), category, description, required, include: true })));
@@ -2352,6 +2835,14 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
     if (!ready) return;
     onCreate({
       client: client.trim(), template: tplName,
+      // Monthly bookkeeping is the ONLY recurring engagement type: it runs
+      // month after month against one portal, and it is the only one that
+      // sends work back (filed returns, statements, receipts). An audit is a
+      // one-off with nothing to deliver, so it stays 'once' and never grows
+      // the period switcher or the deliverables tab. Derived from the
+      // template rather than asked as a question — picking that template IS
+      // the statement that this is monthly work.
+      cadence: tplKey === "bookkeeping" ? "monthly" : "once",
       periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(),
       code, retDays, autoDelete,   // raw code — the DB hashes it (create_engagement)
       clientEmail: clientEmail.trim(),
@@ -2475,7 +2966,7 @@ function BulkReturnModal({ count, busy, onClose, onConfirm }) {
   );
 }
 
-function AddItemModal({ eng, onClose, onAdd }) {
+function AddItemModal({ eng, periodLabel, onClose, onAdd }) {
   const cats = [...new Set(eng.items.map((i) => i.category))];
   const [category, setCategory] = useState(cats[0] || "General");
   const [newCat, setNewCat] = useState("");
@@ -2485,6 +2976,7 @@ function AddItemModal({ eng, onClose, onAdd }) {
   const finalCat = newCat.trim() || category;
   return (
     <Modal title="Add request item" onClose={onClose}>
+      {periodLabel && <p className="tk-tplblurb" style={{ marginTop: 0 }}>จะเพิ่มลงในงวด <b>{periodLabel}</b></p>}
       <label className="tk-field"><span>Section</span>
         <select value={category} onChange={(e) => setCategory(e.target.value)}>
           {cats.map((c) => <option key={c}>{c}</option>)}
@@ -2500,6 +2992,63 @@ function AddItemModal({ eng, onClose, onAdd }) {
         <button className="tk-btn ghost" onClick={onClose}>Cancel</button>
         <button className="tk-btn primary" disabled={!description.trim()}
           onClick={() => onAdd({ category: finalCat, description: description.trim(), required, dueDate: new Date(due).getTime() })}>Add item</button>
+      </div>
+    </Modal>
+  );
+}
+
+// "Open next month" — confirms the period end / due date before creating it,
+// since there's no separate edit-period-metadata endpoint later (see
+// firmApi's periods section): whatever's confirmed here is what sticks.
+function OpenPeriodModal({ periods, busy, onClose, onConfirm }) {
+  const [periodEnd, setPeriodEnd] = useState(() => new Date(nextPeriodEnd(periods)).toISOString().slice(0, 10));
+  const [dueDate, setDueDate] = useState("");
+  const latest = periods[periods.length - 1];
+  return (
+    <Modal title="เปิดเดือนถัดไป" onClose={onClose}>
+      <p className="tk-tplblurb" style={{ marginTop: 0 }}>
+        รายการคำขอของ <b>{latest?.label || "งวดล่าสุด"}</b> จะถูกคัดลอกมาที่งวดใหม่โดยอัตโนมัติ (สถานะรีเซ็ตเป็นค้างรับ)
+      </p>
+      <label className="tk-field"><span>สิ้นสุดงวด (period end)</span>
+        <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
+      <label className="tk-field"><span>กำหนดยื่น (ไม่บังคับ)</span>
+        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label>
+      <p className="nv-period-preview">งวดใหม่จะแสดงเป็น <b>{previewPeriodLabel(new Date(periodEnd).getTime())}</b></p>
+      <div className="tk-modal-actions">
+        <button className="tk-btn ghost" onClick={onClose}>ยกเลิก</button>
+        <button className="tk-btn primary" disabled={busy || !periodEnd}
+          onClick={() => onConfirm({ periodEnd: new Date(periodEnd).getTime(), dueDate: dueDate ? new Date(dueDate).getTime() : null })}>
+          {busy ? "กำลังเปิด…" : "เปิดงวดใหม่"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function CreateDeliverableModal({ periodLabel, busy, onClose, onCreate }) {
+  const [category, setCategory] = useState(DELIVERABLE_CATS[0]);
+  const [title, setTitle] = useState("");
+  const [note, setNote] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  return (
+    <Modal title="สร้างงานส่งมอบใหม่" onClose={onClose}>
+      {periodLabel && <p className="tk-tplblurb" style={{ marginTop: 0 }}>จะผูกกับงวด <b>{periodLabel}</b></p>}
+      <label className="tk-field"><span>หมวด</span>
+        <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          {DELIVERABLE_CATS.map((c) => <option key={c}>{c}</option>)}
+        </select></label>
+      <label className="tk-field"><span>ชื่องาน</span>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น ภ.พ.30 เดือน ก.ค. 2569" /></label>
+      <label className="tk-field"><span>ข้อความถึงลูกค้า (ไม่บังคับ)</span>
+        <textarea className="tk-note" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+      <label className="tk-field"><span>กำหนดส่ง (ไม่บังคับ)</span>
+        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label>
+      <div className="tk-modal-actions">
+        <button className="tk-btn ghost" onClick={onClose}>ยกเลิก</button>
+        <button className="tk-btn primary" disabled={busy || !title.trim()}
+          onClick={() => onCreate({ category, title: title.trim(), note: note.trim(), dueDate: dueDate ? new Date(dueDate).getTime() : null })}>
+          {busy ? "กำลังสร้าง…" : "สร้าง"}
+        </button>
       </div>
     </Modal>
   );

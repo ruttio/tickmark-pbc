@@ -38,6 +38,7 @@ const P = {
   external: '<path d="M7 17 17 7"/><path d="M8 7h9v9"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   line: '<rect x="3" y="4" width="18" height="13" rx="4"/><path d="m8 21 3-4"/><path d="M8 9v4M8 9l3 4V9M13 9v4h2M18 9v4"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/>',
 };
 
 export function Icon({ name, size = 16, className, strokeWidth = 1.7, style }) {

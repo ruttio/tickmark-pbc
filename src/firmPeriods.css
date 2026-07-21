@@ -1,0 +1,52 @@
+/* =====================================================================
+   firmPeriods.css — firm-side styling for periods (monthly switcher) and
+   deliverables (firm -> client output). New file so the concurrent client-
+   app work in portal.css / deliverables.css never collides with this one.
+
+   Reuses design tokens (--pine, --rust, --amber, --navy-*, etc.) declared
+   on :root in portal.css — that file is always loaded first (imported at
+   the top of pbc-portal.jsx), so the variables are already in scope here.
+   Colors here are all either a DESIGN.md palette var, or that same var's
+   RGB at reduced alpha (matching the rgba(100,116,139,.NN) convention
+   portal.css already uses for its own neutral tints) — no new hex literals.
+   ===================================================================== */
+
+/* ---- segment toggle: request items (from client) vs deliverables (to client) */
+.nv-dseg{margin:2px 0 16px}
+.nv-seg-ct{margin-left:7px;font:600 11px 'Inter',sans-serif;opacity:.65}
+.nv-seg-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;margin-left:6px;border-radius:10px;background:var(--rust);color:var(--card-white);font:700 10px 'Inter',sans-serif;vertical-align:middle}
+
+/* ---- period switcher (lives in the nv-eh header, monthly cadence only) */
+.nv-pdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin:0 2px;background:rgba(100,116,139,.55)}
+.nv-pdot.open{background:var(--pine)}
+.nv-pdot.closed{background:rgba(100,116,139,.55)}
+.nv-pswitch-label{display:inline-flex;align-items:center;gap:2px}
+.nv-pclosed{font:700 9.5px 'Inter',sans-serif;letter-spacing:.3px;text-transform:uppercase;color:var(--ink-soft);background:rgba(100,116,139,.12);padding:1px 6px;border-radius:8px;margin-left:2px}
+.nv-mlabel{font:700 10px 'Inter',sans-serif;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-soft);padding:6px 12px 2px}
+.nv-mitem.cur{background:rgba(18,179,154,.08)}
+.nv-mitem-tag{margin-left:auto;font:700 9.5px 'Inter',sans-serif;padding:1px 6px;border-radius:8px;background:rgba(100,116,139,.14);color:var(--ink-soft);flex:none}
+.nv-mitem-tag.on{background:rgba(18,179,154,.14);color:var(--pine)}
+.nv-mitem.warn{color:var(--amber)}
+
+/* ---- closed-period banner (slate tone — distinct from the red overdue alert) */
+.nv-alert.closed{background:rgba(100,116,139,.10);border-color:rgba(100,116,139,.24);color:var(--ink-soft)}
+.nv-inline-link{background:none;border:0;padding:0;margin-left:6px;color:inherit;font-weight:700;text-decoration:underline;cursor:pointer;font-size:inherit;font-family:inherit}
+
+/* ---- deliverable row extras ---- */
+.nv-draft-tag{margin-left:7px;font:600 10px 'Inter','IBM Plex Sans Thai',sans-serif;background:rgba(100,116,139,.14);color:var(--ink-soft);padding:1px 7px;border-radius:10px;vertical-align:middle}
+
+/* ---- delivery evidence trail: sent -> viewed -> acknowledged ---- */
+.nv-trail{display:inline-flex;align-items:center;gap:0}
+.nv-trail-step{display:flex;align-items:center;gap:6px}
+.nv-trail-step .dot{width:8px;height:8px;border-radius:50%;background:rgba(100,116,139,.30);flex:none}
+.nv-trail-step.on .dot{background:var(--pine)}
+.nv-trail-step .lb{font:500 11.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:var(--ink-soft);white-space:nowrap}
+.nv-trail-step.on .lb{color:var(--ink)}
+.nv-trail-step:not(:last-child)::after{content:"";width:16px;height:1px;background:var(--line);margin:0 6px}
+.nv-trail-step.on:not(:last-child)::after{background:var(--pine)}
+.nv-trail.sm .lb{display:none}
+.nv-trail.sm .dot{width:6px;height:6px}
+.nv-trail.sm .nv-trail-step:not(:last-child)::after{width:8px;margin:0 3px}
+
+/* ---- "open next period" / "create deliverable" modal helper text ---- */
+.nv-period-preview{font-size:12.5px;color:var(--pine);margin:4px 0 10px}

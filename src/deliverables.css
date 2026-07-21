@@ -1,0 +1,63 @@
+/* =====================================================================
+   deliverables.css — client-side "sent back to you" view.
+   A NEW file (not portal.css) because a second agent is editing portal.css
+   concurrently for the firm app — see ClientPortal.jsx's header comment for
+   the constraint. Reuses existing .nv-* primitives wherever the shape
+   already matches (nv-seg, nv-msf-*, nv-list, nv-ghead, nv-crow, nv-cnote,
+   nv-fchips, nv-st) and only adds dv- classes for genuinely new structures:
+   the badge, the closed-period notice, the unopened/viewed/acknowledged
+   states, and the acknowledge confirmation panel.
+   ===================================================================== */
+
+/* ---- view bar: segment toggle + period switcher, sits under nv-chead ---- */
+.dv-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.dv-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 5px;margin-left:6px;border-radius:8px;background:#3B82F6;color:#fff;font:800 10px 'Inter',sans-serif;line-height:16px;vertical-align:1px}
+
+/* period switcher reuses .nv-msf/.nv-msf-btn/.nv-msf-panel/.nv-msf-opt (the
+   MultiFilter dropdown shell) so it inherits identical focus/hover/backdrop
+   behaviour for free; only the width constraint is specific to this bar. */
+.dv-persw{max-width:260px;flex:none}
+.dv-closedtag{margin-left:7px;font:700 9.5px 'Inter',sans-serif;letter-spacing:.3px;color:#64748B;background:rgba(100,116,139,.14);padding:2px 6px;border-radius:8px;vertical-align:1px}
+
+@media(max-width:560px){
+  .dv-bar{flex-direction:column;align-items:stretch}
+  .dv-view-seg{width:100%}
+  .dv-view-seg button{flex:1}
+  .dv-persw{max-width:none;width:100%}
+}
+
+/* ---- closed-period notice: shown BEFORE upload is attempted, never as an
+   error. Calm neutral tone (not exception-red) since a closed period is an
+   expected lifecycle state, not a problem. ---- */
+.dv-closed-note{display:flex;align-items:flex-start;gap:8px;background:rgba(100,116,139,.08);border:1px solid rgba(100,116,139,.18);color:#475569;border-radius:12px;padding:10px 13px;font:500 12px/1.55 'Inter','IBM Plex Sans Thai',sans-serif;margin-bottom:14px}
+.dv-closed-note .ic{flex:none;margin-top:1px;color:#64748B}
+.dv-closed-inline{margin-top:8px;font:400 12px/1.5 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;background:rgba(100,116,139,.07);border-radius:8px;padding:8px 10px}
+
+/* ---- deliverable rows: three states share the .nv-crow shape, differing
+   only in the left-accent + emphasis, mirroring how .nv-crow already marks
+   accepted (mint) / overdue (red) requests. ---- */
+.dv-drow.new{border-left-color:#3B82F6;background:rgba(59,130,246,.035)}
+.dv-drow.new .nv-crow-name{font-weight:700}
+.dv-drow.wait{border-left-color:#F59E0B}
+.dv-drow.done{opacity:.85}
+.dv-new{display:inline-flex;align-items:center;font:700 10px 'Inter','IBM Plex Sans Thai',sans-serif;color:#fff;background:#3B82F6;padding:2px 7px;border-radius:10px;margin-left:8px;vertical-align:2px}
+.dv-cat{font:600 10.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
+.dv-meta{font:400 11px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
+
+/* ---- acknowledge: a deliberate two-step confirm, never a single click,
+   because it is a meaningful (and irreversible) confirmation in a tax
+   context — but the copy stays plain instead of alarming. ---- */
+.dv-ackbtn{display:inline-flex;align-items:center;gap:6px;font:600 12.5px 'Inter','IBM Plex Sans Thai',sans-serif;background:#fff;border:1.5px solid #12B39A;color:#0B7F70;border-radius:10px;padding:7px 13px;margin-top:10px;cursor:pointer}
+.dv-ackbtn:hover{background:rgba(18,179,154,.06)}
+.dv-ackbtn:focus-visible{outline:3px solid rgba(18,179,154,.22);outline-offset:2px}
+.dv-ackconfirm{margin-top:10px;background:rgba(18,179,154,.06);border:1px solid rgba(18,179,154,.28);border-radius:10px;padding:11px 13px;max-width:420px}
+.dv-ackconfirm p{margin:0 0 10px;font:400 12.5px/1.55 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A}
+.dv-ackbtns{display:flex;gap:8px;justify-content:flex-end}
+.dv-acked{display:inline-flex;align-items:center;gap:6px;font:600 12px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0B7F70;margin-top:10px}
+
+/* ---- empty state: the common early case ("nothing sent back yet this
+   month") must read as normal, not broken — icon + two calm lines, same
+   .nv-list frame the request-list empty state uses. ---- */
+.dv-empty{padding:40px 16px;text-align:center;color:#64748B;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.dv-empty .ic{width:44px;height:44px;border-radius:12px;background:rgba(18,179,154,.10);color:#12B39A;display:flex;align-items:center;justify-content:center}
+.dv-empty .sub{color:#94A3B8;font-size:12px}
