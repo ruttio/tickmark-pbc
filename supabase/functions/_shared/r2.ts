@@ -20,18 +20,41 @@ const aws = new AwsClient({
 const objUrl = (key: string) =>
   `${ENDPOINT}/${key.split("/").map(encodeURIComponent).join("/")}`;
 
+// RFC 5987 / RFC 6266 Content-Disposition. `filename*=UTF-8''…` is what
+// carries Thai filenames — the plain `filename=` fallback is ASCII-only, so
+// without the starred form a browser that ignores it would land on mojibake.
+// Quotes and backslashes are stripped from the fallback rather than escaped:
+// it is a last resort for old clients, and a broken quote there breaks the
+// whole header.
+function contentDisposition(disposition: string, filename?: string): string {
+  if (!filename) return disposition;
+  const ascii = filename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "");
+  return `${disposition}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
 // Presigned GET (download), valid for `expiresIn` seconds.
 // opts.disposition ("inline" | "attachment") + opts.contentType are baked into
 // the signed query (S3 response-* overrides) so the browser can render a PDF /
 // image in-page instead of forcing a download.
+//
+// opts.filename sets the name the browser saves under. Without it the browser
+// falls back to the last segment of the object key, which in this bucket is a
+// storage path like `1784625369175_TB_for_LB_25.xlsx` — the upload timestamp
+// we prepend to keep keys unique. That leaked into the firm's own archives,
+// and worse, back into the portal when a downloaded file was re-uploaded as a
+// correction. Offline archiving is this product's retention story, so the
+// name a file lands under is not cosmetic.
 export async function presignGet(
   key: string,
   expiresIn = 120,
-  opts: { disposition?: string; contentType?: string } = {},
+  opts: { disposition?: string; contentType?: string; filename?: string } = {},
 ): Promise<string> {
   const u = new URL(objUrl(key));
   u.searchParams.set("X-Amz-Expires", String(expiresIn));
-  if (opts.disposition) u.searchParams.set("response-content-disposition", opts.disposition);
+  const disposition = opts.disposition || (opts.filename ? "attachment" : "");
+  if (disposition) {
+    u.searchParams.set("response-content-disposition", contentDisposition(disposition, opts.filename));
+  }
   if (opts.contentType) u.searchParams.set("response-content-type", opts.contentType);
   const signed = await aws.sign(u.toString(), { method: "GET", aws: { signQuery: true } });
   return signed.url;

@@ -306,6 +306,19 @@ Deno.serve(async (req) => {
   const replyTo = user.email || undefined;
   const force = body.force === true;
 
-  const { status, body: respBody } = await sendKind(eng, kind as NotifyKind, { replyTo, force, sentBy: user.id });
+  // An explicit period_id scopes the email to one month; omitting it keeps the
+  // pre-periods behaviour of covering every open month in one message. The id
+  // is verified against THIS engagement rather than trusted, so a stray id
+  // cannot pull another portal's month into the email.
+  let periods: PeriodRef[] | undefined;
+  if (body.period_id) {
+    const { data: p } = await admin.from("periods")
+      .select("id, period_key, label")
+      .eq("id", String(body.period_id)).eq("engagement_id", engagement_id).maybeSingle();
+    if (!p) return json({ error: "period not found in this portal" }, 404);
+    periods = [p];
+  }
+
+  const { status, body: respBody } = await sendKind(eng, kind as NotifyKind, { replyTo, force, sentBy: user.id, periods });
   return json(respBody, status);
 });

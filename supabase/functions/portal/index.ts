@@ -442,7 +442,7 @@ Deno.serve(async (req) => {
     if (action === "deliverable_file_url") {
       const file_id = String(body.file_id || "");
       const { data: file } = await admin.from("deliverable_files")
-        .select("id, deliverable_id, storage_path, type, revision")
+        .select("id, deliverable_id, storage_path, type, revision, name")
         .eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!file) return json({ error: "file not found" }, 404);
 
@@ -462,7 +462,7 @@ Deno.serve(async (req) => {
       }
 
       return json({
-        url: await presignGet(file.storage_path, 120, { disposition: "inline", contentType: file.type || undefined }),
+        url: await presignGet(file.storage_path, 120, { disposition: "inline", contentType: file.type || undefined, filename: file.name || undefined }),
       });
     }
 
@@ -470,9 +470,9 @@ Deno.serve(async (req) => {
     if (action === "sample_url") {
       const file_id = String(body.file_id || "");
       const { data: file } = await admin.from("item_files")
-        .select("id, storage_path, is_sample").eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
+        .select("id, storage_path, is_sample, name").eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!file || !file.is_sample) return json({ error: "sample not found" }, 404);
-      return json({ url: await presignGet(file.storage_path, 120) });
+      return json({ url: await presignGet(file.storage_path, 120, { filename: file.name || undefined }) });
     }
 
     // ---- file_url: inline presigned URL to PREVIEW any file in this portal ----
@@ -480,9 +480,9 @@ Deno.serve(async (req) => {
     if (action === "file_url") {
       const file_id = String(body.file_id || "");
       const { data: file } = await admin.from("item_files")
-        .select("id, storage_path, type").eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
+        .select("id, storage_path, type, name").eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!file) return json({ error: "file not found" }, 404);
-      return json({ url: await presignGet(file.storage_path, 120, { disposition: "inline", contentType: file.type || undefined }) });
+      return json({ url: await presignGet(file.storage_path, 120, { disposition: "inline", contentType: file.type || undefined, filename: file.name || undefined }) });
     }
 
     // ---- list_comments: the conversation thread for one item ----
