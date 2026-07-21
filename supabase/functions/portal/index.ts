@@ -9,9 +9,22 @@
 //
 //  Actions (POST JSON { action, ... }):
 //    unlock        { engagement_id, code }            -> { token, expires_at }
-//    data          { token }                          -> { engagement, items }
+//    data          { token, period_id? }              -> { engagement, period_id, items }
+//    periods       { token }                          -> { periods }
 //    upload_url    { token, item_id, filename, type } -> { path, signed }
 //    confirm       { token, item_id, name, size, type, storage_path }
+//    deliverables         { token, period_id? }       -> { deliverables }
+//    deliverable_file_url { token, file_id }          -> { url }
+//    ack_deliverable      { token, deliverable_id }
+//
+//  Periods: a portal now spans many monthly periods (an annual audit portal
+//  is simply one). `data`/`upload_url`/`confirm` all resolve/respect a
+//  period; see supabase/migrations/20260720120000_periods.sql.
+//
+//  Deliverables: firm -> client OUTPUT files (filed returns, statements,
+//  receipts). A `draft` deliverable is the firm's work-in-progress and must
+//  NEVER be visible to a client — every deliverable-reading action below
+//  filters it out unconditionally. See 20260720120100_deliverables.sql.
 // =====================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { presignGet, presignPut, deleteObjects, headObject } from "../_shared/r2.ts";
@@ -204,13 +217,41 @@ Deno.serve(async (req) => {
     const engagement_id = await resolveEngagement(session, body);
     if (!engagement_id) return json({ error: "forbidden" }, 403);
 
-    // ---- data: return this portal's items + files only ----
+    // ---- data: return this portal's items + files, scoped to ONE period ----
+    // An annual audit portal has exactly one period, so this keeps behaving
+    // exactly as before for it. A monthly portal has many; the client picks
+    // one via the `periods` action and passes it back here.
     if (action === "data") {
       const { data: eng } = await admin.from("engagements")
-        .select("id, client, template, period_end, expires_at").eq("id", engagement_id).maybeSingle();
-      const { data: items } = await admin.from("request_items")
+        .select("id, client, template, period_end, expires_at, cadence").eq("id", engagement_id).maybeSingle();
+
+      const { data: periodRows } = await admin.from("periods")
+        .select("id, period_key, status").eq("engagement_id", engagement_id).order("sort");
+      const periods = periodRows ?? [];
+
+      // A body-supplied period_id must belong to THIS engagement's own period
+      // list — never trust it outright, same rule as every file_id/item_id
+      // lookup below. If it's missing or doesn't resolve, default to the
+      // newest OPEN period, falling back to the newest period overall (e.g.
+      // every period has since been closed).
+      const requested = String(body.period_id || "");
+      let period = periods.find((p: any) => p.id === requested);
+      if (!period) {
+        const bySort = [...periods].sort((a: any, b: any) => (a.period_key < b.period_key ? 1 : -1));
+        period = bySort.find((p: any) => p.status === "open") || bySort[0];
+      }
+      const period_id = period?.id || null;
+
+      let itemsQuery = admin.from("request_items")
         .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(id, name, size, type, storage_path, uploaded_at, rejected, is_sample), item_comments(count)")
-        .eq("engagement_id", engagement_id).order("sort");
+        .eq("engagement_id", engagement_id)
+        .order("sort");
+      // Defensive only: a portal created before the periods migration ran its
+      // backfill (or with the backfill somehow skipped) has no periods yet —
+      // fall back to the pre-periods behaviour of returning every item.
+      if (period_id) itemsQuery = itemsQuery.eq("period_id", period_id);
+      const { data: items } = await itemsQuery;
+
       // Latest FIRM comment per item → lets the client show an unread-comment card.
       const { data: fc } = await admin.from("item_comments")
         .select("item_id, created_at").eq("engagement_id", engagement_id).eq("by", "Firm");
@@ -219,7 +260,15 @@ Deno.serve(async (req) => {
         if (!lastFirm[c.item_id] || c.created_at > lastFirm[c.item_id]) lastFirm[c.item_id] = c.created_at;
       });
       const withMeta = (items ?? []).map((it: any) => ({ ...it, last_firm_comment_at: lastFirm[it.id] || null }));
-      return json({ engagement: eng, items: withMeta });
+      return json({ engagement: eng, period_id, items: withMeta });
+    }
+
+    // ---- periods: list this portal's periods (so the client can switch months) ----
+    if (action === "periods") {
+      const { data: periods } = await admin.from("periods")
+        .select("id, period_key, label, period_end, due_date, status, closed_at, sort")
+        .eq("engagement_id", engagement_id).order("sort");
+      return json({ periods: periods ?? [] });
     }
 
     // ---- upload_url: signed URL so the client can upload one file ----
@@ -228,9 +277,19 @@ Deno.serve(async (req) => {
       const filename = String(body.filename || "file").replace(/[^\w.\-]/g, "_");
       const size = Number(body.size || 0);
       const { data: item } = await admin.from("request_items")
-        .select("id, status").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
+        .select("id, status, period_id").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!item) return json({ error: "item not in this portal" }, 403);
       if (item.status === "accepted") return json({ error: "รายการนี้ตรวจรับแล้ว อัปโหลดเพิ่มไม่ได้" }, 409);
+      // A closed period is read-only for the client — checked next to the
+      // "already accepted" guard above since both are the same kind of
+      // "this item can no longer be touched" gate, just at different scopes
+      // (item vs. whole month). Items with no period (pre-migration/ad-hoc)
+      // skip this check entirely.
+      if (item.period_id) {
+        const { data: period } = await admin.from("periods")
+          .select("status").eq("id", item.period_id).eq("engagement_id", engagement_id).maybeSingle();
+        if (period?.status === "closed") return json({ error: "งวดนี้ปิดแล้ว อัปโหลดเพิ่มเติมไม่ได้" }, 409);
+      }
       if (!Number.isFinite(size) || size < 0) return json({ error: "ขนาดไฟล์ไม่ถูกต้อง" }, 400);
       if (!isAllowedUploadName(filename)) return json({ error: "ชนิดไฟล์นี้ไม่รองรับ" }, 415);
       if (size > MAX_FILE_BYTES) return json({ error: "ไฟล์ใหญ่เกิน 50 MB" }, 413);
@@ -248,9 +307,17 @@ Deno.serve(async (req) => {
       const item_id = String(body.item_id || "");
       const storage_path = String(body.storage_path || "");
       const { data: item } = await admin.from("request_items")
-        .select("id, status").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
+        .select("id, status, period_id").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!item) return json({ error: "item not in this portal" }, 403);
       if (item.status === "accepted") return json({ error: "รายการนี้ตรวจรับแล้ว" }, 409);
+      // Same closed-period gate as upload_url — a period can close between a
+      // client minting the signed PUT URL and calling confirm, so this must
+      // be re-checked here too, not just at upload_url.
+      if (item.period_id) {
+        const { data: period } = await admin.from("periods")
+          .select("status").eq("id", item.period_id).eq("engagement_id", engagement_id).maybeSingle();
+        if (period?.status === "closed") return json({ error: "งวดนี้ปิดแล้ว อัปโหลดเพิ่มเติมไม่ได้" }, 409);
+      }
       // The path must live inside THIS item's folder — never trust a client path elsewhere.
       if (!storage_path.startsWith(`${engagement_id}/${item_id}/`)) return json({ error: "invalid path" }, 400);
       if (!isAllowedUploadName(storage_path)) return json({ error: "ชนิดไฟล์นี้ไม่รองรับ" }, 415);
@@ -315,6 +382,54 @@ Deno.serve(async (req) => {
       } catch (_) { /* never block the upload on a notification */ }
 
       return json({ ok: true });
+    }
+
+    // ---- deliverables: this portal's firm -> client outputs, optionally by period ----
+    // `draft` is the firm still assembling the deliverable — work in progress
+    // the client must never see. Filtered out unconditionally below, no matter
+    // what period_id was asked for; this is the one guarantee this action
+    // exists to protect (see 20260720120100_deliverables.sql's header).
+    if (action === "deliverables") {
+      const period_id = body.period_id ? String(body.period_id) : null;
+      const { data: rows } = await admin.from("deliverables")
+        .select(
+          "id, period_id, category, title, note, status, due_date, delivered_at, viewed_at, acknowledged_at, retain_until, sort, deliverable_files(id, name, size, type, uploaded_at)",
+        )
+        .eq("engagement_id", engagement_id)
+        .order("sort");
+      const deliverables = (rows ?? [])
+        .filter((d: any) => d.status !== "draft")
+        .filter((d: any) => !period_id || d.period_id === period_id);
+      return json({ deliverables });
+    }
+
+    // ---- deliverable_file_url: inline presigned GET for one deliverable file ----
+    // Scoped by the resolved engagement, exactly like `file_url` below. This is
+    // also where `viewed_at` gets stamped: fetching the file is the first
+    // moment we can prove the client actually looked at it. Set once, never
+    // overwritten — it's evidence, and the FIRST view is the fact that matters.
+    if (action === "deliverable_file_url") {
+      const file_id = String(body.file_id || "");
+      const { data: file } = await admin.from("deliverable_files")
+        .select("id, deliverable_id, storage_path, type")
+        .eq("id", file_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!file) return json({ error: "file not found" }, 404);
+
+      // A draft's files must stay invisible even if a file_id somehow leaked
+      // (e.g. a stale/bookmarked link) — same guarantee as the list above.
+      const { data: deliverable } = await admin.from("deliverables")
+        .select("id, status, viewed_at").eq("id", file.deliverable_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!deliverable || deliverable.status === "draft") return json({ error: "file not found" }, 404);
+
+      if (!deliverable.viewed_at) {
+        await admin.from("deliverables")
+          .update({ viewed_at: new Date().toISOString() })
+          .eq("id", deliverable.id).eq("engagement_id", engagement_id);
+      }
+
+      return json({
+        url: await presignGet(file.storage_path, 120, { disposition: "inline", contentType: file.type || undefined }),
+      });
     }
 
     // ---- sample_url: signed URL for a firm-provided sample file in this portal ----
@@ -399,6 +514,28 @@ Deno.serve(async (req) => {
         .select("id", { count: "exact", head: true }).eq("item_id", item_id).eq("is_sample", false);
       if (!count) await admin.from("request_items").update({ status: "outstanding" }).eq("id", item_id);
       await admin.from("item_history").insert({ item_id, by: "Client", action: "Removed a file" });
+      return json({ ok: true });
+    }
+
+    // ---- ack_deliverable: client confirms receipt ----
+    // Idempotent (re-acking a already-acknowledged deliverable is a no-op, so
+    // a retried request never clobbers the original acknowledged_at — that
+    // timestamp is evidence). Refuses a draft outright: there is nothing to
+    // acknowledge if the firm hasn't released it yet, and a client should
+    // never even be able to name a draft's id (it's excluded from `deliverables`),
+    // but this is checked again here in case an id leaked some other way.
+    if (action === "ack_deliverable") {
+      const deliverable_id = String(body.deliverable_id || "");
+      const { data: deliverable } = await admin.from("deliverables")
+        .select("id, status").eq("id", deliverable_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!deliverable) return json({ error: "deliverable not found" }, 404);
+      if (deliverable.status === "draft") return json({ error: "ยังไม่มีการส่งรายการนี้ให้ลูกค้า ตรวจรับไม่ได้" }, 409);
+      if (deliverable.status === "acknowledged") return json({ ok: true }); // already acked
+
+      const { error } = await admin.from("deliverables")
+        .update({ status: "acknowledged", acknowledged_at: new Date().toISOString() })
+        .eq("id", deliverable_id).eq("engagement_id", engagement_id);
+      if (error) throw error;
       return json({ ok: true });
     }
 

@@ -3,12 +3,19 @@
 //  Deploy WITH jwt verification (only signed-in firm staff).
 //
 //  Actions (POST JSON, firm JWT in Authorization):
-//    download { storage_path }                       -> { url }      (presigned GET)
-//    upload   { engagement_id, item_id, filename, type } -> { path, put_url }
-//    delete   { storage_paths: [...] }               -> { ok }
+//    download           { storage_path }                       -> { url }      (presigned GET)
+//    upload             { engagement_id, item_id, filename, type } -> { path, put_url }
+//    upload_deliverable { engagement_id, deliverable_id, filename, type } -> { path, put_url }
+//    delete             { storage_paths: [...] }               -> { ok }
 //
 //  Every op is authorized against portal_members (the caller must belong to
 //  the portal that owns the folder = storage_path's first segment).
+//
+//  `delete` already covers deliverable files too — it authorizes purely off
+//  storage_path's first segment (engOf), and a deliverable file's path is
+//  `{engagement_id}/deliverables/{deliverable_id}/{filename}` (see
+//  20260720120100_deliverables.sql), so the leading segment is still the
+//  engagement id. No separate delete_deliverable action needed.
 // =====================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { presignGet, presignPut, deleteObjects, bucketUsage } from "../_shared/r2.ts";
@@ -70,6 +77,22 @@ Deno.serve(async (req) => {
         .select("id").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!item) return json({ error: "item not in this portal" }, 403);
       const path = `${engagement_id}/${item_id}/sample_${Date.now()}_${filename}`;
+      return json({ path, put_url: await presignPut(path) });
+    }
+
+    if (action === "upload_deliverable") {
+      const engagement_id = String(body.engagement_id || "");
+      const deliverable_id = String(body.deliverable_id || "");
+      const filename = String(body.filename || "file").replace(/[^\w.\-]/g, "_");
+      if (!(await isMember(user.id, engagement_id))) return json({ error: "forbidden" }, 403);
+      // Make sure the deliverable belongs to this portal — never trust
+      // deliverable_id alone, same rule as the `upload` action above with item_id.
+      const { data: deliverable } = await admin.from("deliverables")
+        .select("id").eq("id", deliverable_id).eq("engagement_id", engagement_id).maybeSingle();
+      if (!deliverable) return json({ error: "deliverable not in this portal" }, 403);
+      // Path convention is fixed by the deliverables migration — the leading
+      // engagement_id segment is load-bearing (RLS, isMember/engOf, purge sweep).
+      const path = `${engagement_id}/deliverables/${deliverable_id}/${Date.now()}_${filename}`;
       return json({ path, put_url: await presignPut(path) });
     }
 
