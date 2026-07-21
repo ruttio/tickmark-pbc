@@ -95,6 +95,24 @@ project credentials.
 | **Pro plan** ($25/mo) | Billing | no pausing + daily backups (matters for client docs) |
 | Tighten **CORS** to the prod origin | edit `supabase/functions/portal/index.ts` then redeploy | currently `*` |
 
+### R2 bucket CORS is a *separate* allowlist — and it is not in this repo
+
+Uploads do not go through the Edge Functions. The function only mints a
+presigned URL; the browser then PUTs the bytes **straight to R2**, so that
+request is governed by the **bucket's own CORS policy**, configured by hand in
+Cloudflare → R2 → bucket `pbc` → Settings → CORS Policy. Nothing in this
+repository can change it, and nothing here records what is in it.
+
+Every origin that uploads must be listed there, including dev ones. The
+symptom when an origin is missing is a bare **`Failed to fetch`** at the moment
+of upload — no server error, no log line anywhere, because the browser blocks
+the request before it is sent.
+
+This is why `.claude/launch.json` pins the dev server to **5173**: that port is
+in the bucket's allowlist. Moving the dev port (as commit `a748a6f` did, to
+5199) silently breaks every upload until the new origin is added in Cloudflare.
+Change the port only together with the bucket policy.
+
 To lock CORS down later, change `Access-Control-Allow-Origin` in the functions
 to `https://www.tickmark-pbc.com` and redeploy all functions:
 ```bash

@@ -45,11 +45,15 @@ const STATUS_ORDER = ["outstanding", "submitted", "review", "accepted", "returne
 /* ---------- Deliverables (firm -> client output) ------------------------ */
 const DELIVERABLE_CATS = ["ภาษี", "บัญชี", "ประกันสังคม", "อื่นๆ"];
 const DELIVERABLE_STATUS = {
-  draft:        { label: "ร่าง",         tone: "slate" },
-  delivered:    { label: "ส่งแล้ว",       tone: "info"  },
-  acknowledged: { label: "รับทราบแล้ว",   tone: "mint"  },
+  draft:              { label: "ร่าง",           tone: "slate" },
+  delivered:          { label: "ส่งแล้ว",         tone: "info"  },
+  acknowledged:       { label: "รับทราบแล้ว",     tone: "mint"  },
+  // The client pushed back on the revision they were just sent — the single
+  // most actionable state on this screen, so it gets the same "red" tone the
+  // overdue tags use elsewhere.
+  revision_requested: { label: "ลูกค้าขอแก้ไข",   tone: "red"   },
 };
-const DELIVERABLE_DOT = { draft: "#64748B", delivered: "#3B82F6", acknowledged: "#12B39A" };
+const DELIVERABLE_DOT = { draft: "#64748B", delivered: "#3B82F6", acknowledged: "#12B39A", revision_requested: "#EF4444" };
 
 /* ---------- PBC template libraries (the "PBC function") ----------------- */
 const TEMPLATES = [
@@ -1230,9 +1234,17 @@ export default function App() {
                                     <span className="f">{d.files.length} ไฟล์</span>
                                     {d.dueDate && <span className="due">กำหนด {fmtDate(d.dueDate)}</span>}
                                     {d.status !== "draft" && (
-                                      <DeliveryTrail compact deliveredAt={d.deliveredAt} viewedAt={d.viewedAt} acknowledgedAt={d.acknowledgedAt} />
+                                      <DeliveryTrail compact deliveredAt={d.deliveredAt} viewedAt={d.viewedAt}
+                                        acknowledgedAt={d.acknowledgedAt} revision={d.revision} status={d.status} />
                                     )}
                                   </div>
+                                  {/* The single most actionable state on this screen — visible from the
+                                      list itself, reason shown verbatim, no need to open the drawer. */}
+                                  {d.status === "revision_requested" && (
+                                    <div className="nv-cnote rust" style={{ marginTop: 6 }}>
+                                      <b>ลูกค้าขอแก้ไข:</b> {d.revisionNote || "(ลูกค้าไม่ได้ระบุเหตุผล)"}
+                                    </div>
+                                  )}
                                 </div>
                                 <span className={`nv-st ${st.tone}`}>{st.label}</span>
                                 <span className="nv-doc-chev">›</span>
@@ -1269,7 +1281,9 @@ export default function App() {
           onClose={() => setOpenDeliverable(null)}
           onUpdate={updateDeliverable} onUpload={uploadDeliverableFiles} onRemoveFile={removeDeliverableFile}
           onDeliver={deliverDeliverable} onDelete={deleteDeliverable} onDownload={downloadDeliverableFile}
-          onPreviewUrl={(f) => firmApi.signedDownloadUrl(f.storagePath, { inline: true, contentType: f.type })} />
+          onPreviewUrl={(f) => firmApi.signedDownloadUrl(f.storagePath, { inline: true, contentType: f.type })}
+          onListComments={(id) => firmApi.listDeliverableComments(id)}
+          onAddComment={(id, body) => firmApi.addDeliverableComment(id, eng.id, body)} />
       )}
 
       {/* Modals */}
@@ -1656,17 +1670,31 @@ function PeriodSwitcher({ periods, periodId, busy, onSwitch, onOpenNext, onSetSt
 // need to be legible without opening the drawer — `compact` renders just the
 // three dots (used on the list row); the full form (used in the drawer) adds
 // the label and timestamp for whichever steps have actually happened.
-function DeliveryTrail({ deliveredAt, viewedAt, acknowledgedAt, compact }) {
+// revision/status let this read correctly past the first delivery: the trail
+// only ever describes the CURRENT revision (viewedAt/acknowledgedAt are reset
+// on every re-release, per deliver_deliverable), so a rev-2+ delivery shows a
+// "รุ่นที่ N" badge rather than implying the whole history was one delivery.
+// When the client has asked for a fix, the third step reads as that request
+// instead of a (false) acknowledgement — acknowledged_at is null in that case.
+function DeliveryTrail({ deliveredAt, viewedAt, acknowledgedAt, revision = 1, status, compact }) {
+  const revisionRequested = status === "revision_requested";
   const steps = [
     { key: "delivered", label: "ส่งแล้ว", at: deliveredAt },
     { key: "viewed", label: "ลูกค้าเปิดดูแล้ว", at: viewedAt },
-    { key: "acknowledged", label: "ลูกค้ารับทราบแล้ว", at: acknowledgedAt },
+    revisionRequested
+      ? { key: "flag", label: "ลูกค้าขอแก้ไข", flag: true, tip: "ลูกค้าขอให้แก้ไขรุ่นนี้ — ดูเหตุผลด้านล่าง" }
+      : { key: "acknowledged", label: "ลูกค้ารับทราบแล้ว", at: acknowledgedAt },
   ];
   return (
     <div className={`nv-trail ${compact ? "sm" : ""}`} aria-label="สถานะการส่งมอบ">
+      {revision > 1 && (
+        <span className="nv-trail-rev" title={`ส่งใหม่แล้ว ${revision - 1} ครั้ง — หลักฐานนี้เป็นของรุ่นที่ ${revision} เท่านั้น ไม่ใช่ทั้งประวัติ`}>
+          รุ่นที่ {revision}
+        </span>
+      )}
       {steps.map((s) => (
-        <span key={s.key} className={`nv-trail-step ${s.at ? "on" : ""}`}
-          title={s.at ? `${s.label} · ${fmtDate(s.at)}` : `ยังไม่มีเหตุการณ์นี้`}>
+        <span key={s.key} className={`nv-trail-step ${s.at || s.flag ? "on" : ""} ${s.flag ? "flag" : ""}`}
+          title={s.flag ? s.tip : (s.at ? `${s.label} · ${fmtDate(s.at)}` : `ยังไม่มีเหตุการณ์นี้`)}>
           <span className="dot" />
           <span className="lb">{s.label}{s.at ? ` · ${fmtDate(s.at)}` : ""}</span>
         </span>
@@ -2674,7 +2702,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
 // Mirrors Drawer's slide-over shape (same .tk-scrim/.tk-drawer classes) so a
 // deliverable and a request item read as the same kind of surface, just for
 // the opposite direction of the workflow.
-function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemoveFile, onDeliver, onDelete, onDownload, onPreviewUrl }) {
+function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemoveFile, onDeliver, onDelete, onDownload, onPreviewUrl, onListComments, onAddComment }) {
   const fileRef = useRef(null);
   const [title, setTitle] = useState(d.title);
   const [category, setCategory] = useState(d.category);
@@ -2686,6 +2714,14 @@ function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemove
   const dirty = title.trim() !== d.title || category !== d.category || note !== (d.note || "")
     || (dueDate ? new Date(dueDate).getTime() : null) !== d.dueDate;
 
+  // Staged vs released: a file at revision > d.revision was attached AFTER the
+  // last release and is invisible to the client until the firm sends again.
+  // Showing these identically to released files is exactly the trap this
+  // model exists to prevent — so they get their own block, badge, and copy.
+  const isDraft = d.status === "draft";
+  const releasedFiles = d.files.filter((f) => f.revision <= d.revision);
+  const stagedFiles = d.files.filter((f) => f.revision > d.revision);
+
   const openPreview = async (f) => {
     setPreview({ file: f, url: null });
     try { setPreview({ file: f, url: await onPreviewUrl(f) }); }
@@ -2695,6 +2731,28 @@ function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemove
     title: title.trim(), category, note: note.trim(),
     dueDate: dueDate ? new Date(dueDate).getTime() : null,
   });
+
+  // Per-deliverable conversation with the client — same shape as Drawer's,
+  // reusing CommentThread rather than a second thread implementation.
+  const [comments, setComments] = useState([]);
+  const [loadingC, setLoadingC] = useState(false);
+  const [sendingC, setSendingC] = useState(false);
+  const [commentErr, setCommentErr] = useState("");
+  useEffect(() => {
+    if (!onListComments) return;
+    let live = true;
+    setLoadingC(true);
+    onListComments(d.id).then((c) => { if (live) setComments(c); }).catch(() => {}).finally(() => { if (live) setLoadingC(false); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [d.id]);
+  const sendComment = async (body) => {
+    setSendingC(true);
+    setCommentErr("");
+    try { await onAddComment(d.id, body); setComments(await onListComments(d.id)); }
+    catch (e) { setCommentErr(e?.message || "ส่งความคิดเห็นไม่สำเร็จ"); }
+    finally { setSendingC(false); }
+  };
 
   return (
     <>
@@ -2707,6 +2765,13 @@ function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemove
         <p className="tk-drawer-meta" style={{ marginTop: -6 }}>
           {periodLabel ? <>งวด <b>{periodLabel}</b></> : "ไม่ผูกกับงวด (เอกสารเดี่ยว)"}
         </p>
+
+        {/* The single most actionable state on this screen: the client asked
+            for a fix. Their reason shown verbatim, exactly like Drawer shows
+            a firm's return-reason to the client on the other side. */}
+        {d.status === "revision_requested" && (
+          <div className="tk-callout rust"><b>ลูกค้าขอให้แก้ไข:</b> {d.revisionNote || "(ลูกค้าไม่ได้ระบุเหตุผล)"}</div>
+        )}
 
         {/* Details */}
         <div className="tk-block">
@@ -2728,12 +2793,16 @@ function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemove
           </button>
         </div>
 
-        {/* Files */}
+        {/* Released files — what the client can see and download right now. */}
         <div className="tk-block">
-          <p className="tk-block-h">ไฟล์แนบ · ลูกค้าดาวน์โหลดได้เมื่อส่งแล้ว</p>
-          {d.files.length === 0 && <p className="tk-muted">ยังไม่มีไฟล์ — ต้องแนบอย่างน้อย 1 ไฟล์ก่อนจึงจะส่งให้ลูกค้าได้</p>}
+          <p className="tk-block-h">
+            {isDraft ? "ไฟล์แนบ · ลูกค้าดาวน์โหลดได้เมื่อส่งแล้ว" : `ไฟล์ที่ส่งให้ลูกค้าแล้ว · รุ่นที่ ${d.revision}`}
+          </p>
+          {releasedFiles.length === 0 && (
+            <p className="tk-muted">{isDraft ? "ยังไม่มีไฟล์ — ต้องแนบอย่างน้อย 1 ไฟล์ก่อนจึงจะส่งให้ลูกค้าได้" : "ไม่มีไฟล์ในรุ่นที่ส่งแล้ว"}</p>
+          )}
           <ul className="tk-filelist">
-            {d.files.map((f) => (
+            {releasedFiles.map((f) => (
               <li key={f.id}>
                 <span className="tk-fileicon"><Icon name="doc" size={16} /></span>
                 <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
@@ -2743,25 +2812,72 @@ function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemove
               </li>
             ))}
           </ul>
-          <input ref={fileRef} type="file" multiple style={{ display: "none" }}
-            onChange={(e) => { if (e.target.files.length) onUpload(d.id, e.target.files); e.target.value = ""; }} />
-          <button className="tk-btn full" disabled={busy} onClick={() => fileRef.current?.click()}>↑ แนบไฟล์</button>
+          {isDraft && (
+            <>
+              <input ref={fileRef} type="file" multiple style={{ display: "none" }}
+                onChange={(e) => { if (e.target.files.length) onUpload(d.id, e.target.files); e.target.value = ""; }} />
+              <button className="tk-btn full" disabled={busy} onClick={() => fileRef.current?.click()}>↑ แนบไฟล์</button>
+            </>
+          )}
         </div>
+
+        {/* Staged files — attached AFTER the last release. NOT visible to the
+            client until the firm sends again; a distinct block + amber tint
+            + per-file badge so staff can never mistake this for "already sent". */}
+        {!isDraft && (
+          <div className={`tk-block${stagedFiles.length ? " staged" : ""}`}>
+            <p className="tk-block-h">
+              {stagedFiles.length > 0 ? `ไฟล์ใหม่ — ยังไม่ส่ง (จะเป็นรุ่นที่ ${d.revision + 1})` : "แนบไฟล์ใหม่สำหรับรุ่นถัดไป"}
+            </p>
+            {stagedFiles.length > 0 ? (
+              <p className="nv-staged-note">ลูกค้ายังไม่เห็นไฟล์เหล่านี้ — กด &quot;ส่งรุ่นที่ {d.revision + 1}&quot; ด้านล่างเพื่อเผยแพร่ให้ลูกค้า</p>
+            ) : (
+              <p className="tk-muted">แนบไฟล์ที่นี่เพื่อเตรียมรุ่นถัดไป — ลูกค้าจะไม่เห็นจนกว่าจะกดส่งอีกครั้ง</p>
+            )}
+            <ul className="tk-filelist">
+              {stagedFiles.map((f) => (
+                <li key={f.id}>
+                  <span className="tk-fileicon"><Icon name="doc" size={16} /></span>
+                  <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
+                  <span className="nv-file-staged-badge">ยังไม่ส่ง</span>
+                  {isPreviewable(f) && <button className="tk-x" onClick={() => openPreview(f)}>ดู</button>}
+                  <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>download</button>
+                  <button className="tk-x" disabled={busy} onClick={() => onRemoveFile(f)}>remove</button>
+                </li>
+              ))}
+            </ul>
+            <input ref={fileRef} type="file" multiple style={{ display: "none" }}
+              onChange={(e) => { if (e.target.files.length) onUpload(d.id, e.target.files); e.target.value = ""; }} />
+            <button className="tk-btn full" disabled={busy} onClick={() => fileRef.current?.click()}>
+              ↑ แนบไฟล์{stagedFiles.length > 0 ? "เพิ่ม" : ""}
+            </button>
+          </div>
+        )}
 
         {/* Delivery evidence */}
         {d.status !== "draft" && (
           <div className="tk-block">
             <p className="tk-block-h">หลักฐานการส่งมอบ</p>
-            <DeliveryTrail deliveredAt={d.deliveredAt} viewedAt={d.viewedAt} acknowledgedAt={d.acknowledgedAt} />
+            <DeliveryTrail deliveredAt={d.deliveredAt} viewedAt={d.viewedAt} acknowledgedAt={d.acknowledgedAt}
+              revision={d.revision} status={d.status} />
+          </div>
+        )}
+
+        {/* Per-deliverable conversation with the client */}
+        {onListComments && (
+          <div className="tk-block">
+            <p className="tk-block-h"><Icon name="chat" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />การสนทนา · ลูกค้าเห็นได้</p>
+            <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Firm" />
+            {commentErr && <p className="tk-muted" style={{ color: "#EF4444", marginTop: 6 }}>{commentErr}</p>}
           </div>
         )}
 
         {/* Release / delete */}
         <div className="tk-block">
-          {d.status === "draft" ? (
+          {isDraft ? (
             <>
-              <button className="tk-btn primary full" disabled={busy || d.files.length === 0}
-                title={d.files.length === 0 ? "แนบไฟล์อย่างน้อย 1 ไฟล์ก่อนส่ง" : undefined}
+              <button className="tk-btn primary full" disabled={busy || releasedFiles.length === 0}
+                title={releasedFiles.length === 0 ? "แนบไฟล์อย่างน้อย 1 ไฟล์ก่อนส่ง" : undefined}
                 onClick={() => {
                   if (confirm(`ส่ง "${d.title}" ให้ลูกค้า?\n\nลูกค้าจะเห็นและดาวน์โหลดได้ทันที — ยกเลิกไม่ได้`)) onDeliver(d.id);
                 }}>
@@ -2773,9 +2889,23 @@ function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemove
               </button>
             </>
           ) : (
-            <p className="tk-muted" style={{ margin: 0 }}>
-              ส่งให้ลูกค้าแล้วเมื่อ {fmtDate(d.deliveredAt)} — แก้ไขไฟล์/รายละเอียดยังทำได้ แต่ลูกค้าจะเห็นการเปลี่ยนแปลงทันที
-            </p>
+            <>
+              <button className="tk-btn primary full" disabled={busy || stagedFiles.length === 0}
+                title={stagedFiles.length === 0 ? "แนบไฟล์ใหม่ก่อนจึงจะส่งรุ่นถัดไปได้" : undefined}
+                onClick={() => {
+                  if (confirm(
+                    `ส่งรุ่นที่ ${d.revision + 1} ของ "${d.title}" ให้ลูกค้า?\n\n` +
+                    `ไฟล์ใหม่ ${stagedFiles.length} รายการจะแทนที่สิ่งที่ลูกค้าเห็นอยู่ตอนนี้ทันที ` +
+                    `และล้างสถานะ "เปิดดูแล้ว/รับทราบแล้ว" ของรุ่นก่อนหน้า — ลูกค้าต้องเปิดดูและรับทราบรุ่นใหม่นี้อีกครั้ง`
+                  )) onDeliver(d.id);
+                }}>
+                <Icon name="send" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />
+                ส่งรุ่นที่ {d.revision + 1}{stagedFiles.length > 0 ? ` (${stagedFiles.length} ไฟล์ใหม่)` : ""}
+              </button>
+              <p className="tk-muted" style={{ margin: "8px 0 0" }}>
+                ส่งล่าสุดเมื่อ {fmtDate(d.deliveredAt)} (รุ่นที่ {d.revision}) — แก้ไขรายละเอียดยังทำได้ แต่ลูกค้าจะเห็นการเปลี่ยนแปลงทันที
+              </p>
+            </>
           )}
         </div>
       </aside>

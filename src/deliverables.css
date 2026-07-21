@@ -33,16 +33,26 @@
 .dv-closed-note .ic{flex:none;margin-top:1px;color:#64748B}
 .dv-closed-inline{margin-top:8px;font:400 12px/1.5 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;background:rgba(100,116,139,.07);border-radius:8px;padding:8px 10px}
 
-/* ---- deliverable rows: three states share the .nv-crow shape, differing
+/* ---- deliverable rows: four states share the .nv-crow shape, differing
    only in the left-accent + emphasis, mirroring how .nv-crow already marks
-   accepted (mint) / overdue (red) requests. ---- */
+   accepted (mint) / overdue (red) requests. "requested" (client asked for a
+   fix, waiting on the firm) gets the same amber accent as "wait" (client
+   hasn't confirmed receipt yet) — the two are told apart by copy and by
+   whether any action control renders at all, not by color, per DESIGN.md's
+   "copy never relies on color alone" rule. Its slightly reduced opacity
+   (like "done") is the calm-not-urgent cue: nothing here needs the client's
+   eye the way "wait" (full weight, has buttons) does. ---- */
 .dv-drow.new{border-left-color:#3B82F6;background:rgba(59,130,246,.035)}
 .dv-drow.new .nv-crow-name{font-weight:700}
 .dv-drow.wait{border-left-color:#F59E0B}
+.dv-drow.requested{border-left-color:#F59E0B;opacity:.92}
 .dv-drow.done{opacity:.85}
 .dv-new{display:inline-flex;align-items:center;font:700 10px 'Inter','IBM Plex Sans Thai',sans-serif;color:#fff;background:#3B82F6;padding:2px 7px;border-radius:10px;margin-left:8px;vertical-align:2px}
 .dv-cat{font:600 10.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
 .dv-meta{font:400 11px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
+/* the revision-request reassurance line, nested inside the reused
+   .nv-cnote.note box that reflects the client's own text back to them */
+.dv-revnote-sub{margin-top:6px;font:400 11.5px/1.5 'Inter','IBM Plex Sans Thai',sans-serif;color:#8a5a16;opacity:.85}
 
 /* ---- acknowledge: a deliberate two-step confirm, never a single click,
    because it is a meaningful (and irreversible) confirmation in a tax

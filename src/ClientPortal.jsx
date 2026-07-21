@@ -233,6 +233,18 @@ function SinglePortal({ engagementId }) {
     setDeliverables((ds) => ds.map((d) => (d.id === deliverableId ? { ...d, status: "acknowledged", acknowledgedAt: Date.now() } : d)));
   }
 
+  // The client's "this isn't right" verb — mirrors the firm's returnItem for
+  // request items. Server clears acknowledged_at too (asking for a fix
+  // withdraws any prior ack of this revision); mirror that locally as well
+  // so the row can't show both "acknowledged" and "revision requested" at
+  // once even for the instant before the next refresh.
+  async function requestRevision(deliverableId, note) {
+    await clientApi.requestDeliverableRevision(token, deliverableId, engagementId, note);
+    setDeliverables((ds) => ds.map((d) => (d.id === deliverableId
+      ? { ...d, status: "revision_requested", revisionNote: note, acknowledgedAt: null }
+      : d)));
+  }
+
   /* ---- render ---- */
   if (phase === "nolink")
     return (
@@ -282,6 +294,7 @@ function SinglePortal({ engagementId }) {
         deliverables={deliverables}
         onDeliverableOpened={markDeliverableOpened}
         onAck={ackDeliverable}
+        onRequestRevision={requestRevision}
       />
     </Shell>
   );
@@ -441,7 +454,7 @@ function MultiFilter({ label, placeholder, options, selected, onChange }) {
 function ClientList({
   phase, eng, items, loadErr, token, engagementId, onUploaded,
   periods, activePeriodId, onPeriodChange,
-  deliverables, onDeliverableOpened, onAck,
+  deliverables, onDeliverableOpened, onAck, onRequestRevision,
 }) {
   // Which of the two segment views is showing. Local (not lifted) — nothing
   // outside this component needs to know, and it's fine for it to reset to
@@ -516,8 +529,16 @@ function ClientList({
   // "Unopened" = the client hasn't looked at a single file in it yet — the
   // literal reading of "unopened" for the segment-toggle badge, distinct
   // from "not yet acknowledged" (a deliverable can be opened but still
-  // awaiting the confirm step).
-  const unopenedCount = useMemo(() => deliverables.filter((d) => !d.viewedAt).length, [deliverables]);
+  // awaiting the confirm step). Gated on status === 'delivered' (not just
+  // !viewedAt) so a 'revision_requested' deliverable never counts here: a
+  // client can ask for a fix without having opened a file first (viewedAt
+  // stays null), and the whole point of that status is "the ball is in the
+  // firm's court" — badging it as something the client still owes would say
+  // the opposite of what's true and undo the calm the status is meant to
+  // convey. 'acknowledged' is excluded the same way (its viewedAt is set);
+  // when a new revision lands, both viewedAt and status reset, so it becomes
+  // unopened again exactly as it should.
+  const unopenedCount = useMemo(() => deliverables.filter((d) => d.status === "delivered" && !d.viewedAt).length, [deliverables]);
 
   if (phase === "loading" && !eng)
     return <div className="nv-page"><div className="tk-boot" style={{ color: "#64748B" }}>กำลังโหลดรายการเอกสาร…</div></div>;
@@ -570,7 +591,7 @@ function ClientList({
       )}
 
       {view === "deliverables" && monthly ? (
-        <DeliverablesList deliverables={deliverables} token={token} engagementId={engagementId} onOpened={onDeliverableOpened} onAck={onAck} />
+        <DeliverablesList deliverables={deliverables} token={token} engagementId={engagementId} onOpened={onDeliverableOpened} onAck={onAck} onRequestRevision={onRequestRevision} />
       ) : items.length === 0 ? (
         <div className="nv-list"><div style={{ padding: "40px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ยังไม่มีรายการเอกสารในพอร์ทัลนี้</div></div>
       ) : (
@@ -692,7 +713,7 @@ function PeriodSwitcher({ periods, activePeriodId, onChange }) {
 }
 
 /* ---------- deliverables view — what the firm sent back ---------------- */
-function DeliverablesList({ deliverables, token, engagementId, onOpened, onAck }) {
+function DeliverablesList({ deliverables, token, engagementId, onOpened, onAck, onRequestRevision }) {
   const grouped = useMemo(() => {
     const m = new Map();
     [...deliverables].sort((a, b) => a.sort - b.sort).forEach((d) => {
@@ -727,7 +748,7 @@ function DeliverablesList({ deliverables, token, engagementId, onOpened, onAck }
           </div>
           <div className="nv-list">
             {rows.map((d) => (
-              <DeliverableRow key={d.id} item={d} token={token} engagementId={engagementId} onOpened={onOpened} onAck={onAck} />
+              <DeliverableRow key={d.id} item={d} token={token} engagementId={engagementId} onOpened={onOpened} onAck={onAck} onRequestRevision={onRequestRevision} />
             ))}
           </div>
         </div>
@@ -737,20 +758,38 @@ function DeliverablesList({ deliverables, token, engagementId, onOpened, onAck }
   );
 }
 
-function DeliverableRow({ item, token, engagementId, onOpened, onAck }) {
+function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestRevision }) {
   const [preview, setPreview] = useState(null);
   const [err, setErr] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [requesting, setRequesting] = useState(false); // the "ขอแก้ไข" note form is open
+  const [revNote, setRevNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showC, setShowC] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [loadingC, setLoadingC] = useState(false);
+  const [sendingC, setSendingC] = useState(false);
 
-  // Three states, visually distinct: unopened (new — the whole point of
-  // this view), opened-but-not-acknowledged (waiting on the client), and
-  // acknowledged (done, quiet). Tones follow DESIGN.md's semantic map:
-  // info-blue = new information, amber = pending, mint = accepted/complete.
+  // Four states, visually distinct: unopened (new — the whole point of this
+  // view), opened-but-not-acknowledged (waiting on the CLIENT), revision
+  // requested (waiting on the FIRM — the client already acted, by asking),
+  // and acknowledged (done, quiet). Tones follow DESIGN.md's semantic map:
+  // info-blue = new information, mint = accepted/complete. "requested" gets
+  // the same amber as "wait" — this codebase already overloads amber for
+  // both "pending, it's your turn" (request items' returned/reopened) and
+  // "pending, it's THEIRS" (request items' submitted/review); the DESIGN.md
+  // rule that copy must never rely on color alone is exactly what lets that
+  // work here too. What actually keeps "requested" from reading as a
+  // client to-do is structural, not color: no action buttons render at all,
+  // just their own note read back and a quiet reassurance line below.
   const unopened = item.status === "delivered" && !item.viewedAt;
-  const stateCls = item.status === "acknowledged" ? "done" : unopened ? "new" : "wait";
+  const stateCls = item.status === "acknowledged" ? "done"
+    : item.status === "revision_requested" ? "requested"
+    : unopened ? "new" : "wait";
   const chipTone = stateCls === "done" ? "mint" : stateCls === "new" ? "info" : "amber";
-  const chipLabel = stateCls === "done" ? "✓ รับทราบแล้ว" : stateCls === "new" ? "● ยังไม่ได้เปิด" : "◐ รอการรับทราบ";
+  const chipLabel = stateCls === "done" ? "✓ รับทราบแล้ว"
+    : stateCls === "requested" ? "◐ รอสำนักงานแก้ไข"
+    : stateCls === "new" ? "● ยังไม่ได้เปิด" : "◐ รอการรับทราบ";
 
   const openFile = async (f) => {
     setErr("");
@@ -777,12 +816,55 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck }) {
     }
   };
 
+  const submitRevision = async () => {
+    const note = revNote.trim();
+    if (!note || busy) return; // API rejects an empty note — never let an empty one reach it
+    setBusy(true);
+    setErr("");
+    try {
+      await onRequestRevision(item.id, note);
+      setRequesting(false);
+      setRevNote("");
+    } catch (e) {
+      setErr(e.message || "ส่งคำขอแก้ไขไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Same shape as ClientRow's thread wiring, on deliverable_comments instead
+  // of item_comments. Unlike request items, listDeliverables doesn't return
+  // a comment count (no deliverable-side equivalent of item_comments(count)
+  // / last_firm_comment_at yet), so the toggle can't show "(n)" until it's
+  // actually been opened once this session — an API gap, not a UI choice.
+  const loadComments = async () => {
+    setLoadingC(true);
+    try { setComments(await clientApi.listDeliverableComments(token, item.id, engagementId)); }
+    catch { /* keep prior */ }
+    finally { setLoadingC(false); }
+  };
+  const toggleComments = () => {
+    const next = !showC;
+    setShowC(next);
+    if (next) loadComments();
+  };
+  const sendComment = async (body) => {
+    setSendingC(true);
+    try { await clientApi.addDeliverableComment(token, item.id, engagementId, body); await loadComments(); }
+    catch (e) { setErr(e.message || "ส่งความคิดเห็นไม่สำเร็จ"); }
+    finally { setSendingC(false); }
+  };
+
   return (
     <div className={`nv-crow dv-drow ${stateCls}`}>
       <div className="nv-crow-main">
         <div className="nv-crow-name">
           {item.title}
           {unopened && <span className="dv-new">ใหม่</span>}
+          {/* "Make the revision legible": a corrected release must say so,
+              not just silently replace the files — the client may remember
+              asking for a fix and needs to see that this is that answer. */}
+          {item.revision > 1 && <span className="dv-closedtag">ฉบับแก้ไขที่ {item.revision}</span>}
         </div>
         <div className="nv-crow-sub">
           <span className="dv-cat">{item.category}</span>
@@ -793,6 +875,17 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck }) {
         {item.note && (
           <div className="nv-cnote note">
             <b><Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />หมายเหตุจากสำนักงาน:</b> {item.note}
+          </div>
+        )}
+
+        {/* The client's own request, read back to them — so they know it
+            was received and nothing is expected of them right now. Reuses
+            the same .nv-cnote.note box request-item firm notes use, since
+            it's the same kind of thing: a quoted note attached to the row. */}
+        {item.status === "revision_requested" && (
+          <div className="nv-cnote note">
+            <b><Icon name="return" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />คุณขอให้แก้ไข:</b> {item.revisionNote}
+            <div className="dv-revnote-sub">สำนักงานได้รับคำขอแล้วและกำลังดำเนินการแก้ไข — ไม่ต้องทำอะไรเพิ่มในตอนนี้</div>
           </div>
         )}
 
@@ -810,7 +903,7 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck }) {
 
         {item.status === "acknowledged" ? (
           <div className="dv-acked"><Icon name="check" size={13} />รับทราบแล้ว · {fmtDate(item.acknowledgedAt)}</div>
-        ) : confirming ? (
+        ) : item.status === "revision_requested" ? null /* the note above says it all — no action, no button */ : confirming ? (
           // A deliberate two-step confirm, not a single click — acknowledging
           // is meaningful in a tax context and can't be undone, but the copy
           // stays plain rather than alarming.
@@ -823,9 +916,45 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck }) {
               </button>
             </div>
           </div>
+        ) : requesting ? (
+          // The note is required server-side (an empty rejection tells the
+          // firm nothing), so the form leads with a concrete prompt rather
+          // than a blank box — what a small-business owner actually has to
+          // say is usually "this number is wrong" or "this name is
+          // misspelled," so naming those examples up front makes writing a
+          // real reason the easy path instead of a hurdle to get past.
+          <div className="dv-revform">
+            <p className="lead">บอกสำนักงานว่าอยากให้แก้ไขอะไร เช่น &ldquo;ยอดในใบเสร็จไม่ตรงกับที่จ่ายจริง&rdquo; หรือ &ldquo;ชื่อ/เลขผู้เสียภาษีสะกดผิด&rdquo;</p>
+            <textarea
+              value={revNote}
+              onChange={(e) => setRevNote(e.target.value.slice(0, 2000))}
+              placeholder="พิมพ์รายละเอียดที่ต้องการให้แก้ไข…"
+              rows={3}
+              disabled={busy}
+              autoFocus
+            />
+            <div className="dv-ackbtns">
+              <button className="nv-btn" disabled={busy} onClick={() => { setRequesting(false); setRevNote(""); }}>ยกเลิก</button>
+              <button className="nv-upbtn" style={{ marginTop: 0 }} disabled={busy || !revNote.trim()} onClick={submitRevision}>
+                {busy ? "กำลังส่ง…" : "ส่งคำขอแก้ไข"}
+              </button>
+            </div>
+          </div>
         ) : (
-          <button className="dv-ackbtn" onClick={() => setConfirming(true)}>กดรับทราบ</button>
+          <div className="dv-actions">
+            <button className="dv-ackbtn" onClick={() => setConfirming(true)}>กดรับทราบ</button>
+            <button className="dv-revbtn" onClick={() => setRequesting(true)}>
+              <Icon name="return" size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />ขอแก้ไข
+            </button>
+          </div>
         )}
+
+        <div className="nv-crow-comments">
+          <button type="button" className={`nv-clink ${showC && comments.length ? "has" : ""}`} onClick={toggleComments}>
+            <Icon name="chat" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />ความคิดเห็น{showC && comments.length ? ` (${comments.length})` : ""} {showC ? "▲" : "▼"}
+          </button>
+          {showC && <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Client" />}
+        </div>
 
         {err && <p className="nv-lock-err" style={{ marginTop: 6 }}>{err}</p>}
       </div>
@@ -1197,6 +1326,12 @@ function GroupCompany({ token, engagementId, onBack }) {
     await clientApi.ackDeliverable(token, deliverableId, engagementId);
     setDeliverables((ds) => ds.map((d) => (d.id === deliverableId ? { ...d, status: "acknowledged", acknowledgedAt: Date.now() } : d)));
   }
+  async function requestRevision(deliverableId, note) {
+    await clientApi.requestDeliverableRevision(token, deliverableId, engagementId, note);
+    setDeliverables((ds) => ds.map((d) => (d.id === deliverableId
+      ? { ...d, status: "revision_requested", revisionNote: note, acknowledgedAt: null }
+      : d)));
+  }
 
   return (
     <>
@@ -1208,6 +1343,7 @@ function GroupCompany({ token, engagementId, onBack }) {
         onUploaded={() => load(activePeriodId)}
         periods={periods} activePeriodId={activePeriodId} onPeriodChange={(id) => load(id)}
         deliverables={deliverables} onDeliverableOpened={markDeliverableOpened} onAck={ackDeliverable}
+        onRequestRevision={requestRevision}
       />
     </>
   );
