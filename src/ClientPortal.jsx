@@ -769,6 +769,22 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
   const [comments, setComments] = useState([]);
   const [loadingC, setLoadingC] = useState(false);
   const [sendingC, setSendingC] = useState(false);
+  const [showOld, setShowOld] = useState(false); // superseded rounds are collapsed by default
+
+  // Files bucketed by the revision they were delivered in, newest round
+  // first. The server never sends files above the released revision, so
+  // everything here is something the client legitimately received.
+  const fileRounds = useMemo(() => {
+    const m = new Map();
+    for (const f of item.files) {
+      const rev = f.revision ?? 1;
+      if (!m.has(rev)) m.set(rev, []);
+      m.get(rev).push(f);
+    }
+    return [...m.entries()].sort((a, b) => b[0] - a[0]);
+  }, [item.files]);
+  const currentFiles = fileRounds[0]?.[1] || [];
+  const olderRounds = fileRounds.slice(1);
 
   // Four states, visually distinct: unopened (new — the whole point of this
   // view), opened-but-not-acknowledged (waiting on the CLIENT), revision
@@ -889,9 +905,18 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
           </div>
         )}
 
-        {item.files.length > 0 && (
+        {/* Only the current round is shown. A corrected filing is usually the
+            same document under the same filename, so listing every round at
+            once leaves the client scanning near-identical rows to find the one
+            that counts — the opposite of the point. Superseded rounds stay
+            reachable behind a toggle (the client may have filed something
+            against an older one) using the same disclosure the comment thread
+            below already uses, so there is one interaction to learn, not two.
+            No heading on the current round: the revision pill beside the title
+            already says which one it is. */}
+        {currentFiles.length > 0 && (
           <ul className="nv-fchips">
-            {item.files.map((f) => (
+            {currentFiles.map((f) => (
               <li key={f.id} className="nv-fchip">
                 <span className="nv-ftype">{fileExt(f.name)}</span>
                 <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
@@ -899,6 +924,29 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
               </li>
             ))}
           </ul>
+        )}
+
+        {olderRounds.length > 0 && (
+          <div className="dv-older">
+            <button type="button" className="nv-clink" onClick={() => setShowOld((o) => !o)}>
+              <Icon name="archive" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+              ฉบับก่อนหน้า ({olderRounds.reduce((n, [, fs]) => n + fs.length, 0)}) {showOld ? "▲" : "▼"}
+            </button>
+            {showOld && olderRounds.map(([rev, files]) => (
+              <div key={rev} className="dv-round old">
+                <div className="dv-round-h">{rev === 1 ? "ฉบับแรก" : `แก้ไขครั้งที่ ${rev}`}</div>
+                <ul className="nv-fchips">
+                  {files.map((f) => (
+                    <li key={f.id} className="nv-fchip">
+                      <span className="nv-ftype">{fileExt(f.name)}</span>
+                      <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
+                      <button className="nv-fx" onClick={() => openFile(f)}>{isPreviewable(f) ? "ดู" : "ดาวน์โหลด"}</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         )}
 
         {item.status === "acknowledged" ? (

@@ -64,3 +64,13 @@
 
 /* ---- "open next period" / "create deliverable" modal helper text ---- */
 .nv-period-preview{font-size:12.5px;color:var(--pine);margin:4px 0 10px}
+
+/* ---- "files attached but never sent" warning on a deliverable LIST row.
+   Lives in the list, not only the drawer: a deliverable that was prepared
+   and then left unsent is indistinguishable from a finished one at a
+   glance, so the work silently never reaches the client. Amber, not red —
+   nothing is broken, something is merely waiting on the firm. ---- */
+.nv-unsent{display:flex;align-items:flex-start;gap:7px;margin-top:6px;padding:6px 9px;
+  background:var(--amber-tint);border:1px solid rgba(245,158,11,.35);border-radius:8px;
+  font-size:12px;line-height:1.45;color:var(--ink);text-align:left}
+.nv-unsent svg{flex:none;margin-top:1px;color:var(--amber)}

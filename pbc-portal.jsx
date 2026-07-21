@@ -877,7 +877,16 @@ export default function App() {
     if (eng?.cadence !== "monthly" || !periodId) return list;
     return list.filter((d) => d.periodId === periodId || d.periodId == null);
   }, [deliverables, eng, periodId]);
-  const draftCount = useMemo(() => visibleDeliverables.filter((d) => d.status === "draft").length, [visibleDeliverables]);
+  // Everything sitting in this portal that the client cannot see yet: drafts,
+  // plus released deliverables carrying files staged for an unsent revision.
+  // Both are work the firm believes it has done and the client has not
+  // received, which is the one thing this tab's badge should be counting.
+  const pendingCount = useMemo(
+    () => visibleDeliverables.filter(
+      (d) => d.status === "draft" || d.files.some((f) => f.revision > d.revision),
+    ).length,
+    [visibleDeliverables],
+  );
   const deliverableCats = useMemo(() => {
     const arr = []; const m = new Map();
     visibleDeliverables.forEach((d) => {
@@ -1038,7 +1047,9 @@ export default function App() {
                   </button>
                   <button className={surface === "deliverables" ? "on" : ""} onClick={() => setSurface("deliverables")}>
                     งานส่งมอบ<span className="nv-seg-ct">{visibleDeliverables.length}</span>
-                    {draftCount > 0 && <span className="nv-seg-badge">{draftCount}</span>}
+                    {pendingCount > 0 && (
+                      <span className="nv-seg-badge" title="ยังไม่ได้ส่งให้ลูกค้า (ร่าง หรือมีไฟล์รุ่นใหม่ค้างอยู่)">{pendingCount}</span>
+                    )}
                   </button>
                 </div>
               </div>
@@ -1223,6 +1234,13 @@ export default function App() {
                       <div className="nv-list">
                         {list.map((d) => {
                           const st = DELIVERABLE_STATUS[d.status] || DELIVERABLE_STATUS.draft;
+                          // Files attached but never released. Invisible to the client, and
+                          // invisible here too until this was added — so a deliverable
+                          // prepared and then left unsent looked identical to a finished
+                          // one, and the work silently never arrived.
+                          const staged = d.status !== "draft"
+                            ? d.files.filter((f) => f.revision > d.revision).length
+                            : 0;
                           return (
                             <div key={d.id} className="nv-doc">
                               <span className="nv-doc-ck ph" aria-hidden="true" />
@@ -1238,6 +1256,12 @@ export default function App() {
                                         acknowledgedAt={d.acknowledgedAt} revision={d.revision} status={d.status} />
                                     )}
                                   </div>
+                                  {staged > 0 && (
+                                    <div className="nv-unsent">
+                                      <Icon name="alert" size={13} />
+                                      <span><b>{staged} ไฟล์ยังไม่ได้ส่ง</b> — ลูกค้ายังเห็นรุ่นที่ {d.revision} อยู่ · เปิดเพื่อส่งรุ่นที่ {d.revision + 1}</span>
+                                    </div>
+                                  )}
                                   {/* The single most actionable state on this screen — visible from the
                                       list itself, reason shown verbatim, no need to open the drawer. */}
                                   {d.status === "revision_requested" && (

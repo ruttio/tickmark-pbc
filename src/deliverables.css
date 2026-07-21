@@ -71,3 +71,15 @@
 .dv-empty{padding:40px 16px;text-align:center;color:#64748B;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:10px}
 .dv-empty .ic{width:44px;height:44px;border-radius:12px;background:rgba(18,179,154,.10);color:#12B39A;display:flex;align-items:center;justify-content:center}
 .dv-empty .sub{color:#94A3B8;font-size:12px}
+
+/* ---- file rounds: which delivery each file came from -------------------
+   Only the current round is listed inline; superseded rounds live behind a
+   disclosure (.dv-older) so the common case — one round, or "just give me
+   the current file" — is a plain list with nothing to interpret. Older
+   rounds stay openable once expanded, since a client may have filed
+   something against one of them. */
+.dv-older{margin-top:8px}
+.dv-round + .dv-round{margin-top:10px}
+.dv-round-h{font-size:11.5px;color:var(--secondary-ink,#64748B);margin:0 0 4px;padding-left:2px}
+.dv-round.old{opacity:.62}
+.dv-round.old .nv-fchip{background:transparent}
