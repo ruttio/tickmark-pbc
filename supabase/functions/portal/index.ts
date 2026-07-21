@@ -415,7 +415,7 @@ Deno.serve(async (req) => {
       const period_id = body.period_id ? String(body.period_id) : null;
       const { data: rows } = await admin.from("deliverables")
         .select(
-          "id, period_id, category, title, note, status, due_date, delivered_at, viewed_at, acknowledged_at, retain_until, sort, revision, revision_note, deliverable_files(id, name, size, type, uploaded_at, revision)",
+          "id, period_id, category, title, note, status, due_date, delivered_at, viewed_at, acknowledged_at, sort, revision, revision_note, deliverable_files(id, name, size, type, uploaded_at, revision)",
         )
         .eq("engagement_id", engagement_id)
         .order("sort");

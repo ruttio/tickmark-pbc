@@ -1,0 +1,22 @@
+-- =====================================================================
+--  Drop deliverables.retain_until (20260721140000).
+--
+--  It was added so filed tax returns could outlive a portal's auto-delete,
+--  on the assumption that retention meant "keep it in the cloud for years".
+--  The firm's actual practice is the opposite and cheaper: download the
+--  filed documents and archive them offline, and let the portal expire.
+--  R2's free tier is 10 GB; five years of returns for every client would
+--  never have fitted anyway.
+--
+--  Removed rather than left in place. Nothing ever read it — no purge path,
+--  no RPC, no UI — so a column named retain_until sitting in the schema
+--  reads as a guarantee that does not exist, and the next person to touch
+--  deletion would reasonably assume it was enforced. A missing safeguard is
+--  safer than a fictional one.
+--
+--  Retention now depends on the firm exporting before expiry, so that path
+--  has to actually work: the ZIP export includes deliverables, and the
+--  dashboard warns while there is still time to act.
+-- =====================================================================
+
+alter table deliverables drop column if exists retain_until;

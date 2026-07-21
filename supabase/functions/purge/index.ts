@@ -10,6 +10,10 @@
 //  items/files/history/members/sessions). If R2 deletion fails the DB rows are
 //  left alone, so the object is still reachable and the next run retries it —
 //  never the other way round, which would orphan the object forever.
+//
+//  EVERY table that stores a storage_path must be listed in PATH_TABLES below.
+//  The orphan sweep deletes any object it cannot match to a row, so a table
+//  omitted there is not a missed cleanup — it is data destruction.
 // =====================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { deleteObjects, listObjects } from "../_shared/r2.ts";
@@ -21,19 +25,43 @@ const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
+// Every table that owns R2 objects. MISSING ONE HERE IS DESTRUCTIVE: the
+// orphan sweep deletes whatever it cannot find a row for, so a table left off
+// this list has all of its files classified as garbage and erased, leaving DB
+// rows pointing at nothing. `deliverable_files` was added after this function
+// was written and was exactly that bug — the firm's filed tax returns were one
+// `orphans-apply` away from deletion.
+const PATH_TABLES = ["item_files", "deliverable_files"] as const;
+
 // Every storage_path the DB knows about, across ALL firms (service role, no RLS).
 // Anything in the bucket that is not in this set is unreferenced.
 async function knownPaths(): Promise<Set<string>> {
   const known = new Set<string>();
   const PAGE = 1000;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await admin
-      .from("item_files").select("storage_path").range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    for (const r of data || []) if (r.storage_path) known.add(r.storage_path);
-    if (!data || data.length < PAGE) break;
+  for (const table of PATH_TABLES) {
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await admin
+        .from(table).select("storage_path").range(from, from + PAGE - 1);
+      if (error) throw new Error(`${table}: ${error.message}`);
+      for (const r of data || []) if (r.storage_path) known.add(r.storage_path);
+      if (!data || data.length < PAGE) break;
+    }
   }
   return known;
+}
+
+// Every R2 object belonging to one engagement, from every owning table. Used
+// when deleting a portal: objects go before the rows, and a table missed here
+// leaks its objects into the bucket forever once the rows cascade away.
+async function engagementPaths(engagementId: string): Promise<string[]> {
+  const paths: string[] = [];
+  for (const table of PATH_TABLES) {
+    const { data, error } = await admin
+      .from(table).select("storage_path").eq("engagement_id", engagementId);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    for (const r of data || []) if (r.storage_path) paths.push(r.storage_path);
+  }
+  return paths;
 }
 
 // Objects in the bucket that no item_files row points at. Only objects older
@@ -88,9 +116,10 @@ Deno.serve(async (req) => {
     // One portal at a time: a portal whose R2 objects refuse to delete must not
     // block the others, and must keep its DB rows so the next run can retry.
     for (const id of ids) {
-      const { data: fs, error: fe } = await admin.from("item_files").select("storage_path").eq("engagement_id", id);
-      if (fe) { failed.push({ id, error: fe.message }); continue; }
-      const paths = (fs || []).map((f) => f.storage_path).filter(Boolean);
+      let paths: string[];
+      try {
+        paths = await engagementPaths(id);
+      } catch (e) { failed.push({ id, error: String((e as Error)?.message || e) }); continue; }
       try {
         if (paths.length) await deleteObjects(paths);
       } catch (e) {
