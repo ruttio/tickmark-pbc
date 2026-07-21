@@ -576,13 +576,14 @@ function itemsSection(items) {
     <h2>${SEC.items}. log รายรายการ (${items.length} รายการ) — ที่มาของค่าเฉลี่ยในหัวข้อ ${SEC.summary}</h2>
     <table>
       <thead><tr>
-        <th>ลูกค้า</th><th>รายการ</th><th>สถานะ</th><th class="n">กำหนดส่ง</th>
+        <th>ลูกค้า</th><th>งวด</th><th>รายการ</th><th>สถานะ</th><th class="n">กำหนดส่ง</th>
         <th class="n">ขอเอกสาร</th><th class="n">อัปโหลดแรก</th><th class="n">อัปโหลดล่าสุด</th><th class="n">เปิดดูครั้งแรก</th><th class="n">ตรวจรับ</th>
         ${cols.map((m) => `<th class="n">${esc(m.label.split(" · ")[0])}<br>(วัน)</th>`).join("")}
         <th class="n">ส่งก่อนกำหนด<br>(วัน)</th>
       </tr></thead>
       <tbody>${items.map((i) => `<tr>
         <td>${esc(i.client)}</td>
+        <td>${esc(i.periodLabel || "—")}</td>
         <td>${esc(i.ref ? `${i.ref} · ` : "")}${esc(i.description)}${i.archived ? ' <span class="flag">คลัง</span>' : ""}</td>
         <td>${esc(i.status)}</td>
         <td class="n">${fmtDate(i.dueDate)}</td>
@@ -595,9 +596,9 @@ function itemsSection(items) {
         <td class="n ${i.daysBeforeDue == null ? "muted" : ""}">${i.daysBeforeDue ?? "—"}</td>
       </tr>`).join("")}</tbody>
       <tfoot>
-        <tr><td colspan="9">ผลรวมของวัน (Σ) — เฉพาะรายการที่เข้าเกณฑ์</td>${sums.map((s) => `<td class="n">${num(s.sum)}</td>`).join("")}<td class="n"></td></tr>
-        <tr><td colspan="9">จำนวนรายการที่เข้าเกณฑ์ (n)</td>${sums.map((s) => `<td class="n">${s.n}</td>`).join("")}<td class="n"></td></tr>
-        <tr><td colspan="9">ค่าเฉลี่ย = Σ ÷ n</td>${sums.map((s) => `<td class="n">${s.avg ?? "—"}</td>`).join("")}<td class="n"></td></tr>
+        <tr><td colspan="10">ผลรวมของวัน (Σ) — เฉพาะรายการที่เข้าเกณฑ์</td>${sums.map((s) => `<td class="n">${num(s.sum)}</td>`).join("")}<td class="n"></td></tr>
+        <tr><td colspan="10">จำนวนรายการที่เข้าเกณฑ์ (n)</td>${sums.map((s) => `<td class="n">${s.n}</td>`).join("")}<td class="n"></td></tr>
+        <tr><td colspan="10">ค่าเฉลี่ย = Σ ÷ n</td>${sums.map((s) => `<td class="n">${s.avg ?? "—"}</td>`).join("")}<td class="n"></td></tr>
       </tfoot>
     </table>
     <p class="note">ช่อง “—” คือรายการที่ไม่เข้าเกณฑ์ของตัวเลขนั้น (ดูหัวข้อ ${SEC.method}) จึงไม่ถูกนับทั้งใน Σ และ n · ค่าในคอลัมน์วันแสดงทศนิยม 2 ตำแหน่ง แต่ Σ และค่าเฉลี่ยคำนวณจากค่าเต็มความละเอียด</p>
@@ -663,26 +664,61 @@ function timingSection(mine) {
   </section>`;
 }
 
+// Which period(s) the evidence rows actually belong to, oldest first, de-duplicated.
+// Read from the rows themselves rather than trusted blindly from the caller, so a
+// report built straight from evidence (no periodLabel passed in) still says
+// something true. `null` means an item whose period join came back empty.
+function distinctPeriodLabels(items) {
+  const seen = new Set();
+  const labels = [];
+  items.slice().sort((a, b) => (a.periodSort ?? 0) - (b.periodSort ?? 0)).forEach((i) => {
+    const l = i.periodLabel || null;
+    const key = l ?? " ";
+    if (!seen.has(key)) { seen.add(key); labels.push(l); }
+  });
+  return labels;
+}
+
+// What to print as "the period this report covers". Prefers the caller's
+// explicit choice (what was actually selected on the dashboard — e.g. "ก.ค.
+// 2569 (งวดปัจจุบัน)" or "ทุกงวด (สะสมทุกเดือน)") since that is unambiguous
+// even when the evidence set happens to be empty; falls back to reading the
+// period labels off the rows themselves otherwise.
+function periodCoverageText(items, periodLabel, labels) {
+  if (periodLabel) return periodLabel;
+  if (!labels.length) return "ไม่มีข้อมูล";
+  if (labels.length === 1) return labels[0] || "ไม่ระบุงวด";
+  return `${labels.length} งวด: ${labels.map((l) => l || "ไม่ระบุงวด").join(", ")}`;
+}
+
 // Full standalone HTML document. Pure — no window access — so tests can assert
 // on the numbers it prints.
-export function buildReportHtml({ data, evidence, scopeLabel = "ทุกลูกค้า" }) {
+export function buildReportHtml({ data, evidence, scopeLabel = "ทุกลูกค้า", periodLabel = "" }) {
   const mine = recompute(evidence);
   const items = evidence?.items || [];
   const replies = evidence?.replies || [];
   const printedAt = new Date();
+  const periodLabels = distinctPeriodLabels(items);
+  const periodText = periodCoverageText(items, periodLabel, periodLabels);
+  // A report is never wrong to span several months — "ทุกงวด" is a real,
+  // deliberate choice — but it must never look like a single month's report
+  // by accident, so this says so even when the caller picked it on purpose.
+  const spansPeriods = periodLabels.length > 1;
 
   return `<!doctype html><html lang="th"><head><meta charset="utf-8">
-<title>รายงาน Analytics — ${esc(scopeLabel)}</title><style>${CSS}</style></head><body>
+<title>รายงาน Analytics — ${esc(scopeLabel)} · ${esc(periodText)}</title><style>${CSS}</style></head><body>
 <div class="noprint"><button onclick="window.print()">พิมพ์ / บันทึกเป็น PDF</button></div>
 <h1>รายงานสถิติภาพรวม (Analytics)</h1>
 <div class="sub">พร้อมวิธีคำนวณและ log จริงที่ใช้คำนวณทุกตัวเลขในรายงานนี้</div>
 <div class="meta">
   <div><b>ขอบเขต</b>${esc(scopeLabel)}</div>
+  <div><b>งวดที่ครอบคลุม</b>${esc(periodText)}</div>
   <div><b>ออกรายงานเมื่อ</b>${fmtTs(printedAt)} (${esc(tz())})</div>
   <div><b>ข้อมูล ณ เวลา (เซิร์ฟเวอร์)</b>${fmtTs(mine.now)}</div>
   <div><b>งานในรายงาน</b>${items.length} รายการ · ${replies.length} คู่คอมเมนต์</div>
   <div><b>แหล่งข้อมูล</b>item_history · item_files · item_comments · request_items</div>
 </div>
+${spansPeriods ? `<p class="note warn"><b>ครอบคลุมหลายงวด</b> — ตัวเลขในรายงานนี้เป็นค่าเฉลี่ยรวมจาก ${periodLabels.length} งวด (${esc(periodLabels.map((l) => l || "ไม่ระบุงวด").join(", "))}) ไม่ใช่ตัวเลขของเดือนใดเดือนหนึ่งโดยเฉพาะ</p>` : ""}
 ${kpiSection(mine)}
 ${adviceSection(mine, evidence)}
 ${checkSection(reconcile(data, mine))}

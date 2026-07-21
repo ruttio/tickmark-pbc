@@ -76,15 +76,64 @@ const S = {
   rtN: { fontSize: 10.5, color: SLATE, width: 34, textAlign: "right" },
   pdfBtn: { marginLeft: "auto", font: "600 12px 'Inter','IBM Plex Sans Thai',sans-serif", border: "1px solid #E5E7EB", borderRadius: 9, padding: "7px 12px", color: "#0F172A", background: "#fff", cursor: "pointer" },
   err: { fontSize: 11.5, color: "#EF4444" },
+  // States, in one place, exactly what population every card below is drawn
+  // from — a monthly portal's numbers otherwise look identical whether they
+  // cover one month or its whole history, and that silent difference is the
+  // one thing this screen must never let happen.
+  scope: { font: "500 11px 'Inter','IBM Plex Sans Thai',sans-serif", color: SLATE, margin: "-4px 0 12px" },
 };
 
-export function Analytics({ initialData = null, engagements = [], fetchAnalytics, fetchEvidence }) {
+// The period a monthly-cadence portal is "currently on": the newest OPEN
+// period, or failing that (every month closed) the newest one overall. Same
+// rule the rest of the app uses to pick a default period (pbc-portal.jsx).
+function currentPeriodOf(periods) {
+  const open = periods.filter((p) => p.status === "open");
+  return open[open.length - 1] || periods[periods.length - 1] || null;
+}
+
+export function Analytics({ initialData = null, engagements = [], fetchAnalytics, fetchEvidence, fetchPeriods }) {
   const [client, setClient] = useState("");
+  const [periods, setPeriods] = useState([]);         // this client's periods, newest last
+  const [period, setPeriod] = useState("");           // selected period id, "" = every period
   const [mode, setMode] = useState("requested");
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState("");
+
+  const clientLabel = client ? (engagements.find((e) => e.id === client)?.client || "ลูกค้าที่เลือก") : "ทุกลูกค้า";
+  // A one-off audit portal always resolves to exactly one period, so there is
+  // nothing to switch between — the selector only earns its place once a
+  // client actually has more than one period to compare.
+  const hasPeriodChoice = periods.length > 1;
+  const selectedPeriod = period ? periods.find((p) => p.id === period) : null;
+  const current = hasPeriodChoice ? currentPeriodOf(periods) : null;
+  const periodLabel = !client
+    ? "ทุกช่วงเวลา (รวมทุกพอร์ทัล)"
+    : !hasPeriodChoice
+    ? (periods[0]?.label || "ช่วงเดียว")
+    : selectedPeriod
+    ? `${selectedPeriod.label}${selectedPeriod.id === current?.id ? " (งวดปัจจุบัน)" : ""}`
+    : "ทุกงวด (สะสมทุกเดือน)";
+  const scopeCaption = `${clientLabel} · ${periodLabel}`;
+
+  // Load this client's periods, and default straight to the current one —
+  // showing "how is this month going" rather than an all-time blend is the
+  // whole point of making analytics period-aware. "ทุกงวด" stays one click
+  // away for the "are we getting slower over the year" question.
+  useEffect(() => {
+    let live = true;
+    if (!fetchPeriods || !client) { setPeriods([]); setPeriod(""); return; }
+    fetchPeriods(client)
+      .then((list) => {
+        if (!live) return;
+        setPeriods(list || []);
+        const cur = currentPeriodOf(list || []);
+        setPeriod((list || []).length > 1 ? (cur?.id || "") : "");
+      })
+      .catch(() => { if (live) { setPeriods([]); setPeriod(""); } });
+    return () => { live = false; };
+  }, [client, fetchPeriods]);
 
   // Pull the log rows behind the numbers, then hand the report to the print
   // dialog. Fetched on demand: it is a lot of rows, and most dashboard visits
@@ -93,9 +142,8 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
     if (!fetchEvidence) return;
     setExporting(true); setExportErr("");
     try {
-      const evidence = await fetchEvidence(client || null);
-      const scope = client ? engagements.find((e) => e.id === client)?.client || "ลูกค้าที่เลือก" : "ทุกลูกค้า";
-      const ok = openReport(buildReportHtml({ data, evidence, scopeLabel: scope }));
+      const evidence = await fetchEvidence(client || null, period || null);
+      const ok = openReport(buildReportHtml({ data, evidence, scopeLabel: clientLabel, periodLabel }));
       if (!ok) setExportErr("เบราว์เซอร์บล็อกป๊อปอัป — อนุญาตป๊อปอัปของเว็บนี้แล้วลองใหม่");
     } catch {
       setExportErr("ดึง log ไม่สำเร็จ ลองใหม่อีกครั้ง");
@@ -107,13 +155,13 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
   useEffect(() => {
     if (!fetchAnalytics) return;
     let live = true; setLoading(true);
-    fetchAnalytics(client || null)
+    fetchAnalytics(client || null, period || null)
       .then((d) => { if (live) setData(d); })
       .catch(() => {})
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]);
+  }, [client, period]);
 
   const sb = data?.statusBreakdown || {};
   const sbTotal = sb.total || 0;
@@ -139,6 +187,16 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
             ))}
           </select>
         </label>
+        {hasPeriodChoice && (
+          <label style={S.tlabel}>งวด:
+            <select style={S.select} value={period} onChange={(e) => setPeriod(e.target.value)}>
+              <option value="">ทุกงวด (สะสมทุกเดือน)</option>
+              {periods.slice().reverse().map((p) => (
+                <option key={p.id} value={p.id}>{p.label}{p.id === current?.id ? " (งวดปัจจุบัน)" : ""}</option>
+              ))}
+            </select>
+          </label>
+        )}
         {loading && <span style={S.loading}>กำลังโหลด…</span>}
         {fetchEvidence && (
           <button style={S.pdfBtn} onClick={exportPdf} disabled={exporting || loading}>
@@ -147,6 +205,7 @@ export function Analytics({ initialData = null, engagements = [], fetchAnalytics
         )}
         {exportErr && <span style={S.err}>{exportErr}</span>}
       </div>
+      <div style={S.scope}>ขอบเขตข้อมูล: {scopeCaption}</div>
 
       <div style={S.grid} className="nv-analytics">
         {/* Current status pipeline */}

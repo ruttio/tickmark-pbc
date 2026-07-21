@@ -750,7 +750,7 @@ export default function App() {
   // client-submitted item_files; a deliverable's proof trail is deliveredAt/
   // viewedAt/acknowledgedAt, stamped by the client side instead).
   const downloadDeliverableFile = (f) =>
-    run(async () => { const url = await firmApi.signedDownloadUrl(f.storagePath, {}); window.open(url, "_blank"); });
+    run(async () => { const url = await firmApi.signedDownloadUrl(f.storagePath, { filename: f.name }); window.open(url, "_blank"); });
   const setCadence = (cadence) => run(() => firmApi.setCadence(eng.id, cadence), reloadDetail);
   const removeSample = (f) => run(() => firmApi.removeSample(f.id, f.storagePath), reloadDetail);
 
@@ -765,7 +765,7 @@ export default function App() {
   // Private bucket -> short-lived signed URL, opened in a new tab.
   const downloadFile = (f) =>
     run(async () => {
-      const url = await firmApi.signedDownloadUrl(f.storagePath, 60);
+      const url = await firmApi.signedDownloadUrl(f.storagePath, { filename: f.name });
       window.open(url, "_blank");
       await firmApi.markFilesDownloaded([f.id]);
       await reloadDetail();
@@ -802,7 +802,7 @@ export default function App() {
       const zip = new JSZip();
       const safe = (s) => String(s || "").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
       for (const f of files) {
-        const url = await firmApi.signedDownloadUrl(f.storagePath, 300);
+        const url = await firmApi.signedDownloadUrl(f.storagePath, { filename: f.name });
         const res = await fetch(url);
         if (!res.ok) continue;
         zip.file(`${f.folder.split("/").map(safe).join("/")}/${f.ref ? f.ref + "_" : ""}${safe(f.name)}`, await res.blob());
@@ -1968,8 +1968,9 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
           <Analytics
             initialData={analytics}
             engagements={dash || []}
-            fetchAnalytics={(id) => firmApi.getAnalytics(id)}
-            fetchEvidence={(id) => firmApi.getAnalyticsEvidence(id)}
+            fetchAnalytics={(id, periodId) => firmApi.getAnalytics(id, periodId)}
+            fetchEvidence={(id, periodId) => firmApi.getAnalyticsEvidence(id, periodId)}
+            fetchPeriods={(id) => firmApi.listPeriods(id)}
           />
         </Modal>
       )}
