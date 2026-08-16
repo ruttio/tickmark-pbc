@@ -795,6 +795,9 @@ export default function App() {
     });
   const setPeriodStatusMut = (id, status) => run(() => firmApi.setPeriodStatus(id, status), reloadDetail);
   const renamePeriod = (id, label) => run(() => firmApi.setPeriodLabel(id, label), reloadDetail);
+  // Delete a phase opened by mistake. Clear the viewed period first so the
+  // default-period effect re-resolves to a surviving one after the reload.
+  const deletePeriodMut = (id) => run(() => firmApi.deletePeriod(id), async () => { setOpenItem(null); setPeriodId(null); await reloadDetail(); });
 
   /* ---- deliverables: create, edit, attach files, release, delete ---- */
   const createDeliverable = ({ category, title, note, dueDate }) =>
@@ -1101,7 +1104,7 @@ export default function App() {
                   <span className="nv-eh-type">{eng.template}</span>
                   {isMultiPeriod(eng.cadence) && (
                     <PeriodSwitcher cadence={eng.cadence} periods={eng.periods || []} periodId={periodId} busy={busy}
-                      onSwitch={setPeriodId} onOpenNext={() => setModal("openPeriod")} onSetStatus={setPeriodStatusMut} onRename={renamePeriod} />
+                      onSwitch={setPeriodId} onOpenNext={() => setModal("openPeriod")} onSetStatus={setPeriodStatusMut} onRename={renamePeriod} onDelete={deletePeriodMut} />
                   )}
                   {/* A one-off audit stays single-period until the firm decides
                       to work it in phases (e.g. after sampling) — this is the
@@ -1752,7 +1755,7 @@ function MultiFilter({ label, placeholder, options, selected, onChange }) {
 // than inventing a second popover mechanism. Never rendered for a 'once'
 // cadence portal — the caller guards that, so this component has no
 // "annual audit" branch to keep straight.
-function PeriodSwitcher({ cadence, periods, periodId, busy, onSwitch, onOpenNext, onSetStatus, onRename }) {
+function PeriodSwitcher({ cadence, periods, periodId, busy, onSwitch, onOpenNext, onSetStatus, onRename, onDelete }) {
   const current = periods.find((p) => p.id === periodId) || periods[periods.length - 1];
   if (!current) return null;
   // Same switcher, two vocabularies: a bookkeeping "งวด" (month) vs an audit
@@ -1806,6 +1809,17 @@ function PeriodSwitcher({ cadence, periods, periodId, busy, onSwitch, onOpenNext
       ) : (
         <button className="nv-mitem" disabled={busy} onClick={() => onSetStatus(current.id, "open")}>
           <Icon name="reopen" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />{W.reopen}
+        </button>
+      )}
+      {/* Delete a phase created by mistake. Only for phases, and never the last
+          one — a portal must keep at least one period (the server enforces this
+          too). Destructive: it removes the phase's request items and files. */}
+      {phased && onDelete && periods.length > 1 && (
+        <button className="nv-mitem warn" disabled={busy}
+          onClick={() => {
+            if (confirm(`ลบเฟส “${current.label}” ทั้งเฟส? รายการคำขอและไฟล์ในเฟสนี้จะถูกลบถาวร (กู้คืนไม่ได้)`)) onDelete(current.id);
+          }}>
+          <Icon name="trash" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />ลบเฟสนี้
         </button>
       )}
     </NvMenu>
