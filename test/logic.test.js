@@ -12,6 +12,8 @@ import {
   groupDigits,
   notifMeta,
   timeAgo,
+  isMultiPeriod,
+  nextPhaseKey,
 } from "../pbc-portal.jsx";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,28 @@ describe("parsePBC", () => {
     ];
     const { items } = parsePBC(withCat);
     expect(items.map((i) => i.category)).toEqual(["Cash", "Cash", "Revenue"]);
+  });
+
+  // The firm's real YE template: "Description" carries the section name (set
+  // once on the first row of each group, blank on the rest), "Requested
+  // Document" is a running number, and the actual document text sits one column
+  // to its right. Categories must come from Description — never all "General".
+  it("reads the grouped-Description template (text one column right of Requested Document)", () => {
+    const grid = [
+      ["No.", "Description", "Requested Document", null, "Status", "Remark"],
+      [1, "เงินกู้ยืมระยะสั้น", 1, "สัญญาเงินกู้", "ค้างรับ", "x"],
+      [null, null, 2, "หนังสือยืนยันยอดจากสถาบันการเงิน", "ค้างรับ", "x"],
+      [2, "เงินสด", 1, "Bank statement ทุกบัญชี", "ได้รับแล้ว", ""],
+      [null, null, 2, "งบกระทบยอดเงินฝากธนาคาร", "ค้างรับ", ""],
+    ];
+    const { items } = parsePBC(grid);
+    expect(items.map((i) => i.text)).toEqual([
+      "สัญญาเงินกู้", "หนังสือยืนยันยอดจากสถาบันการเงิน", "Bank statement ทุกบัญชี", "งบกระทบยอดเงินฝากธนาคาร",
+    ]);
+    expect(items.map((i) => i.category)).toEqual([
+      "เงินกู้ยืมระยะสั้น", "เงินกู้ยืมระยะสั้น", "เงินสด", "เงินสด",
+    ]);
+    expect(items.every((i) => i.category !== "General")).toBe(true);
   });
 });
 
@@ -149,5 +173,32 @@ describe("timeAgo", () => {
     expect(timeAgo(Date.now() - 1000)).toBe("เมื่อสักครู่");
     expect(timeAgo(Date.now() - 2 * 60000)).toBe("2 นาทีที่แล้ว");
     expect(timeAgo(0)).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit phases — the period switcher and per-period scoping turn on for both
+// bookkeeping months and audit phases; phase keys must stay sortable.
+// ---------------------------------------------------------------------------
+describe("isMultiPeriod", () => {
+  it("is true for monthly and phased, false for once/unknown", () => {
+    expect(isMultiPeriod("monthly")).toBe(true);
+    expect(isMultiPeriod("phased")).toBe(true);
+    expect(isMultiPeriod("once")).toBe(false);
+    expect(isMultiPeriod(undefined)).toBe(false);
+  });
+});
+
+describe("nextPhaseKey", () => {
+  it("starts at phase-0001 when there are no phase keys yet", () => {
+    expect(nextPhaseKey([])).toBe("phase-0001");
+    // a portal upgraded once->phased still has its month-keyed first period
+    expect(nextPhaseKey([{ periodKey: "2026-12" }])).toBe("phase-0001");
+  });
+  it("increments past the highest existing phase, zero-padded so it sorts", () => {
+    const periods = [{ periodKey: "2026-12" }, { periodKey: "phase-0001" }, { periodKey: "phase-0002" }];
+    expect(nextPhaseKey(periods)).toBe("phase-0003");
+    // numeric max, not string max: phase-0010 must beat phase-0009
+    expect(nextPhaseKey([{ periodKey: "phase-0009" }, { periodKey: "phase-0010" }])).toBe("phase-0011");
   });
 });

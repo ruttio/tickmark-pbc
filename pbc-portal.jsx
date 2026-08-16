@@ -261,6 +261,23 @@ function nextPeriodEnd(periods) {
   else base = new Date();
   return new Date(base.getFullYear(), base.getMonth() + 2, 0).getTime();
 }
+// Cadences that span more than one period (so the period switcher shows and
+// items/deliverables scope to the period being viewed). 'monthly' = bookkeeping
+// months; 'phased' = audit phases (planning / interim / post-sampling / …).
+// 'once' is a single-period audit portal — no switcher.
+export function isMultiPeriod(cadence) {
+  return cadence === "monthly" || cadence === "phased";
+}
+// The next audit-phase machine key. Phase keys are zero-padded so they sort
+// lexicographically the same way they sort numerically ('phase-0002' <
+// 'phase-0010'), matching how period_key is ordered everywhere else.
+export function nextPhaseKey(periods) {
+  const nums = (periods || [])
+    .map((p) => /^phase-(\d+)$/.exec(p.periodKey || ""))
+    .filter(Boolean).map((m) => Number(m[1]));
+  const n = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `phase-${String(n).padStart(4, "0")}`;
+}
 export function fmtSize(bytes) {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1048576) return (bytes / 1024).toFixed(0) + " KB";
@@ -376,6 +393,9 @@ export function parsePBC(aoa) {
   let textCol = -1, best = -1;
   for (const c of candidates) { const s = score(c); if (s > best) { best = s; textCol = c; } }
   if (textCol < 0) textCol = descCol >= 0 ? descCol : reqCol;
+  const categoryCol = catCol >= 0 ? catCol : (
+    reqCol >= 0 && descCol >= 0 && descCol !== textCol ? descCol : -1
+  );
 
   const items = [];
   let cat = "General";
@@ -383,8 +403,8 @@ export function parsePBC(aoa) {
     const row = aoa[r] || [];
     // Category: prefer the dedicated column (filled on every row). With no such
     // column, fall back to treating a description-only row as a section header.
-    if (catCol >= 0) {
-      const c = cellStr(row, catCol);
+    if (categoryCol >= 0) {
+      const c = cellStr(row, categoryCol);
       if (c) cat = c;
     }
     let text = textCol >= 0 ? cellStr(row, textCol) : "";
@@ -392,7 +412,7 @@ export function parsePBC(aoa) {
       const rq = cellStr(row, reqCol);
       if (rq && isNaN(Number(rq))) text = rq;
     }
-    if (catCol < 0 && descCol >= 0) {
+    if (categoryCol < 0 && descCol >= 0) {
       const d = cellStr(row, descCol);
       if (d && !text) { cat = d; continue; }
     }
@@ -464,7 +484,9 @@ export default function App() {
   const [modal, setModal] = useState(null);           // 'generate' | 'add' | 'import' | 'settings'
   const [rollSource, setRollSource] = useState(null); // roll-forward: prefill GenerateModal from a prior portal
   const [importDraft, setImportDraft] = useState(null);
+  const [importMode, setImportMode] = useState("create"); // 'create' | 'append'
   const importRef = useRef(null);
+  const importModeRef = useRef("create");
   const [statusSel, setStatusSel] = useState([]);     // engagement-detail status filters (empty = all; may include "overdue")
   const [itemQ, setItemQ] = useState("");             // engagement-detail text search
   const [catSel, setCatSel] = useState([]);           // engagement-detail category filters (empty = all)
@@ -575,6 +597,11 @@ export default function App() {
   const goDashboard = () => { setOpenItem(null); setView("dashboard"); };
   // Open the Generate modal fresh, or pre-filled from a prior portal (roll-forward).
   const openGenerate = (src = null) => { setRollSource(src); setModal("generate"); };
+  const openImportFile = (mode = "create") => {
+    importModeRef.current = mode;
+    setImportMode(mode);
+    importRef.current?.click();
+  };
   const buildRollSource = (e) => ({
     client: e.client, template: e.template, periodEnd: e.periodEnd,
     clientEmail: e.clientEmail, groupId: e.groupId || "",
@@ -696,6 +723,26 @@ export default function App() {
       }
     });
 
+  const importItemsToCurrentEngagement = ({ baseDue, items }) =>
+    run(async () => {
+      if (!eng) return;
+      const start = periodItems.length;
+      for (const [i, it] of items.entries()) {
+        const sort = start + i;
+        await firmApi.addItem(eng.id, {
+          ref: String(sort + 1).padStart(2, "0"),
+          category: it.category || "General",
+          description: it.text,
+          required: true,
+          dueDate: baseDue,
+          status: it.status,
+          note: it.remark || "",
+          periodId: isMultiPeriod(eng.cadence) ? periodId : null,
+        }, sort);
+      }
+      setModal(null); setImportDraft(null); setOpenItem(null);
+    }, reloadDetail);
+
   // New items land in whichever month is currently being viewed (so adding
   // one while looking at an older/closed month doesn't silently attach it to
   // whatever the server's default-open-period fallback would have picked).
@@ -704,7 +751,7 @@ export default function App() {
       const sort = periodItems.length;
       await firmApi.addItem(eng.id, {
         ref: String(sort + 1).padStart(2, "0"), category, description, required, dueDate,
-        periodId: eng.cadence === "monthly" ? periodId : null,
+        periodId: isMultiPeriod(eng.cadence) ? periodId : null,
       }, sort);
       setModal(null);
     }, reloadDetail);
@@ -718,15 +765,36 @@ export default function App() {
   const uploadSample = (itemId, fileList) =>
     run(async () => { for (const f of Array.from(fileList)) await firmApi.uploadSample(eng.id, itemId, f); }, reloadDetail);
 
-  /* ---- periods: switch months, open the next one, close/reopen ---- */
-  const openNextPeriod = ({ periodEnd, dueDate }) =>
+  /* ---- periods: switch months/phases, open the next one, close/reopen ---- */
+  // One confirm handler for both cadences. A monthly portal passes a period end
+  // (label is the Thai month); an audit phase passes a free-text label and does
+  // NOT clone the previous phase's request list — a post-sampling phase starts
+  // empty and is filled by import/manual add, unlike a bookkeeping month which
+  // carries the standing list over. Adding a phase to a portal that is still
+  // 'once' flips it to 'phased' first, so "add a phase" is the single gesture
+  // that turns a one-off audit into a multi-phase one.
+  const openNextPeriod = ({ periodEnd, dueDate, label, phased }) =>
     run(async () => {
-      const id = await firmApi.openPeriod(eng.id, { periodEnd, dueDate });
-      setModal(null);
-      await reloadDetail();
-      setPeriodId(id); // jump straight to the month that was just opened
+      const asPhase = phased || eng.cadence === "phased";
+      if (asPhase) {
+        if (eng.cadence !== "phased") await firmApi.setCadence(eng.id, "phased");
+        const id = await firmApi.openPeriod(eng.id, {
+          periodKey: nextPhaseKey(eng.periods || []),
+          label: (label || "").trim() || `ระยะที่ ${(eng.periods || []).length + 1}`,
+          dueDate, clone: false,
+        });
+        setModal(null);
+        await reloadDetail();
+        setPeriodId(id); // jump straight to the phase that was just opened
+      } else {
+        const id = await firmApi.openPeriod(eng.id, { periodEnd, dueDate });
+        setModal(null);
+        await reloadDetail();
+        setPeriodId(id); // jump straight to the month that was just opened
+      }
     });
   const setPeriodStatusMut = (id, status) => run(() => firmApi.setPeriodStatus(id, status), reloadDetail);
+  const renamePeriod = (id, label) => run(() => firmApi.setPeriodLabel(id, label), reloadDetail);
 
   /* ---- deliverables: create, edit, attach files, release, delete ---- */
   const createDeliverable = ({ category, title, note, dueDate }) =>
@@ -828,7 +896,7 @@ export default function App() {
     run(async () => { await firmApi.notify(eng.id, kind); setModal(null); alert("ส่งอีเมลแล้ว → " + eng.clientEmail); });
 
   /* ---- Excel import: read file -> draft -> preview (pure client-side parse) ---- */
-  const handleImportFile = async (file) => {
+  const handleImportFile = async (file, mode = importModeRef.current) => {
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array", cellDates: true });
@@ -836,6 +904,7 @@ export default function App() {
       const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: true });
       const draft = parsePBC(aoa);
       if (!draft.items.length) { alert("ไม่พบรายการเอกสารในไฟล์นี้ — โปรดตรวจสอบว่ามีหัวคอลัมน์ Status / Description"); return; }
+      setImportMode(mode);
       setImportDraft(draft); setModal("import");
     } catch (err) { console.error(err); alert("อ่านไฟล์ไม่สำเร็จ: " + err.message); }
   };
@@ -848,7 +917,7 @@ export default function App() {
   // single period. For 'monthly' it's narrowed to the month being viewed, so
   // switching months filters the request list without a second round trip.
   const periodItems = useMemo(() => {
-    if (eng?.cadence !== "monthly" || !periodId) return eng?.items || [];
+    if (!isMultiPeriod(eng?.cadence) || !periodId) return eng?.items || [];
     return (eng.items || []).filter((it) => it.periodId === periodId);
   }, [eng, periodId]);
 
@@ -991,7 +1060,7 @@ export default function App() {
 
       {view === "dashboard" ? (
         <FirmDashboard dash={dash} notifs={notifs} followups={followups} storage={storage} bucketUsage={bucketUsage} analytics={analytics} session={session} onOpen={openEngagement} onOpenItem={openItemInEngagement}
-          onNew={() => openGenerate()} onGroups={() => setModal("groups")} onMarkAllRead={markAllRead} onSignOut={signOut} />
+          onNew={() => openGenerate()} onImport={() => openImportFile("create")} onGroups={() => setModal("groups")} onMarkAllRead={markAllRead} onSignOut={signOut} />
       ) : !eng ? (
         <div className="tk-boot">กำลังโหลดพอร์ทัล…</div>
       ) : engExpiry(eng).state === "expired" ? (
@@ -1014,7 +1083,10 @@ export default function App() {
                   })}
                 </select>
               )}
-              <button className="nv-cta" onClick={() => openGenerate()}>+ New portal</button>
+              <NvMenu label="+ New portal" variant="mint" align="right">
+                <button className="nv-mitem" onClick={() => openGenerate()}>✓ สร้างจาก template</button>
+                <button className="nv-mitem" onClick={() => openImportFile("create")}>↓ นำเข้าจาก Excel</button>
+              </NvMenu>
               <span className="nv-email">{session.user?.email}</span>
               <span className="nv-icon" title="ออกจากระบบ" onClick={signOut}>⎋</span>
             </div>
@@ -1027,9 +1099,18 @@ export default function App() {
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                   <span className="nv-eh-name">{eng.client}</span>
                   <span className="nv-eh-type">{eng.template}</span>
-                  {eng.cadence === "monthly" && (
-                    <PeriodSwitcher periods={eng.periods || []} periodId={periodId} busy={busy}
-                      onSwitch={setPeriodId} onOpenNext={() => setModal("openPeriod")} onSetStatus={setPeriodStatusMut} />
+                  {isMultiPeriod(eng.cadence) && (
+                    <PeriodSwitcher cadence={eng.cadence} periods={eng.periods || []} periodId={periodId} busy={busy}
+                      onSwitch={setPeriodId} onOpenNext={() => setModal("openPeriod")} onSetStatus={setPeriodStatusMut} onRename={renamePeriod} />
+                  )}
+                  {/* A one-off audit stays single-period until the firm decides
+                      to work it in phases (e.g. after sampling) — this is the
+                      one gesture that turns it multi-phase. */}
+                  {eng.cadence === "once" && (
+                    <button type="button" className="nv-addphase" title="แบ่งงานตรวจสอบเป็นหลายระยะ (เฟส) — เพิ่มเฟสใหม่ เช่น หลังสุ่มตัวอย่าง"
+                      onClick={() => setModal("openPeriod")}>
+                      <Icon name="plus" size={12} style={{ verticalAlign: "-1px", marginRight: 4 }} />เพิ่มเฟส
+                    </button>
                   )}
                   {eng.myRole && <span className={`nv-role ${eng.myRole === "owner" ? "own" : "mem"}`}>{eng.myRole === "owner" ? "เจ้าของ" : "สมาชิก"}</span>}
                 </div>
@@ -1080,11 +1161,11 @@ export default function App() {
                 a surface whose toggle is no longer rendered. */}
             {surface === "items" || eng.cadence !== "monthly" ? (
               <>
-                {eng.cadence === "monthly" && activePeriod?.status === "closed" && (
+                {isMultiPeriod(eng.cadence) && activePeriod?.status === "closed" && (
                   <div className="nv-alert closed">
                     <span className="ic"><Icon name="lock" size={14} /></span>
                     <span>
-                      งวด <b>{activePeriod.label}</b> ปิดแล้ว — ลูกค้าอัปโหลดเพิ่มไม่ได้ (ฝั่งสำนักงานยังดู/จัดการได้ตามปกติ)
+                      {eng.cadence === "phased" ? "เฟส" : "งวด"} <b>{activePeriod.label}</b> ปิดแล้ว — ลูกค้าอัปโหลดเพิ่มไม่ได้ (ฝั่งสำนักงานยังดู/จัดการได้ตามปกติ)
                       <button type="button" className="nv-inline-link" disabled={busy}
                         onClick={() => setPeriodStatusMut(activePeriod.id, "open")}>เปิดอีกครั้ง</button>
                     </span>
@@ -1128,9 +1209,8 @@ export default function App() {
                   <div>
                     <div className="nv-tools">
                       <NvMenu label="+ เพิ่มรายการ" variant="mint">
-                        <button className="nv-mitem" onClick={() => openGenerate()}>✓ สร้างรายการคำขอ</button>
                         <button className="nv-mitem" onClick={() => setModal("add")}>＋ เพิ่มรายการเดี่ยว</button>
-                        <button className="nv-mitem" onClick={() => importRef.current?.click()}>↓ นำเข้าจาก Excel</button>
+                        <button className="nv-mitem" onClick={() => openImportFile("append")}>↓ นำเข้าจาก Excel</button>
                       </NvMenu>
                       <NvMenu label={<><Icon name="users" size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />แชร์กับลูกค้า</>} variant="light">
                         <button className="nv-mitem" onClick={() => {
@@ -1152,8 +1232,6 @@ export default function App() {
                           <button className="nv-mitem" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
                         </NvMenu>
                       </div>
-                      <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
-                        onChange={(e) => { const f = e.target.files[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
                     </div>
 
                     {selIds.length > 0 && (
@@ -1330,18 +1408,27 @@ export default function App() {
       )}
 
       {/* Modals */}
+      {/* One hidden file input, always mounted so openImportFile() can trigger it
+          from either the dashboard (create) or an open portal (append). The mode
+          is stashed in importModeRef before .click(), so onChange just reads it. */}
+      <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files[0]; if (f) handleImportFile(f); e.target.value = ""; }} />
       {modal === "generate" && <GenerateModal busy={busy} source={rollSource} onClose={() => { setModal(null); setRollSource(null); }} onCreate={generateEngagement} />}
       {modal === "groups" && <ClientGroupsModal onClose={() => setModal(null)} onChanged={loadDashboard} />}
       {modal === "add" && eng && (
         <AddItemModal eng={{ ...eng, items: periodItems }}
-          periodLabel={eng.cadence === "monthly" ? activePeriod?.label : null}
+          periodLabel={isMultiPeriod(eng.cadence) ? activePeriod?.label : null}
           onClose={() => setModal(null)} onAdd={addItem} />
       )}
       {modal === "import" && importDraft && (
-        <ImportModal draft={importDraft} onClose={() => { setModal(null); setImportDraft(null); }} onImport={importEngagement} />
+        <ImportModal draft={importDraft} mode={importMode}
+          periodLabel={importMode === "append" && (eng?.cadence === "monthly" || eng?.cadence === "phased") ? activePeriod?.label : null}
+          onClose={() => { setModal(null); setImportDraft(null); }}
+          onImport={importMode === "append" ? importItemsToCurrentEngagement : importEngagement} />
       )}
       {modal === "openPeriod" && eng && (
-        <OpenPeriodModal periods={eng.periods || []} busy={busy} onClose={() => setModal(null)} onConfirm={openNextPeriod} />
+        <OpenPeriodModal phased={eng.cadence === "phased" || eng.cadence === "once"} periods={eng.periods || []}
+          busy={busy} onClose={() => setModal(null)} onConfirm={openNextPeriod} />
       )}
       {modal === "createDeliverable" && eng && (
         <CreateDeliverableModal periodLabel={eng.cadence === "monthly" ? activePeriod?.label : null}
@@ -1665,9 +1752,15 @@ function MultiFilter({ label, placeholder, options, selected, onChange }) {
 // than inventing a second popover mechanism. Never rendered for a 'once'
 // cadence portal — the caller guards that, so this component has no
 // "annual audit" branch to keep straight.
-function PeriodSwitcher({ periods, periodId, busy, onSwitch, onOpenNext, onSetStatus }) {
+function PeriodSwitcher({ cadence, periods, periodId, busy, onSwitch, onOpenNext, onSetStatus, onRename }) {
   const current = periods.find((p) => p.id === periodId) || periods[periods.length - 1];
   if (!current) return null;
+  // Same switcher, two vocabularies: a bookkeeping "งวด" (month) vs an audit
+  // "เฟส" (phase). Only the words change — the machinery is identical.
+  const phased = cadence === "phased";
+  const W = phased
+    ? { unit: "เฟส", switch: "สลับเฟส", next: "เพิ่มเฟสใหม่", close: "ปิดเฟสนี้", reopen: "เปิดเฟสนี้อีกครั้ง" }
+    : { unit: "งวด", switch: "สลับงวด", next: "เปิดเดือนถัดไป", close: "ปิดงวดนี้", reopen: "เปิดงวดนี้อีกครั้ง" };
   return (
     <NvMenu variant="light" label={
       <span className="nv-pswitch-label">
@@ -1677,7 +1770,7 @@ function PeriodSwitcher({ periods, periodId, busy, onSwitch, onOpenNext, onSetSt
         {current.status === "closed" && <span className="nv-pclosed">ปิดแล้ว</span>}
       </span>
     }>
-      <div className="nv-mlabel">สลับงวด</div>
+      <div className="nv-mlabel">{W.switch}</div>
       {periods.slice().reverse().map((p) => (
         <button key={p.id} className={`nv-mitem ${p.id === periodId ? "cur" : ""}`} onClick={() => onSwitch(p.id)}>
           <span className={`nv-pdot ${p.status}`} aria-hidden="true" /> {p.label}
@@ -1690,18 +1783,29 @@ function PeriodSwitcher({ periods, periodId, busy, onSwitch, onOpenNext, onSetSt
       ))}
       <div className="nv-msep" />
       <button className="nv-mitem" onClick={onOpenNext}>
-        <Icon name="plus" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />เปิดเดือนถัดไป
+        <Icon name="plus" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />{W.next}
       </button>
+      {/* Phases are named by the firm, so let them be renamed (a month label is
+          derived and never needs editing). */}
+      {phased && onRename && (
+        <button className="nv-mitem" disabled={busy}
+          onClick={() => {
+            const name = prompt("ชื่อเฟสนี้", current.label);
+            if (name && name.trim() && name.trim() !== current.label) onRename(current.id, name.trim());
+          }}>
+          <Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />เปลี่ยนชื่อเฟส
+        </button>
+      )}
       {current.status === "open" ? (
         <button className="nv-mitem warn" disabled={busy}
           onClick={() => {
-            if (confirm(`ปิดงวด ${current.label}? ลูกค้าจะอัปโหลดเอกสารเพิ่มไม่ได้ (เปิดใหม่ภายหลังได้เสมอ)`)) onSetStatus(current.id, "closed");
+            if (confirm(`ปิด${W.unit} ${current.label}? ลูกค้าจะอัปโหลดเอกสารเพิ่มไม่ได้ (เปิดใหม่ภายหลังได้เสมอ)`)) onSetStatus(current.id, "closed");
           }}>
-          <Icon name="lock" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />ปิดงวดนี้
+          <Icon name="lock" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />{W.close}
         </button>
       ) : (
         <button className="nv-mitem" disabled={busy} onClick={() => onSetStatus(current.id, "open")}>
-          <Icon name="reopen" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />เปิดงวดนี้อีกครั้ง
+          <Icon name="reopen" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />{W.reopen}
         </button>
       )}
     </NvMenu>
@@ -1759,7 +1863,7 @@ function KpiCard({ tone, icon, label, num, sub, numTone, subTone }) {
   );
 }
 
-function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytics, session, onOpen, onOpenItem, onNew, onGroups, onMarkAllRead, onSignOut }) {
+function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytics, session, onOpen, onOpenItem, onNew, onImport, onGroups, onMarkAllRead, onSignOut }) {
   const [q, setQ] = useState("");
   const [showNotifs, setShowNotifs] = useState(false);
   const [showLine, setShowLine] = useState(false);
@@ -1994,7 +2098,10 @@ function FirmDashboard({ dash, notifs, followups, storage, bucketUsage, analytic
             <button className="nv-btn nv-reminder-btn" disabled={reminderCandidates.length === 0}
               title={reminderCandidates.length ? `ส่ง Reminder ${reminderCandidates.length} รายการ` : "ไม่มีรายการที่ต้องส่ง Reminder"}
               onClick={() => setShowReminder(true)}><Icon name="send" size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />ส่ง Reminder{reminderCandidates.length > 0 && <span className="nv-reminder-count">{reminderCandidates.length}</span>}</button>
-            <button className="nv-cta" onClick={onNew}>+ สร้างพอร์ทัลใหม่</button>
+            <NvMenu label="+ สร้างพอร์ทัลใหม่" variant="mint" align="right">
+              <button className="nv-mitem" onClick={onNew}>✓ สร้างจาก template</button>
+              <button className="nv-mitem" onClick={onImport}>↓ นำเข้าจาก Excel</button>
+            </NvMenu>
           </div>
         </div>
 
@@ -2483,7 +2590,7 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   const [showPass, setShowPass] = useState(false);
   const [code, setCode] = useState("");
   const [clientEmail, setClientEmail] = useState(eng.clientEmail || "");
-  const [cadence, setCadenceSel] = useState(eng.cadence === "monthly" ? "monthly" : "once");
+  const [cadence, setCadenceSel] = useState(isMultiPeriod(eng.cadence) ? eng.cadence : "once");
   const x = engExpiry(eng);
 
   return (
@@ -2492,15 +2599,16 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
         <>
           <p className="tk-block-h">ประเภทพอร์ทัล</p>
           <p className="tk-tplblurb" style={{ marginTop: 0 }}>
-            รายเดือน = พอร์ทัลเดียวใช้ยาว เปิดงวดใหม่ทุกเดือน (สำหรับงานทำบัญชี/ยื่นภาษีรายเดือน)
+            รายเดือน = เปิดงวดใหม่ทุกเดือน (งานทำบัญชี/ยื่นภาษี) · หลายเฟส = แบ่งงานตรวจสอบเป็นระยะ (วางแผน/ระหว่างกาล/หลังสุ่มตัวอย่าง) แล้วสลับดูได้
           </p>
           <label className="tk-field"><span>รูปแบบงวด</span>
             <select value={cadence} onChange={(e) => setCadenceSel(e.target.value)}>
-              <option value="once">ครั้งเดียว (เช่น ตรวจสอบบัญชีประจำปี)</option>
+              <option value="once">ครั้งเดียว (ตรวจสอบบัญชีประจำปี — เฟสเดียว)</option>
+              <option value="phased">หลายเฟส (ตรวจสอบแบบแบ่งระยะในพอร์ทัลเดียว)</option>
               <option value="monthly">รายเดือน (เปิดหลายงวดในพอร์ทัลเดียว)</option>
             </select>
           </label>
-          <button className="tk-btn full" disabled={cadence === (eng.cadence === "monthly" ? "monthly" : "once")}
+          <button className="tk-btn full" disabled={cadence === (isMultiPeriod(eng.cadence) ? eng.cadence : "once")}
             onClick={() => onSaveCadence(cadence)}>บันทึกประเภทพอร์ทัล</button>
           <div style={{ height: 18 }} />
         </>
@@ -3213,10 +3321,36 @@ function AddItemModal({ eng, periodLabel, onClose, onAdd }) {
 // "Open next month" — confirms the period end / due date before creating it,
 // since there's no separate edit-period-metadata endpoint later (see
 // firmApi's periods section): whatever's confirmed here is what sticks.
-function OpenPeriodModal({ periods, busy, onClose, onConfirm }) {
+function OpenPeriodModal({ phased = false, periods, busy, onClose, onConfirm }) {
   const [periodEnd, setPeriodEnd] = useState(() => new Date(nextPeriodEnd(periods)).toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState("");
+  const [phaseName, setPhaseName] = useState(`ระยะที่ ${periods.length + 1}`);
   const latest = periods[periods.length - 1];
+
+  if (phased) {
+    // A named audit phase — starts EMPTY (fill it by importing the sample
+    // request list or adding items), unlike a bookkeeping month which clones
+    // the standing list. So there's no "copied from last period" note here.
+    return (
+      <Modal title={periods.length ? "เพิ่มเฟสใหม่" : "เริ่มแบ่งงานเป็นเฟส"} onClose={onClose}>
+        <p className="tk-tplblurb" style={{ marginTop: 0 }}>
+          เฟสใหม่จะเริ่มด้วยรายการว่าง — เพิ่มรายการเอง หรือนำเข้าจาก Excel หลังจากนี้ (เช่น รายการเอกสารหลังสุ่มตัวอย่าง)
+        </p>
+        <label className="tk-field"><span>ชื่อเฟส</span>
+          <input value={phaseName} onChange={(e) => setPhaseName(e.target.value)}
+            placeholder="เช่น วางแผน / ระหว่างกาล / หลังสุ่มตัวอย่าง / ณ วันสิ้นปี" /></label>
+        <label className="tk-field"><span>กำหนดส่ง (ไม่บังคับ)</span>
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label>
+        <div className="tk-modal-actions">
+          <button className="tk-btn ghost" onClick={onClose}>ยกเลิก</button>
+          <button className="tk-btn primary" disabled={busy || !phaseName.trim()}
+            onClick={() => onConfirm({ phased: true, label: phaseName.trim(), dueDate: dueDate ? new Date(dueDate).getTime() : null })}>
+            {busy ? "กำลังเพิ่ม…" : "เพิ่มเฟส"}
+          </button>
+        </div>
+      </Modal>
+    );
+  }
   return (
     <Modal title="เปิดเดือนถัดไป" onClose={onClose}>
       <p className="tk-tplblurb" style={{ marginTop: 0 }}>
@@ -3267,7 +3401,12 @@ function CreateDeliverableModal({ periodLabel, busy, onClose, onCreate }) {
   );
 }
 
-function ImportModal({ draft, onClose, onImport }) {
+function ImportModal({ draft, mode = "create", periodLabel = null, onClose, onImport }) {
+  // 'create' = the file becomes a brand-new portal (needs client + passcode).
+  // 'append' = the file adds rows to the portal already open, so every
+  // new-portal-only field (client, period end, passcode, retention, email)
+  // is irrelevant — the confirm just carries the items + a due date over.
+  const append = mode === "append";
   const [client, setClient] = useState(draft.meta.client || "");
   const [periodEnd, setPeriodEnd] = useState(toDateInput(parseYearEnd(draft.meta.yearEnd)));
   const [due, setDue] = useState(toDateInput(Date.now() + 14 * DAY));
@@ -3287,16 +3426,28 @@ function ImportModal({ draft, onClose, onImport }) {
   }, [items]);
 
   return (
-    <Modal title="ตรวจทานก่อนสร้างลิสต์" onClose={onClose} wide>
-      <p className="tk-tplblurb">อ่านจากไฟล์ Excel แล้ว — แก้ไข/เอารายการออกได้ตามต้องการ จากนั้นกดยืนยันเพื่อสร้างลิสต์ลงพอร์ทัล</p>
+    <Modal title={append ? "เพิ่มรายการจาก Excel" : "ตรวจทานก่อนสร้างลิสต์"} onClose={onClose} wide>
+      <p className="tk-tplblurb">
+        {append
+          ? <>อ่านจากไฟล์ Excel แล้ว — รายการเหล่านี้จะถูกเพิ่มเข้า{periodLabel ? <> งวด <b>{periodLabel}</b> ของ</> : ""}พอร์ทัลที่เปิดอยู่ (ไม่สร้างพอร์ทัลใหม่) แก้ไข/เอาออกได้ก่อนยืนยัน</>
+          : "อ่านจากไฟล์ Excel แล้ว — แก้ไข/เอารายการออกได้ตามต้องการ จากนั้นกดยืนยันเพื่อสร้างลิสต์ลงพอร์ทัล"}
+      </p>
 
-      <div className="tk-field-row">
-        <label className="tk-field"><span>ชื่อลูกค้า (Client)</span><input value={client} onChange={(e) => setClient(e.target.value)} placeholder="ชื่อบริษัท" /></label>
-        <label className="tk-field"><span>Period end</span><input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
-        <label className="tk-field"><span>กำหนดส่ง (ทุกข้อ)</span><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
-      </div>
-      <label className="tk-field"><span>อีเมลลูกค้า (ไม่บังคับ · สำหรับแจ้งเตือน)</span>
-        <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@company.com" /></label>
+      {append ? (
+        <div className="tk-field-row">
+          <label className="tk-field"><span>กำหนดส่ง (ทุกข้อ)</span><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+        </div>
+      ) : (
+        <div className="tk-field-row">
+          <label className="tk-field"><span>ชื่อลูกค้า (Client)</span><input value={client} onChange={(e) => setClient(e.target.value)} placeholder="ชื่อบริษัท" /></label>
+          <label className="tk-field"><span>Period end</span><input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></label>
+          <label className="tk-field"><span>กำหนดส่ง (ทุกข้อ)</span><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+        </div>
+      )}
+      {!append && (
+        <label className="tk-field"><span>อีเมลลูกค้า (ไม่บังคับ · สำหรับแจ้งเตือน)</span>
+          <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@company.com" /></label>
+      )}
       {(draft.meta.preparedBy || draft.meta.wpRef) && (
         <p className="tk-detected">
           {draft.meta.preparedBy && <span>Prepared by: <b>{draft.meta.preparedBy}</b></span>}
@@ -3327,25 +3478,36 @@ function ImportModal({ draft, onClose, onImport }) {
         ))}
       </div>
 
-      <label className="tk-field"><span>รหัสเข้าพอร์ทัล (16 หลัก)</span>
-        <PasscodeInput value={code} onChange={setCode} />
-        <button type="button" className="tk-link" onClick={() => setCode(genCode())}>สุ่มรหัสให้</button>
-      </label>
-      <div className="tk-field-row">
-        <label className="tk-field"><span>อายุพอร์ทัล (retention)</span>
-          <select value={String(retDays)} onChange={(e) => setRetDays(e.target.value === "null" ? null : Number(e.target.value))}>
-            {RETENTION_OPTIONS.map((o) => <option key={String(o.days)} value={String(o.days)}>{o.label}</option>)}
-          </select>
-        </label>
-        <label className="tk-check"><input type="checkbox" checked={autoDelete} onChange={(e) => setAutoDelete(e.target.checked)} /> ลบอัตโนมัติเมื่อหมดอายุ</label>
-      </div>
+      {!append && (
+        <>
+          <label className="tk-field"><span>รหัสเข้าพอร์ทัล (16 หลัก)</span>
+            <PasscodeInput value={code} onChange={setCode} />
+            <button type="button" className="tk-link" onClick={() => setCode(genCode())}>สุ่มรหัสให้</button>
+          </label>
+          <div className="tk-field-row">
+            <label className="tk-field"><span>อายุพอร์ทัล (retention)</span>
+              <select value={String(retDays)} onChange={(e) => setRetDays(e.target.value === "null" ? null : Number(e.target.value))}>
+                {RETENTION_OPTIONS.map((o) => <option key={String(o.days)} value={String(o.days)}>{o.label}</option>)}
+              </select>
+            </label>
+            <label className="tk-check"><input type="checkbox" checked={autoDelete} onChange={(e) => setAutoDelete(e.target.checked)} /> ลบอัตโนมัติเมื่อหมดอายุ</label>
+          </div>
+        </>
+      )}
 
       <div className="tk-modal-actions">
         <button className="tk-btn ghost" onClick={onClose}>ยกเลิก</button>
-        <button className="tk-btn primary" disabled={!included.length || !client.trim() || code.length !== 16}
-          onClick={() => onImport({ client: client.trim(), periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(), items: included, code, retDays, autoDelete, clientEmail: clientEmail.trim(), sendInvite: !!clientEmail.trim() })}>
-          ยืนยันสร้างลิสต์ ({included.length})
-        </button>
+        {append ? (
+          <button className="tk-btn primary" disabled={!included.length}
+            onClick={() => onImport({ baseDue: new Date(due).getTime(), items: included })}>
+            เพิ่ม {included.length} รายการ
+          </button>
+        ) : (
+          <button className="tk-btn primary" disabled={!included.length || !client.trim() || code.length !== 16}
+            onClick={() => onImport({ client: client.trim(), periodEnd: new Date(periodEnd).getTime(), baseDue: new Date(due).getTime(), items: included, code, retDays, autoDelete, clientEmail: clientEmail.trim(), sendInvite: !!clientEmail.trim() })}>
+            ยืนยันสร้างลิสต์ ({included.length})
+          </button>
+        )}
       </div>
     </Modal>
   );

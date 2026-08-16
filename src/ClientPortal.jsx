@@ -526,6 +526,10 @@ function ClientList({
   // month and sends work back. An audit portal shows the request list alone,
   // exactly as it did before periods existed.
   const monthly = eng?.cadence === "monthly";
+  // A phased audit portal has periods to switch between (planning / interim /
+  // post-sampling / …) but no work sent back — so it gets the period picker
+  // alone, not the full month+deliverables bar a bookkeeping portal uses.
+  const phased = eng?.cadence === "phased";
   // "Unopened" = the client hasn't looked at a single file in it yet — the
   // literal reading of "unopened" for the segment-toggle badge, distinct
   // from "not yet acknowledged" (a deliverable can be opened but still
@@ -581,6 +585,13 @@ function ClientList({
           view={view} setView={setView} unopenedCount={unopenedCount}
           periods={periods} activePeriodId={activePeriodId} onPeriodChange={onPeriodChange}
         />
+      )}
+      {/* Phased audit: just the phase picker (no deliverables tab). Hides itself
+          when there's only one phase — same as a plain one-off audit. */}
+      {phased && (
+        <div className="dv-bar">
+          <PeriodSwitcher periods={periods} activePeriodId={activePeriodId} onChange={onPeriodChange} />
+        </div>
       )}
 
       {periodClosed && (
