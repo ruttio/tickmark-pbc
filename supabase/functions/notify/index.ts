@@ -83,7 +83,20 @@ const shell = (title: string, intro: string, url: string, cta: string, foot: str
   </div>
 </div>`;
 
-const FOOT = "เข้าเว็บไซต์ด้วยรหัส 16 หลักที่สำนักงานแจ้งให้ทางช่องทางอื่น · หากไม่ได้คาดหวังอีเมลนี้ โปรดละเว้น";
+// Client-facing copy only. Everything the FIRM sees (the JSON error bodies
+// returned to pbc-portal.jsx below, and any Thai left in `sections` — the
+// period label and item descriptions are data, not UI chrome) stays Thai
+// regardless of the engagement's language, per the scope of this feature:
+// only what a client reads (portal UI + these emails) switches language.
+type Lang = "th" | "en";
+function emailLang(v: unknown): Lang {
+  return v === "en" ? "en" : "th";
+}
+
+const FOOT: Record<Lang, string> = {
+  th: "เข้าเว็บไซต์ด้วยรหัส 16 หลักที่สำนักงานแจ้งให้ทางช่องทางอื่น · หากไม่ได้คาดหวังอีเมลนี้ โปรดละเว้น",
+  en: "Access the portal with the 16-digit code the firm sent you separately. If you were not expecting this email, please disregard it.",
+};
 
 type BuiltEmail = { subject: string; html: string; itemCount: number | null };
 
@@ -102,14 +115,21 @@ async function buildEmailForKind(
   eng: { id: string; client: string; template?: string | null },
   kind: NotifyKind,
   periods: PeriodRef[],
+  lang: Lang,
 ): Promise<BuiltEmail | { error: string }> {
   const portalUrl = `${APP_URL}/client.html?e=${eng.id}`;
 
   if (kind === "invite") {
-    const subject = `เอกสารที่ต้องจัดเตรียม — ${eng.client}`;
-    const html = shell(`เรียน ${eng.client}`,
-      `สำนักงานได้เปิดเว็บไซต์สำหรับงาน <b>${eng.template}</b> และมีรายการเอกสารที่ต้องจัดเตรียม โปรดเข้าเว็บไซต์เพื่ออัปโหลดเอกสาร`,
-      portalUrl, "เข้าเว็บไซต์เพื่ออัปโหลด", FOOT);
+    const subject = lang === "en"
+      ? `Documents to prepare — ${eng.client}`
+      : `เอกสารที่ต้องจัดเตรียม — ${eng.client}`;
+    const html = lang === "en"
+      ? shell(`Dear ${eng.client}`,
+          `We have opened your portal for <b>${eng.template}</b>, and there are documents that need to be prepared. Please visit the portal to upload them.`,
+          portalUrl, "Go to portal to upload", FOOT.en)
+      : shell(`เรียน ${eng.client}`,
+          `สำนักงานได้เปิดเว็บไซต์สำหรับงาน <b>${eng.template}</b> และมีรายการเอกสารที่ต้องจัดเตรียม โปรดเข้าเว็บไซต์เพื่ออัปโหลดเอกสาร`,
+          portalUrl, "เข้าเว็บไซต์เพื่ออัปโหลด", FOOT.th);
     return { subject, html, itemCount: null };
   }
 
@@ -151,16 +171,28 @@ async function buildEmailForKind(
   const monthTag = periods.length === 1 ? ` — ${periods[0].label}` : "";
 
   if (kind === "returned") {
-    const subject = `มีเอกสารที่ต้องแก้ไข (${its.length})${monthTag} — ${eng.client}`;
-    const html = shell("มีเอกสารที่ต้องแก้ไข",
-      `สำนักงานได้ส่งกลับเอกสารต่อไปนี้เพื่อให้แก้ไข/ส่งใหม่:${sections}โปรดเข้าเว็บไซต์เพื่อดูหมายเหตุและอัปโหลดอีกครั้ง`,
-      portalUrl, "เปิดดูและแก้ไข", FOOT);
+    const subject = lang === "en"
+      ? `Documents need revision (${its.length})${monthTag} — ${eng.client}`
+      : `มีเอกสารที่ต้องแก้ไข (${its.length})${monthTag} — ${eng.client}`;
+    const html = lang === "en"
+      ? shell("Documents need revision",
+          `We have returned the following documents for revision or resubmission:${sections}Please visit the portal to review the notes and upload again.`,
+          portalUrl, "Review and revise", FOOT.en)
+      : shell("มีเอกสารที่ต้องแก้ไข",
+          `สำนักงานได้ส่งกลับเอกสารต่อไปนี้เพื่อให้แก้ไข/ส่งใหม่:${sections}โปรดเข้าเว็บไซต์เพื่อดูหมายเหตุและอัปโหลดอีกครั้ง`,
+          portalUrl, "เปิดดูและแก้ไข", FOOT.th);
     return { subject, html, itemCount: its.length };
   }
-  const subject = `เอกสารที่ยังรอจัดเตรียม (${its.length})${monthTag} — ${eng.client}`;
-  const html = shell("ยังมีเอกสารที่รอจัดเตรียม",
-    `รายการต่อไปนี้ยังไม่ได้รับ โปรดจัดเตรียมและอัปโหลด:${sections}`,
-    portalUrl, "เข้าเว็บไซต์เพื่ออัปโหลด", FOOT);
+  const subject = lang === "en"
+    ? `Documents still pending (${its.length})${monthTag} — ${eng.client}`
+    : `เอกสารที่ยังรอจัดเตรียม (${its.length})${monthTag} — ${eng.client}`;
+  const html = lang === "en"
+    ? shell("Documents still pending",
+        `We have not yet received the following items. Please prepare and upload them:${sections}`,
+        portalUrl, "Go to portal to upload", FOOT.en)
+    : shell("ยังมีเอกสารที่รอจัดเตรียม",
+        `รายการต่อไปนี้ยังไม่ได้รับ โปรดจัดเตรียมและอัปโหลด:${sections}`,
+        portalUrl, "เข้าเว็บไซต์เพื่ออัปโหลด", FOOT.th);
   return { subject, html, itemCount: its.length };
 }
 
@@ -196,7 +228,7 @@ async function fetchOpenPeriods(engagementId: string): Promise<PeriodRef[]> {
 // happened to still be free would be more confusing than useful. `force` is
 // the escape hatch when the firm genuinely needs to re-send.
 async function sendKind(
-  eng: { id: string; client: string; client_email: string; template?: string | null },
+  eng: { id: string; client: string; client_email: string; template?: string | null; language?: string | null },
   kind: NotifyKind,
   opts: { replyTo?: string; force?: boolean; sentBy?: string | null; periods?: PeriodRef[] },
 ): Promise<{ status: number; body: any }> {
@@ -208,7 +240,7 @@ async function sendKind(
     }
   }
 
-  const built = await buildEmailForKind(eng, kind, periods);
+  const built = await buildEmailForKind(eng, kind, periods, emailLang(eng.language));
   if ("error" in built) return { status: 400, body: { error: built.error } };
 
   const sendMonth = bangkokPeriod();
@@ -296,7 +328,7 @@ Deno.serve(async (req) => {
     .select("role").eq("engagement_id", engagement_id).eq("user_id", user.id).maybeSingle();
   if (!mem) return json({ error: "not a member of this portal" }, 403);
   const { data: eng } = await admin.from("engagements")
-    .select("id, client, client_email, template").eq("id", engagement_id).maybeSingle();
+    .select("id, client, client_email, template, language").eq("id", engagement_id).maybeSingle();
   if (!eng) return json({ error: "engagement not found" }, 404);
   if (!eng.client_email) return json({ error: "no client email on this portal" }, 400);
   // same precedence as before this migration: kind is validated last, after

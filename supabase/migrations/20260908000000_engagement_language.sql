@@ -1,0 +1,28 @@
+-- =====================================================================
+--  Per-portal language (20260908000000).
+--
+--  A foreign client should see the client portal AND its notification
+--  emails entirely in English; a Thai client keeps everything in Thai.
+--  The firm-side app stays Thai always — the firm is Thai — so this only
+--  ever gates what the CLIENT (portal + notify emails) reads, never
+--  pbc-portal.jsx.
+--
+--  Deliberately engagement-type-agnostic, same posture as `cadence`
+--  (20260720120000_periods.sql): a plain column, never a permission, and
+--  never gated on template/cadence. Only the UI chooses to surface the
+--  toggle for monthly-bookkeeping portals; an audit/phased/once portal
+--  simply never gets offered anything but the 'th' default and behaves
+--  exactly as it did before this migration.
+--
+--  Values: 'th' | 'en'. No CHECK constraint — same permissive posture as
+--  cadence's coerceCadence() on the client side: an unrecognised value
+--  would just fail to match either branch in clientI18n.t() and fall
+--  through to Thai, never break a read.
+--
+--  No RLS change: the existing engagements policies already cover this
+--  column for the firm. The client never reads the table directly — the
+--  `portal` Edge Function's `data` action selects it explicitly and
+--  returns it in the engagement payload it hands to the client bundle.
+-- =====================================================================
+
+alter table engagements add column if not exists language text not null default 'th';

@@ -245,7 +245,7 @@ Deno.serve(async (req) => {
     // one via the `periods` action and passes it back here.
     if (action === "data") {
       const { data: eng } = await admin.from("engagements")
-        .select("id, client, template, period_end, expires_at, cadence").eq("id", engagement_id).maybeSingle();
+        .select("id, client, template, period_end, expires_at, cadence, language").eq("id", engagement_id).maybeSingle();
 
       const { data: periodRows } = await admin.from("periods")
         .select("id, period_key, status").eq("engagement_id", engagement_id).order("sort");
