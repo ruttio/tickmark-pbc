@@ -28,8 +28,19 @@ const S = {
   },
 };
 
+// Copy kept inline (this component stays self-contained, no i18n import) so the
+// firm bundle that also uses it carries no client-portal dictionary. `lang`
+// defaults to Thai, which is what every firm-side caller wants.
+const TX = {
+  th: { loading: "กำลังโหลด…", empty: "ยังไม่มีความคิดเห็น — เริ่มพูดคุยเกี่ยวกับรายการนี้ได้เลย",
+    firm: "สำนักงาน", client: "ลูกค้า", placeholder: "พิมพ์ข้อความ… (Enter เพื่อส่ง)", send: "ส่ง" },
+  en: { loading: "Loading…", empty: "No comments yet — start the conversation about this item.",
+    firm: "Firm", client: "Client", placeholder: "Type a message… (Enter to send)", send: "Send" },
+};
+
 // comments: [{ id, by:'Firm'|'Client', author, body, at }] · meSide: which side "I" am.
-export function CommentThread({ comments = [], onSend, busy, meSide = "Firm", loading }) {
+export function CommentThread({ comments = [], onSend, busy, meSide = "Firm", loading, lang = "th" }) {
+  const tx = TX[lang] || TX.th;
   const [draft, setDraft] = useState("");
   const send = () => {
     const t = draft.trim();
@@ -41,13 +52,13 @@ export function CommentThread({ comments = [], onSend, busy, meSide = "Firm", lo
     <div>
       <div style={S.list}>
         {loading ? (
-          <div style={S.empty}>กำลังโหลด…</div>
+          <div style={S.empty}>{tx.loading}</div>
         ) : comments.length === 0 ? (
-          <div style={S.empty}>ยังไม่มีความคิดเห็น — เริ่มพูดคุยเกี่ยวกับรายการนี้ได้เลย</div>
+          <div style={S.empty}>{tx.empty}</div>
         ) : (
           comments.map((c) => {
             const mine = c.by === meSide;
-            const who = c.by === "Firm" ? (c.author || "สำนักงาน") : "ลูกค้า";
+            const who = c.by === "Firm" ? (c.author || tx.firm) : tx.client;
             return (
               <div key={c.id} style={{ ...S.row, justifyContent: mine ? "flex-end" : "flex-start" }}>
                 <div style={{ ...S.bubble, ...(mine ? S.mine : S.theirs) }}>
@@ -64,12 +75,12 @@ export function CommentThread({ comments = [], onSend, busy, meSide = "Firm", lo
           style={S.input}
           rows={1}
           value={draft}
-          placeholder="พิมพ์ข้อความ… (Enter เพื่อส่ง)"
+          placeholder={tx.placeholder}
           disabled={busy}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
         />
-        <button style={{ ...S.send, opacity: busy || !draft.trim() ? 0.5 : 1 }} disabled={busy || !draft.trim()} onClick={send}>ส่ง</button>
+        <button style={{ ...S.send, opacity: busy || !draft.trim() ? 0.5 : 1 }} disabled={busy || !draft.trim()} onClick={send}>{tx.send}</button>
       </div>
     </div>
   );

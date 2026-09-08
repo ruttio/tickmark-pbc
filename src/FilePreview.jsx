@@ -3,6 +3,7 @@
 // so it doesn't depend on either app's CSS scoping (tk- vs nv-).
 import React from "react";
 import { Icon } from "./icons.jsx";
+import { useEscape } from "./useEsc.js";
 
 const IMAGE_EXT = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"];
 
@@ -49,6 +50,7 @@ const S = {
 
 // file: { name, type }  ·  url: resolved presigned URL  ·  onClose: () => void
 export function FilePreviewModal({ file, url, onClose }) {
+  useEscape(true, onClose);
   const kind = previewKind(file);
   return (
     <div style={S.overlay} onClick={onClose}>

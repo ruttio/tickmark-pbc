@@ -101,3 +101,10 @@
   .nv-expiring button{flex-wrap:wrap;gap:4px 10px}
   .nv-expiring button b{flex:1 1 100%}
 }
+
+/* ---- rename-category affordance on a request-list group header --------- */
+.nv-ghead-edit{flex:none;border:0;background:transparent;color:var(--secondary-ink,#64748B);
+  cursor:pointer;padding:2px 4px;margin-left:6px;border-radius:8px;line-height:0;opacity:.55}
+.nv-ghead-edit:hover{opacity:1;color:var(--ledger-navy,#123563);background:rgba(18,53,99,.08)}
+.nv-ghead-edit:disabled{opacity:.3;cursor:default}
+.imp-cat{display:flex;align-items:center}

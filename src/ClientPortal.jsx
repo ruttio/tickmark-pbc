@@ -26,6 +26,9 @@ import { ALLOWED_EXT, fileError } from "./uploadRules.js";
 import { compressImage } from "./imageCompress.js";
 import { Icon } from "./icons.jsx";
 import { isPastDueDate } from "../lib/dateUtils.js";
+import { useBackNav } from "./useBackNav.js";
+import { useEscape } from "./useEsc.js";
+import { t } from "./clientI18n.js";
 import "./portal.css";
 import "./deliverables.css";
 
@@ -40,28 +43,29 @@ const STATUS = {
 };
 const STATUS_ORDER = ["outstanding", "submitted", "review", "accepted", "returned", "reopened"];
 
-// Thai labels + navy/mint chip tones + filter dots for the client view.
-const TH = { outstanding: "รออัปโหลด", submitted: "รอตรวจ", review: "กำลังตรวจ", accepted: "ตรวจรับแล้ว", returned: "ส่งกลับแก้ไข", reopened: "เปิดใหม่" };
 const CST = { outstanding: "slate", submitted: "amber", review: "amber", accepted: "mint", returned: "amber", reopened: "slate" };
 const DOT = { outstanding: "#64748B", submitted: "#F59E0B", review: "#F59E0B", accepted: "#12B39A", returned: "#F59E0B", reopened: "#64748B" };
 // Items the CLIENT still has to act on (upload / fix / re-send).
 const needsAction = (it) => ["outstanding", "returned", "reopened"].includes(it.status) || isOverdue(it);
 // Navy/mint status pill (accounts for overdue).
-function clientChip(it) {
-  if (isOverdue(it)) return { tone: "red", label: "⚠ เกินกำหนด" };
-  return { tone: CST[it.status], label: `${STATUS[it.status].glyph} ${TH[it.status]}` };
+function clientChip(it, lang) {
+  if (isOverdue(it)) return { tone: "red", label: `⚠ ${t(lang, "status.overdue")}` };
+  return { tone: CST[it.status], label: `${STATUS[it.status].glyph} ${t(lang, `status.${it.status}`)}` };
 }
 
 /* ---------- small helpers ---------------------------------------------- */
 const onlyDigits = (s) => s.replace(/\D+/g, "").slice(0, 16);
 const groupDigits = (s) => s.replace(/(.{4})/g, "$1 ").trim();
-const fmtDate = (ts) =>
-  !ts ? "—" : new Date(ts).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+// 'en' gets an explicit locale so months render in English regardless of the
+// visitor's own browser locale; 'th' keeps the original undefined-locale
+// behaviour (the browser's own locale) exactly as before this feature.
+const fmtDate = (ts, lang) =>
+  !ts ? "—" : new Date(ts).toLocaleDateString(lang === "en" ? "en-US" : undefined, { day: "2-digit", month: "short", year: "numeric" });
 const fmtSize = (b) =>
   b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0) + " KB"
     : b < 1073741824 ? (b / 1048576).toFixed(1) + " MB" : (b / 1073741824).toFixed(2) + " GB";
 const isOverdue = (it) => it.status !== "accepted" && isPastDueDate(it.dueDate);
-const fileExt = (name) => (name.includes(".") ? name.split(".").pop().slice(0, 4).toUpperCase() : "ไฟล์");
+const fileExt = (name, lang) => (name.includes(".") ? name.split(".").pop().slice(0, 4).toUpperCase() : t(lang, "file.noExt"));
 
 // `accept` for the upload <input>, derived from uploadRules.js's ALLOWED_EXT
 // so the two lists can't drift apart (one source of truth for what's allowed).
@@ -149,6 +153,11 @@ function SinglePortal({ engagementId }) {
   const [periods, setPeriods] = useState([]);
   const [activePeriodId, setActivePeriodId] = useState(null);
   const [deliverables, setDeliverables] = useState([]);
+  // The engagement hasn't loaded yet before unlock (the lock screen has no
+  // engagement to read a language from at all), so this defaults to 'th' —
+  // see clientI18n.js's header comment for why that default is unavoidable
+  // rather than a shortcut.
+  const lang = eng?.language === "en" ? "en" : "th";
 
   // Try a cached session on first paint.
   useEffect(() => {
@@ -187,7 +196,7 @@ function SinglePortal({ engagementId }) {
         setToken(null);
         setPhase("locked");
       } else {
-        setLoadErr(e.message || "โหลดข้อมูลไม่สำเร็จ");
+        setLoadErr(e.message || t(lang, "err.load"));
         setPhase("ready");
       }
     }
@@ -279,7 +288,7 @@ function SinglePortal({ engagementId }) {
     );
 
   return (
-    <Shell onLock={lock}>
+    <Shell onLock={lock} lang={lang}>
       <ClientList
         phase={phase}
         eng={eng}
@@ -295,13 +304,17 @@ function SinglePortal({ engagementId }) {
         onDeliverableOpened={markDeliverableOpened}
         onAck={ackDeliverable}
         onRequestRevision={requestRevision}
+        lang={lang}
       />
     </Shell>
   );
 }
 
 /* ---------- chrome (navy top bar) -------------------------------------- */
-function Shell({ children, onLock, secure = false }) {
+// `lang` defaults to 'th' — the lock/nolink screens render this before any
+// engagement has loaded, so there is nothing to read a language from yet
+// (see clientI18n.js's header comment).
+function Shell({ children, onLock, secure = false, lang = "th" }) {
   return (
     <div className="tk-root nv">
       <div className="nv-top">
@@ -311,9 +324,9 @@ function Shell({ children, onLock, secure = false }) {
           <span className="nv-pill">PBC Portal</span>
         </div>
         <div className="nv-top-right">
-          {secure && <span className="nv-secure"><span className="lk"><Icon name="lock" size={12} /></span>การเชื่อมต่อปลอดภัย</span>}
+          {secure && <span className="nv-secure"><span className="lk"><Icon name="lock" size={12} /></span>{t(lang, "shell.secure")}</span>}
           {onLock && (
-            <span className="nv-icon" title="ออกจากพอร์ทัล" onClick={onLock}>⎋</span>
+            <span className="nv-icon" title={t(lang, "shell.exit")} onClick={onLock}>⎋</span>
           )}
         </div>
       </div>
@@ -408,12 +421,13 @@ function LockScreen({ onUnlock }) {
 }
 
 /* ---------- multi-select filter card (status / category) --------------- */
-function MultiFilter({ label, placeholder, options, selected, onChange }) {
+function MultiFilter({ label, placeholder, options, selected, onChange, lang }) {
   const [open, setOpen] = useState(false);
+  useEscape(open, () => setOpen(false));
   const has = selected.length > 0;
   const summary = !has ? placeholder
-    : selected.length === 1 ? (options.find((o) => o.value === selected[0])?.label || "1 รายการ")
-      : `เลือก ${selected.length} รายการ`;
+    : selected.length === 1 ? (options.find((o) => o.value === selected[0])?.label || t(lang, "filter.oneItem"))
+      : t(lang, "filter.selectedCount", { n: selected.length });
   const toggle = (v) => {
     const s = new Set(selected);
     if (s.has(v)) s.delete(v); else s.add(v);
@@ -423,7 +437,7 @@ function MultiFilter({ label, placeholder, options, selected, onChange }) {
     <div className="nv-asf">
       <div className="nv-asf-h">
         <label className="nv-asf-l">{label}</label>
-        {has && <button className="nv-asf-clear" onClick={() => onChange([])}>ล้าง ✕</button>}
+        {has && <button className="nv-asf-clear" onClick={() => onChange([])}>{t(lang, "filter.clear")}</button>}
       </div>
       <div className="nv-msf">
         <button className={`nv-msf-btn ${has ? "on" : ""}`} onClick={() => setOpen((o) => !o)}>
@@ -454,7 +468,7 @@ function MultiFilter({ label, placeholder, options, selected, onChange }) {
 function ClientList({
   phase, eng, items, loadErr, token, engagementId, onUploaded,
   periods, activePeriodId, onPeriodChange,
-  deliverables, onDeliverableOpened, onAck, onRequestRevision,
+  deliverables, onDeliverableOpened, onAck, onRequestRevision, lang,
 }) {
   // Which of the two segment views is showing. Local (not lifted) — nothing
   // outside this component needs to know, and it's fine for it to reset to
@@ -545,7 +559,7 @@ function ClientList({
   const unopenedCount = useMemo(() => deliverables.filter((d) => d.status === "delivered" && !d.viewedAt).length, [deliverables]);
 
   if (phase === "loading" && !eng)
-    return <div className="nv-page"><div className="tk-boot" style={{ color: "#64748B" }}>กำลังโหลดรายการเอกสาร…</div></div>;
+    return <div className="nv-page"><div className="tk-boot" style={{ color: "#64748B" }}>{t(lang, "list.loading")}</div></div>;
 
   return (
     <div className="nv-page">
@@ -554,7 +568,7 @@ function ClientList({
           <div className="nv-chead-l">
             <span className="nv-chead-name">{eng.client}</span>
             <span className="nv-chead-type">{eng.template}</span>
-            <span className="nv-chead-meta">งวดสิ้นสุด {fmtDate(eng.periodEnd)} · {items.length} รายการ</span>
+            <span className="nv-chead-meta">{t(lang, "chead.periodEnd", { date: fmtDate(eng.periodEnd, lang), n: items.length })}</span>
           </div>
           {items.length > 0 && (
             <div className="nv-chead-prog">
@@ -566,8 +580,8 @@ function ClientList({
                 <span className="pc">{pct}%</span>
               </div>
               <div className="cap">
-                ตรวจรับแล้ว <b>{accepted}</b> / {items.length} รายการ
-                {pending > 0 && <span className="pend"> · รอตรวจ {pending}</span>}
+                {t(lang, "chead.acceptedBefore")}<b>{accepted}</b>{t(lang, "chead.acceptedAfter", { total: items.length })}
+                {pending > 0 && <span className="pend">{t(lang, "chead.pending", { n: pending })}</span>}
               </div>
             </div>
           )}
@@ -583,53 +597,53 @@ function ClientList({
       {monthly && (
         <ViewBar
           view={view} setView={setView} unopenedCount={unopenedCount}
-          periods={periods} activePeriodId={activePeriodId} onPeriodChange={onPeriodChange}
+          periods={periods} activePeriodId={activePeriodId} onPeriodChange={onPeriodChange} lang={lang}
         />
       )}
       {/* Phased audit: just the phase picker (no deliverables tab). Hides itself
           when there's only one phase — same as a plain one-off audit. */}
       {phased && (
         <div className="dv-bar">
-          <PeriodSwitcher periods={periods} activePeriodId={activePeriodId} onChange={onPeriodChange} />
+          <PeriodSwitcher periods={periods} activePeriodId={activePeriodId} onChange={onPeriodChange} lang={lang} />
         </div>
       )}
 
       {periodClosed && (
         <div className="dv-closed-note">
           <span className="ic"><Icon name="lock" size={14} /></span>
-          <span>งวดนี้ปิดแล้ว — ดูเอกสารเดิมได้ตามปกติ แต่อัปโหลดเพิ่มไม่ได้ หากต้องการส่งเอกสารเพิ่มเติม กรุณาติดต่อสำนักงาน</span>
+          <span>{t(lang, "period.closedNote")}</span>
         </div>
       )}
 
       {view === "deliverables" && monthly ? (
-        <DeliverablesList deliverables={deliverables} token={token} engagementId={engagementId} onOpened={onDeliverableOpened} onAck={onAck} onRequestRevision={onRequestRevision} />
+        <DeliverablesList deliverables={deliverables} token={token} engagementId={engagementId} onOpened={onDeliverableOpened} onAck={onAck} onRequestRevision={onRequestRevision} lang={lang} />
       ) : items.length === 0 ? (
-        <div className="nv-list"><div style={{ padding: "40px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ยังไม่มีรายการเอกสารในพอร์ทัลนี้</div></div>
+        <div className="nv-list"><div style={{ padding: "40px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>{t(lang, "list.empty")}</div></div>
       ) : (
         <div className="nv-work">
           {/* LEFT: search, alert, status filters, category groups */}
           <aside className="nv-aside">
-            <div className="nv-isearch"><span>⌕</span><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาเอกสาร…" /></div>
+            <div className="nv-isearch"><span>⌕</span><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t(lang, "search.placeholder")} /></div>
             {stats.overdue > 0 && (
               <div className="nv-alert" onClick={() => { setStatusSel(["overdue"]); setCatSel([]); }}>
                 <span className="ic">⚠</span>
-                <span>มี <b>{stats.overdue}</b> รายการเกินกำหนดส่ง{firstOverdue && ` — ${firstOverdue.description}`} · คลิกเพื่อดู</span>
+                <span>{t(lang, "alert.overdueBefore")}<b>{stats.overdue}</b>{t(lang, "alert.overdueAfter")}{firstOverdue && ` — ${firstOverdue.description}`} · {t(lang, "alert.clickToView")}</span>
               </div>
             )}
             {unreadC.length > 0 && (
               <div className="nv-alert cmt" onClick={() => { setOpenCommentsId(unreadC[0].id); setStatusSel([]); setCatSel([]); setQ(""); }}>
                 <span className="ic"><Icon name="chat" size={14} /></span>
-                <span>มี <b>{unreadC.length}</b> ความคิดเห็นใหม่จากสำนักงาน — {unreadC[0].description} · คลิกเพื่ออ่าน</span>
+                <span>{t(lang, "alert.commentsBefore")}<b>{unreadC.length}</b>{t(lang, "alert.commentsAfter")} — {unreadC[0].description} · {t(lang, "alert.clickToRead")}</span>
               </div>
             )}
-            <MultiFilter label="สถานะ" placeholder={`ทุกสถานะ · ${items.length}`} selected={statusSel} onChange={setStatusSel}
+            <MultiFilter label={t(lang, "filter.status")} placeholder={t(lang, "filter.allStatus", { n: items.length })} selected={statusSel} onChange={setStatusSel} lang={lang}
               options={[
-                ...(stats.action > 0 ? [{ value: "action", label: "⚠ ต้องดำเนินการ", count: stats.action, dot: "#EF4444" }] : []),
-                ...STATUS_ORDER.map((s) => ({ value: s, label: TH[s], count: stats.by[s], dot: DOT[s] })),
-                { value: "overdue", label: "เกินกำหนด", count: stats.overdue, dot: "#EF4444" },
+                ...(stats.action > 0 ? [{ value: "action", label: t(lang, "filter.needsAction"), count: stats.action, dot: "#EF4444" }] : []),
+                ...STATUS_ORDER.map((s) => ({ value: s, label: t(lang, `status.${s}`), count: stats.by[s], dot: DOT[s] })),
+                { value: "overdue", label: t(lang, "filter.overdue"), count: stats.overdue, dot: "#EF4444" },
               ]} />
             {cats.length > 0 && (
-              <MultiFilter label="หมวดเอกสาร" placeholder={`ทุกหมวด · ${items.length}`} selected={catSel} onChange={setCatSel}
+              <MultiFilter label={t(lang, "filter.category")} placeholder={t(lang, "filter.allCategory", { n: items.length })} selected={catSel} onChange={setCatSel} lang={lang}
                 options={cats.map((c) => ({ value: c.cat, label: c.cat, count: c.count }))} />
             )}
           </aside>
@@ -637,7 +651,7 @@ function ClientList({
           {/* RIGHT: document request list */}
           <div>
             {grouped.length === 0 ? (
-              <div className="nv-list"><div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ไม่มีรายการที่ตรงกับตัวกรองนี้</div></div>
+              <div className="nv-list"><div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>{t(lang, "list.noMatch")}</div></div>
             ) : (
               grouped.map(([cat, rows]) => (
                 <div key={cat}>
@@ -648,13 +662,13 @@ function ClientList({
                   <div className="nv-list">
                     {rows.map((it, idx) => (
                       <ClientRow key={it.id} item={it} index={idx + 1} token={token} engagementId={engagementId} onUploaded={onUploaded}
-                        autoOpen={openCommentsId === it.id} onSeen={() => markItemSeen(it.id)} periodClosed={periodClosed} />
+                        autoOpen={openCommentsId === it.id} onSeen={() => markItemSeen(it.id)} periodClosed={periodClosed} lang={lang} />
                     ))}
                   </div>
                 </div>
               ))
             )}
-            <p className="nv-cfoot">เอกสารถูกเก็บอย่างปลอดภัย · เข้าถึงได้เฉพาะพอร์ทัลของคุณ</p>
+            <p className="nv-cfoot">{t(lang, "footer.secure")}</p>
           </div>
         </div>
       )}
@@ -667,17 +681,17 @@ function ClientList({
    active or whether the request list is empty, since it's the only way to
    reach the deliverables tab. The period switcher degrades to nothing when
    there's only one period (annual audit portals never see it). --------- */
-function ViewBar({ view, setView, unopenedCount, periods, activePeriodId, onPeriodChange }) {
+function ViewBar({ view, setView, unopenedCount, periods, activePeriodId, onPeriodChange, lang }) {
   return (
     <div className="dv-bar">
       <div className="nv-seg dv-view-seg">
-        <button className={view === "requests" ? "on" : ""} onClick={() => setView("requests")}>เอกสารที่ต้องส่ง</button>
+        <button className={view === "requests" ? "on" : ""} onClick={() => setView("requests")}>{t(lang, "view.requests")}</button>
         <button className={view === "deliverables" ? "on" : ""} onClick={() => setView("deliverables")}>
-          งานส่งมอบ
+          {t(lang, "view.deliverables")}
           {unopenedCount > 0 && <span className="dv-badge">{unopenedCount}</span>}
         </button>
       </div>
-      <PeriodSwitcher periods={periods} activePeriodId={activePeriodId} onChange={onPeriodChange} />
+      <PeriodSwitcher periods={periods} activePeriodId={activePeriodId} onChange={onPeriodChange} lang={lang} />
     </div>
   );
 }
@@ -687,8 +701,9 @@ function ViewBar({ view, setView, unopenedCount, periods, activePeriodId, onPeri
 // focus/hover/backdrop behaviour. Sorted by the numeric `sort` field, never
 // by `label` (Thai display text isn't chronological) and never by
 // `periodKey` alone (kept internal — never shown to the client).
-function PeriodSwitcher({ periods, activePeriodId, onChange }) {
+function PeriodSwitcher({ periods, activePeriodId, onChange, lang }) {
   const [open, setOpen] = useState(false);
+  useEscape(open, () => setOpen(false)); // before the early return — rules of hooks
   if (periods.length <= 1) return null; // one-off / annual portal → no period UI at all
   // A handful of periods at most — a plain sort per render is cheap enough
   // that memoizing it would just be ceremony (and can't sit before the
@@ -699,8 +714,8 @@ function PeriodSwitcher({ periods, activePeriodId, onChange }) {
     <div className="nv-msf dv-persw">
       <button className="nv-msf-btn" onClick={() => setOpen((o) => !o)}>
         <span className="nv-msf-val">
-          {active?.label || "เลือกงวด"}
-          {active?.status === "closed" && <span className="dv-closedtag">ปิดงวด</span>}
+          {active?.label || t(lang, "period.select")}
+          {active?.status === "closed" && <span className="dv-closedtag">{t(lang, "period.closedTag")}</span>}
         </span>
         <span className="nv-msf-cv">▾</span>
       </button>
@@ -713,7 +728,7 @@ function PeriodSwitcher({ periods, activePeriodId, onChange }) {
                 onClick={() => { onChange(p.id); setOpen(false); }}>
                 <span className="nv-msf-ck">{p.id === activePeriodId ? "✓" : ""}</span>
                 <span className="nv-msf-opt-lb">{p.label}</span>
-                {p.status === "closed" && <span className="nv-msf-opt-ct">ปิดแล้ว</span>}
+                {p.status === "closed" && <span className="nv-msf-opt-ct">{t(lang, "period.closedOpt")}</span>}
               </button>
             ))}
           </div>
@@ -724,7 +739,7 @@ function PeriodSwitcher({ periods, activePeriodId, onChange }) {
 }
 
 /* ---------- deliverables view — what the firm sent back ---------------- */
-function DeliverablesList({ deliverables, token, engagementId, onOpened, onAck, onRequestRevision }) {
+function DeliverablesList({ deliverables, token, engagementId, onOpened, onAck, onRequestRevision, lang }) {
   const grouped = useMemo(() => {
     const m = new Map();
     [...deliverables].sort((a, b) => a.sort - b.sort).forEach((d) => {
@@ -742,8 +757,8 @@ function DeliverablesList({ deliverables, token, engagementId, onOpened, onAck, 
       <div className="nv-list">
         <div className="dv-empty">
           <span className="ic"><Icon name="inbox" size={20} /></span>
-          <div>ยังไม่มีงานส่งมอบสำหรับงวดนี้</div>
-          <div className="sub">เมื่อสำนักงานส่งเอกสารหรือรายงานให้ จะแสดงไว้ที่นี่</div>
+          <div>{t(lang, "deliv.emptyTitle")}</div>
+          <div className="sub">{t(lang, "deliv.emptySub")}</div>
         </div>
       </div>
     );
@@ -755,21 +770,21 @@ function DeliverablesList({ deliverables, token, engagementId, onOpened, onAck, 
         <div key={cat}>
           <div className="nv-ghead">
             <span className="gt">{cat}</span><span className="gline" />
-            <span className="gn">{rows.length} รายการ</span>
+            <span className="gn">{t(lang, "common.itemsCount", { n: rows.length })}</span>
           </div>
           <div className="nv-list">
             {rows.map((d) => (
-              <DeliverableRow key={d.id} item={d} token={token} engagementId={engagementId} onOpened={onOpened} onAck={onAck} onRequestRevision={onRequestRevision} />
+              <DeliverableRow key={d.id} item={d} token={token} engagementId={engagementId} onOpened={onOpened} onAck={onAck} onRequestRevision={onRequestRevision} lang={lang} />
             ))}
           </div>
         </div>
       ))}
-      <p className="nv-cfoot">เอกสารถูกเก็บอย่างปลอดภัย · เข้าถึงได้เฉพาะพอร์ทัลของคุณ</p>
+      <p className="nv-cfoot">{t(lang, "footer.secure")}</p>
     </div>
   );
 }
 
-function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestRevision }) {
+function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestRevision, lang }) {
   const [preview, setPreview] = useState(null);
   const [err, setErr] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -814,9 +829,9 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
     : item.status === "revision_requested" ? "requested"
     : unopened ? "new" : "wait";
   const chipTone = stateCls === "done" ? "mint" : stateCls === "new" ? "info" : "amber";
-  const chipLabel = stateCls === "done" ? "✓ รับทราบแล้ว"
-    : stateCls === "requested" ? "◐ รอสำนักงานแก้ไข"
-    : stateCls === "new" ? "● ยังไม่ได้เปิด" : "◐ รอการรับทราบ";
+  const chipLabel = stateCls === "done" ? t(lang, "deliv.chipAcked")
+    : stateCls === "requested" ? t(lang, "deliv.chipRequested")
+    : stateCls === "new" ? t(lang, "deliv.chipNew") : t(lang, "deliv.chipWaiting");
 
   const openFile = async (f) => {
     setErr("");
@@ -826,7 +841,7 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
       if (isPreviewable(f)) setPreview({ file: f, url });
       else window.open(url, "_blank");
     } catch (e) {
-      setErr(e.message || "เปิดไฟล์ไม่สำเร็จ");
+      setErr(e.message || t(lang, "err.openFile"));
     }
   };
 
@@ -837,7 +852,7 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
       await onAck(item.id);
       setConfirming(false);
     } catch (e) {
-      setErr(e.message || "รับทราบไม่สำเร็จ");
+      setErr(e.message || t(lang, "err.ack"));
     } finally {
       setBusy(false);
     }
@@ -853,7 +868,7 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
       setRequesting(false);
       setRevNote("");
     } catch (e) {
-      setErr(e.message || "ส่งคำขอแก้ไขไม่สำเร็จ");
+      setErr(e.message || t(lang, "err.sendRevision"));
     } finally {
       setBusy(false);
     }
@@ -878,7 +893,7 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
   const sendComment = async (body) => {
     setSendingC(true);
     try { await clientApi.addDeliverableComment(token, item.id, engagementId, body); await loadComments(); }
-    catch (e) { setErr(e.message || "ส่งความคิดเห็นไม่สำเร็จ"); }
+    catch (e) { setErr(e.message || t(lang, "err.sendComment")); }
     finally { setSendingC(false); }
   };
 
@@ -887,21 +902,21 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
       <div className="nv-crow-main">
         <div className="nv-crow-name">
           {item.title}
-          {unopened && <span className="dv-new">ใหม่</span>}
+          {unopened && <span className="dv-new">{t(lang, "deliv.new")}</span>}
           {/* "Make the revision legible": a corrected release must say so,
               not just silently replace the files — the client may remember
               asking for a fix and needs to see that this is that answer. */}
-          {item.revision > 1 && <span className="dv-closedtag">ฉบับแก้ไขที่ {item.revision}</span>}
+          {item.revision > 1 && <span className="dv-closedtag">{t(lang, "deliv.revisionTag", { n: item.revision })}</span>}
         </div>
         <div className="nv-crow-sub">
           <span className="dv-cat">{item.category}</span>
-          {item.dueDate != null && <span className="dv-meta">กำหนดส่งภายใน {fmtDate(item.dueDate)}</span>}
-          {item.deliveredAt != null && <span className="dv-meta">ส่งเมื่อ {fmtDate(item.deliveredAt)}</span>}
+          {item.dueDate != null && <span className="dv-meta">{t(lang, "deliv.dueBy", { date: fmtDate(item.dueDate, lang) })}</span>}
+          {item.deliveredAt != null && <span className="dv-meta">{t(lang, "deliv.deliveredOn", { date: fmtDate(item.deliveredAt, lang) })}</span>}
         </div>
 
         {item.note && (
           <div className="nv-cnote note">
-            <b><Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />หมายเหตุจากสำนักงาน:</b> {item.note}
+            <b><Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />{t(lang, "deliv.noteFromFirm")}</b> {item.note}
           </div>
         )}
 
@@ -911,8 +926,8 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
             it's the same kind of thing: a quoted note attached to the row. */}
         {item.status === "revision_requested" && (
           <div className="nv-cnote note">
-            <b><Icon name="return" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />คุณขอให้แก้ไข:</b> {item.revisionNote}
-            <div className="dv-revnote-sub">สำนักงานได้รับคำขอแล้วและกำลังดำเนินการแก้ไข — ไม่ต้องทำอะไรเพิ่มในตอนนี้</div>
+            <b><Icon name="return" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />{t(lang, "deliv.yourRevisionRequest")}</b> {item.revisionNote}
+            <div className="dv-revnote-sub">{t(lang, "deliv.revisionAck")}</div>
           </div>
         )}
 
@@ -929,9 +944,9 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
           <ul className="nv-fchips">
             {currentFiles.map((f) => (
               <li key={f.id} className="nv-fchip">
-                <span className="nv-ftype">{fileExt(f.name)}</span>
+                <span className="nv-ftype">{fileExt(f.name, lang)}</span>
                 <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
-                <button className="nv-fx" onClick={() => openFile(f)}>{isPreviewable(f) ? "ดู" : "ดาวน์โหลด"}</button>
+                <button className="nv-fx" onClick={() => openFile(f)}>{isPreviewable(f) ? t(lang, "deliv.view") : t(lang, "deliv.download")}</button>
               </li>
             ))}
           </ul>
@@ -941,17 +956,17 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
           <div className="dv-older">
             <button type="button" className="nv-clink" onClick={() => setShowOld((o) => !o)}>
               <Icon name="archive" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />
-              ฉบับก่อนหน้า ({olderRounds.reduce((n, [, fs]) => n + fs.length, 0)}) {showOld ? "▲" : "▼"}
+              {t(lang, "deliv.olderRounds", { n: olderRounds.reduce((n, [, fs]) => n + fs.length, 0) })} {showOld ? "▲" : "▼"}
             </button>
             {showOld && olderRounds.map(([rev, files]) => (
               <div key={rev} className="dv-round old">
-                <div className="dv-round-h">{rev === 1 ? "ฉบับแรก" : `แก้ไขครั้งที่ ${rev}`}</div>
+                <div className="dv-round-h">{rev === 1 ? t(lang, "deliv.firstRound") : t(lang, "deliv.roundN", { n: rev })}</div>
                 <ul className="nv-fchips">
                   {files.map((f) => (
                     <li key={f.id} className="nv-fchip">
-                      <span className="nv-ftype">{fileExt(f.name)}</span>
+                      <span className="nv-ftype">{fileExt(f.name, lang)}</span>
                       <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
-                      <button className="nv-fx" onClick={() => openFile(f)}>{isPreviewable(f) ? "ดู" : "ดาวน์โหลด"}</button>
+                      <button className="nv-fx" onClick={() => openFile(f)}>{isPreviewable(f) ? t(lang, "deliv.view") : t(lang, "deliv.download")}</button>
                     </li>
                   ))}
                 </ul>
@@ -961,17 +976,17 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
         )}
 
         {item.status === "acknowledged" ? (
-          <div className="dv-acked"><Icon name="check" size={13} />รับทราบแล้ว · {fmtDate(item.acknowledgedAt)}</div>
+          <div className="dv-acked"><Icon name="check" size={13} />{t(lang, "deliv.ackedOn", { date: fmtDate(item.acknowledgedAt, lang) })}</div>
         ) : item.status === "revision_requested" ? null /* the note above says it all — no action, no button */ : confirming ? (
           // A deliberate two-step confirm, not a single click — acknowledging
           // is meaningful in a tax context and can't be undone, but the copy
           // stays plain rather than alarming.
           <div className="dv-ackconfirm">
-            <p>เมื่อกดยืนยัน ระบบจะบันทึกว่าคุณได้รับเอกสารนี้แล้ว และไม่สามารถยกเลิกภายหลังได้</p>
+            <p>{t(lang, "deliv.confirmText")}</p>
             <div className="dv-ackbtns">
-              <button className="nv-btn" disabled={busy} onClick={() => setConfirming(false)}>ยกเลิก</button>
+              <button className="nv-btn" disabled={busy} onClick={() => setConfirming(false)}>{t(lang, "common.cancel")}</button>
               <button className="nv-upbtn" style={{ marginTop: 0 }} disabled={busy} onClick={confirmAck}>
-                {busy ? "กำลังบันทึก…" : "ยืนยันรับทราบ"}
+                {busy ? t(lang, "deliv.saving") : t(lang, "deliv.confirmAck")}
               </button>
             </div>
           </div>
@@ -983,36 +998,36 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
           // misspelled," so naming those examples up front makes writing a
           // real reason the easy path instead of a hurdle to get past.
           <div className="dv-revform">
-            <p className="lead">บอกสำนักงานว่าอยากให้แก้ไขอะไร เช่น &ldquo;ยอดในใบเสร็จไม่ตรงกับที่จ่ายจริง&rdquo; หรือ &ldquo;ชื่อ/เลขผู้เสียภาษีสะกดผิด&rdquo;</p>
+            <p className="lead">{t(lang, "deliv.revisionPrompt")}</p>
             <textarea
               value={revNote}
               onChange={(e) => setRevNote(e.target.value.slice(0, 2000))}
-              placeholder="พิมพ์รายละเอียดที่ต้องการให้แก้ไข…"
+              placeholder={t(lang, "deliv.revisionPlaceholder")}
               rows={3}
               disabled={busy}
               autoFocus
             />
             <div className="dv-ackbtns">
-              <button className="nv-btn" disabled={busy} onClick={() => { setRequesting(false); setRevNote(""); }}>ยกเลิก</button>
+              <button className="nv-btn" disabled={busy} onClick={() => { setRequesting(false); setRevNote(""); }}>{t(lang, "common.cancel")}</button>
               <button className="nv-upbtn" style={{ marginTop: 0 }} disabled={busy || !revNote.trim()} onClick={submitRevision}>
-                {busy ? "กำลังส่ง…" : "ส่งคำขอแก้ไข"}
+                {busy ? t(lang, "deliv.sending") : t(lang, "deliv.sendRevision")}
               </button>
             </div>
           </div>
         ) : (
           <div className="dv-actions">
-            <button className="dv-ackbtn" onClick={() => setConfirming(true)}>กดรับทราบ</button>
+            <button className="dv-ackbtn" onClick={() => setConfirming(true)}>{t(lang, "deliv.ackBtn")}</button>
             <button className="dv-revbtn" onClick={() => setRequesting(true)}>
-              <Icon name="return" size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />ขอแก้ไข
+              <Icon name="return" size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t(lang, "deliv.revBtn")}
             </button>
           </div>
         )}
 
         <div className="nv-crow-comments">
           <button type="button" className={`nv-clink ${showC && comments.length ? "has" : ""}`} onClick={toggleComments}>
-            <Icon name="chat" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />ความคิดเห็น{showC && comments.length ? ` (${comments.length})` : ""} {showC ? "▲" : "▼"}
+            <Icon name="chat" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />{t(lang, "comments.label")}{showC && comments.length ? ` (${comments.length})` : ""} {showC ? "▲" : "▼"}
           </button>
-          {showC && <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Client" />}
+          {showC && <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Client" lang={lang} />}
         </div>
 
         {err && <p className="nv-lock-err" style={{ marginTop: 6 }}>{err}</p>}
@@ -1023,7 +1038,7 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
   );
 }
 
-function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onSeen, periodClosed = false }) {
+function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onSeen, periodClosed = false, lang }) {
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
   const rowRef = useRef(null);
@@ -1060,7 +1075,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
   const sendComment = async (body) => {
     setSendingC(true);
     try { await clientApi.addComment(token, item.id, engagementId, body); await loadComments(); }
-    catch (e) { setErr(e.message || "ส่งความคิดเห็นไม่สำเร็จ"); }
+    catch (e) { setErr(e.message || t(lang, "err.sendComment")); }
     finally { setSendingC(false); }
   };
 
@@ -1069,7 +1084,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
     if (!files.length) return;
     // Advisory pre-check (the Edge Function enforces the same rules authoritatively).
     for (const f of files) {
-      const bad = fileError(f);
+      const bad = fileError(f, lang);
       if (bad) { setErr(`${f.name}: ${bad}`); return; }
     }
     setBusy(true);
@@ -1091,14 +1106,14 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
         await onUploaded(); // load() will detect 401 and bounce to lock
         return;
       }
-      setErr(e.message || "อัปโหลดไม่สำเร็จ");
+      setErr(e.message || t(lang, "err.upload"));
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async (fileId) => {
-    if (!confirm("ลบไฟล์นี้ออกจากพอร์ทัล?")) return;
+    if (!confirm(t(lang, "confirm.removeFile"))) return;
     setBusy(true);
     setErr("");
     try {
@@ -1106,7 +1121,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
       await onUploaded();
     } catch (e) {
       if (e.status === 401) { await onUploaded(); return; }
-      setErr(e.message || "ลบไฟล์ไม่สำเร็จ");
+      setErr(e.message || t(lang, "err.removeFile"));
     } finally {
       setBusy(false);
     }
@@ -1115,12 +1130,12 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
   const clientFiles = item.files.filter((f) => !f.isSample);
   const sampleFiles = item.files.filter((f) => f.isSample);
   const od = isOverdue(item);
-  const chip = clientChip(item);
+  const chip = clientChip(item, lang);
   const rowCls = item.status === "accepted" ? "acc" : od ? "od" : "";
 
   const openSample = async (fileId) => {
     try { window.open(await clientApi.sampleUrl(token, fileId, engagementId), "_blank"); }
-    catch (e) { setErr(e.message || "เปิดไฟล์ไม่สำเร็จ"); }
+    catch (e) { setErr(e.message || t(lang, "err.openFile")); }
   };
 
   // In-page preview (PDF / image) for any file in this portal.
@@ -1131,7 +1146,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
       setPreview({ file: f, url });
     } catch (e) {
       setPreview(null);
-      setErr(e.message || "เปิดตัวอย่างไม่สำเร็จ");
+      setErr(e.message || t(lang, "err.openPreview"));
     }
   };
 
@@ -1146,30 +1161,30 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
       <div className="nv-crow-main">
         <div className="nv-crow-name">{item.description}{item.required && <span className="req" title="Required">•</span>}</div>
         <div className="nv-crow-sub">
-          {clientFiles.length > 0 && <span className="f">{clientFiles.length} ไฟล์</span>}
+          {clientFiles.length > 0 && <span className="f">{t(lang, "row.filesCount", { n: clientFiles.length })}</span>}
           <span className={`due ${od ? "od" : ""}`}>
-            กำหนดส่ง {fmtDate(item.dueDate)}
-            {od && item.dueDate && ` · เกิน ${Math.max(1, Math.floor((Date.now() - item.dueDate) / 86400000))} วัน`}
+            {t(lang, "row.due", { date: fmtDate(item.dueDate, lang) })}
+            {od && item.dueDate && t(lang, "row.overdueBy", { n: Math.max(1, Math.floor((Date.now() - item.dueDate) / 86400000)) })}
           </span>
         </div>
 
         {item.status === "returned" && item.note && (
-          <div className="nv-cnote rust"><b>ส่งกลับจากสำนักงาน:</b> {item.note}</div>
+          <div className="nv-cnote rust"><b>{t(lang, "row.returnedByFirm")}</b> {item.note}</div>
         )}
         {item.firmNote && (
-          <div className="nv-cnote note"><b><Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />หมายเหตุจากสำนักงาน:</b> {item.firmNote}</div>
+          <div className="nv-cnote note"><b><Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />{t(lang, "deliv.noteFromFirm")}</b> {item.firmNote}</div>
         )}
 
         {sampleFiles.length > 0 && (
           <div className="nv-cnote note">
-            <b><Icon name="paperclip" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />รายการที่สำนักงานเลือก / ตัวอย่าง:</b>
+            <b><Icon name="paperclip" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />{t(lang, "row.sampleHeading")}</b>
             <ul className="nv-fchips">
               {sampleFiles.map((f) => (
                 <li key={f.id} className="nv-fchip">
-                  <span className="nv-ftype">{fileExt(f.name)}</span>
+                  <span className="nv-ftype">{fileExt(f.name, lang)}</span>
                   <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)}</i></span>
-                  {isPreviewable(f) && <button className="nv-fx" onClick={() => openPreview(f)}>ดู</button>}
-                  <button className="nv-fx" onClick={() => openSample(f.id)}>ดาวน์โหลด</button>
+                  {isPreviewable(f) && <button className="nv-fx" onClick={() => openPreview(f)}>{t(lang, "deliv.view")}</button>}
+                  <button className="nv-fx" onClick={() => openSample(f.id)}>{t(lang, "deliv.download")}</button>
                 </li>
               ))}
             </ul>
@@ -1180,11 +1195,11 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
           <ul className="nv-fchips">
             {clientFiles.map((f) => (
               <li key={f.id} className="nv-fchip">
-                <span className="nv-ftype">{fileExt(f.name)}</span>
-                <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
-                {f.rejected && <span className="nv-frej">ต้องแก้ไข</span>}
-                {isPreviewable(f) && <button className="nv-fx" onClick={() => openPreview(f)}>ดู</button>}
-                {canUpload && <button className="nv-fx" disabled={busy} onClick={() => remove(f.id)}>ลบ</button>}
+                <span className="nv-ftype">{fileExt(f.name, lang)}</span>
+                <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt, lang)}</i></span>
+                {f.rejected && <span className="nv-frej">{t(lang, "row.needsFix")}</span>}
+                {isPreviewable(f) && <button className="nv-fx" onClick={() => openPreview(f)}>{t(lang, "deliv.view")}</button>}
+                {canUpload && <button className="nv-fx" disabled={busy} onClick={() => remove(f.id)}>{t(lang, "row.remove")}</button>}
               </li>
             ))}
           </ul>
@@ -1213,28 +1228,28 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
                   onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
                   onDragLeave={() => setDrag(false)}
                   onDrop={onDrop}>
-                  <div className="t">{busy ? "กำลังอัปโหลด…" : <>ลากไฟล์มาวางที่นี่ หรือ <b>เลือกไฟล์</b></>}</div>
+                  <div className="t">{busy ? t(lang, "row.uploading") : <>{t(lang, "row.dropLead")}<b>{t(lang, "row.chooseFile")}</b></>}</div>
                   <div className="h">PDF, JPG, PNG, XLSX</div>
                 </div>
               ) : (
                 <button className="nv-upbtn" style={{ marginTop: 0 }} disabled={busy} onClick={() => fileRef.current?.click()}>
-                  {busy ? "กำลังอัปโหลด…" : "↑ อัปโหลดเพิ่ม"}
+                  {busy ? t(lang, "row.uploading") : t(lang, "row.uploadMore")}
                 </button>
               )}
               <button type="button" className="nv-fx" style={{ margin: 0 }} disabled={busy} onClick={() => !busy && cameraRef.current?.click()}>
-                <Icon name="camera" size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />ถ่ายรูป
+                <Icon name="camera" size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t(lang, "row.takePhoto")}
               </button>
             </div>
           </>
         )}
         {periodClosed && item.status !== "accepted" && (
-          <div className="dv-closed-inline">งวดนี้ปิดแล้ว จึงอัปโหลดเพิ่มไม่ได้ในขณะนี้</div>
+          <div className="dv-closed-inline">{t(lang, "row.periodClosedInline")}</div>
         )}
         <div className="nv-crow-comments">
           <button type="button" className={`nv-clink ${(showC ? comments.length : item.commentCount) ? "has" : ""}`} onClick={toggleComments}>
-            <Icon name="chat" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />ความคิดเห็น{(showC ? comments.length : item.commentCount) ? ` (${showC ? comments.length : item.commentCount})` : ""} {showC ? "▲" : "▼"}
+            <Icon name="chat" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />{t(lang, "comments.label")}{(showC ? comments.length : item.commentCount) ? ` (${showC ? comments.length : item.commentCount})` : ""} {showC ? "▲" : "▼"}
           </button>
-          {showC && <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Client" />}
+          {showC && <CommentThread comments={comments} onSend={sendComment} busy={sendingC} loading={loadingC} meSide="Client" lang={lang} />}
         </div>
         {err && <p className="nv-lock-err" style={{ marginTop: 6 }}>{err}</p>}
       </div>
@@ -1268,7 +1283,10 @@ function GroupPortal({ groupId }) {
       setData(d); setPhase("ready");
     } catch (e) {
       if (e.status === 401) { clearToken(cacheId); setToken(null); setPhase("locked"); }
-      else { setLoadErr(e.message || "โหลดข้อมูลไม่สำเร็จ"); setPhase("ready"); }
+      // No single engagement to read a language from at the group-dashboard
+      // level (a group spans several companies, each with its own setting),
+      // so this — like the lock screen — stays Thai. See clientI18n.js.
+      else { setLoadErr(e.message || t("th", "err.load")); setPhase("ready"); }
     }
   }
 
@@ -1279,6 +1297,14 @@ function GroupPortal({ groupId }) {
     await loadGroup(tok);
   }
   function lock() { clearToken(cacheId); setToken(null); setData(null); setActiveId(null); setPhase("locked"); }
+
+  // Browser Back leaves a drilled-into company and returns to the group list,
+  // mirroring the on-screen "← กลับ" button.
+  const goBack = useCallback(() => {
+    if (activeId) { setActiveId(null); void loadGroup(token); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, token]);
+  useBackNav(activeId ? 1 : 0, goBack);
 
   if (phase === "init") return <Shell><div className="tk-boot" style={{ color: "#64748B" }}>Loading…</div></Shell>;
   if (phase === "locked") return <Shell secure><LockScreen onUnlock={handleUnlock} /></Shell>;
@@ -1298,37 +1324,44 @@ function GroupPortal({ groupId }) {
   );
 }
 
+// Group-level chrome (dashboard + cards) has no single engagement to read a
+// language from — a group spans several companies, each with its own
+// `language` — so it stays Thai, same posture as the lock screen. Drilling
+// into one company (GroupCompany, below) switches to THAT company's own
+// language once its engagement has loaded.
 function GroupDashboard({ data, loadErr, onOpen }) {
+  const lang = "th";
   const companies = data?.companies || [];
   return (
     <div className="nv-page">
       <div className="nv-phead">
         <div>
-          <h2>{data?.group?.name || "กลุ่มลูกค้า"}</h2>
-          <div className="sub">เลือกบริษัทเพื่อดูและอัปโหลดเอกสาร · {companies.length} บริษัท</div>
+          <h2>{data?.group?.name || t(lang, "group.defaultName")}</h2>
+          <div className="sub">{t(lang, "group.selectCompany", { n: companies.length })}</div>
         </div>
       </div>
       {loadErr && <p className="nv-lock-err" style={{ textAlign: "center" }}>{loadErr}</p>}
       {companies.length === 0 ? (
-        <div className="nv-list"><div style={{ padding: "40px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ยังไม่มีบริษัทในกลุ่มนี้</div></div>
+        <div className="nv-list"><div style={{ padding: "40px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>{t(lang, "group.noCompanies")}</div></div>
       ) : (
         <div className="nv-eng-grid">
           {companies.map((c) => <GroupCompanyCard key={c.id} c={c} onOpen={() => onOpen(c.id)} />)}
         </div>
       )}
-      <p className="nv-cfoot">เอกสารถูกเก็บอย่างปลอดภัย · เข้าถึงได้เฉพาะกลุ่มของคุณ</p>
+      <p className="nv-cfoot">{t(lang, "footer.secureGroup")}</p>
     </div>
   );
 }
 
 function GroupCompanyCard({ c, onOpen }) {
+  const lang = "th"; // see GroupDashboard comment above
   const done = c.pct >= 100 && c.total > 0;
   const outstanding = (c.by?.outstanding || 0) + (c.by?.reopened || 0);
   const review = (c.by?.submitted || 0) + (c.by?.review || 0);
   const tags = [];
-  if (c.accepted > 0) tags.push({ tone: "mint", txt: `ตรวจรับ ${c.accepted}` });
-  if (review > 0) tags.push({ tone: "amber", txt: `รอตรวจ ${review}` });
-  if (outstanding > 0) tags.push({ tone: "slate", txt: `รออัปโหลด ${outstanding}` });
+  if (c.accepted > 0) tags.push({ tone: "mint", txt: t(lang, "group.accepted", { n: c.accepted }) });
+  if (review > 0) tags.push({ tone: "amber", txt: t(lang, "group.pendingReview", { n: review }) });
+  if (outstanding > 0) tags.push({ tone: "slate", txt: t(lang, "group.awaitingUpload", { n: outstanding }) });
   return (
     <button className="nv-card" onClick={onOpen}>
       <div>
@@ -1339,15 +1372,15 @@ function GroupCompanyCard({ c, onOpen }) {
           </div>
           <div className={`nv-card-pct ${done ? "done" : ""}`}><b>{c.pct}</b><i>%</i></div>
         </div>
-        <div className="nv-card-sub">งวดสิ้นสุด {fmtDate(c.periodEnd)} · {c.total} รายการ</div>
+        <div className="nv-card-sub">{t(lang, "chead.periodEnd", { date: fmtDate(c.periodEnd, lang), n: c.total })}</div>
       </div>
       <div className="nv-bar"><span style={{ width: `${c.pct}%` }} /></div>
       <div className="nv-tags">
-        {tags.length ? tags.map((t, i) => <span key={i} className={`nv-tag2 ${t.tone}`}>{t.txt}</span>)
-          : <span className="nv-tag2 slate">ยังไม่มีรายการ</span>}
+        {tags.length ? tags.map((tag, i) => <span key={i} className={`nv-tag2 ${tag.tone}`}>{tag.txt}</span>)
+          : <span className="nv-tag2 slate">{t(lang, "group.noItemsYet")}</span>}
       </div>
       <div className="nv-card-foot">
-        <span className="open">เปิด →</span>
+        <span className="open">{t(lang, "group.open")}</span>
         <span style={{ color: "#94A3B8", fontSize: 15 }}>›</span>
       </div>
     </button>
@@ -1364,6 +1397,17 @@ function GroupCompany({ token, engagementId, onBack }) {
   const [periods, setPeriods] = useState([]);
   const [activePeriodId, setActivePeriodId] = useState(null);
   const [deliverables, setDeliverables] = useState([]);
+  // Once this company's engagement has loaded, its own `language` takes
+  // over — unlike the group dashboard above, a drilled-in company IS one
+  // specific engagement, so there's something to read the language from.
+  const lang = eng?.language === "en" ? "en" : "th";
+  // `load` reads the CURRENT language via a ref rather than closing over
+  // `lang` directly — putting `lang` in the deps below would rebuild `load`
+  // every time it changes (i.e. after every successful load), and the
+  // effect further down re-runs `load` whenever it's rebuilt, which would
+  // reload the portal in a loop.
+  const langRef = useRef(lang);
+  langRef.current = lang;
 
   const load = useCallback(async (periodId = null) => {
     setPhase("loading"); setLoadErr("");
@@ -1373,7 +1417,7 @@ function GroupCompany({ token, engagementId, onBack }) {
       setPeriods(r.periods); setDeliverables(r.deliverables);
       setPhase("ready");
     } catch (e) {
-      setLoadErr(e.message || "โหลดข้อมูลไม่สำเร็จ"); setPhase("ready");
+      setLoadErr(e.message || t(langRef.current, "err.load")); setPhase("ready");
     }
   }, [token, engagementId]);
   useEffect(() => { void load(); }, [load]);
@@ -1395,14 +1439,14 @@ function GroupCompany({ token, engagementId, onBack }) {
   return (
     <>
       <div className="nv-page" style={{ paddingBottom: 0 }}>
-        <button className="nv-tbtn" style={{ color: "#123563", background: "#fff", border: "1px solid #E5E7EB" }} onClick={onBack}>← กลับไปหน้ากลุ่ม</button>
+        <button className="nv-tbtn" style={{ color: "#123563", background: "#fff", border: "1px solid #E5E7EB" }} onClick={onBack}>{t(lang, "group.back")}</button>
       </div>
       <ClientList
         phase={phase} eng={eng} items={items} loadErr={loadErr} token={token} engagementId={engagementId}
         onUploaded={() => load(activePeriodId)}
         periods={periods} activePeriodId={activePeriodId} onPeriodChange={(id) => load(id)}
         deliverables={deliverables} onDeliverableOpened={markDeliverableOpened} onAck={ackDeliverable}
-        onRequestRevision={requestRevision}
+        onRequestRevision={requestRevision} lang={lang}
       />
     </>
   );

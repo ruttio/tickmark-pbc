@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
 import { firmApi } from "./lib/portalApi.js";
+import { useBackNav } from "./src/useBackNav.js";
+import { useEscape } from "./src/useEsc.js";
 import { SUPABASE_CONFIGURED } from "./lib/supabaseClient.js";
 import { FilePreviewModal, isPreviewable } from "./src/FilePreview.jsx";
 import { CommentThread } from "./src/CommentThread.jsx";
@@ -595,6 +597,19 @@ export default function App() {
     firmApi.markItemRead(itemId).catch(() => {});
   };
   const goDashboard = () => { setOpenItem(null); setView("dashboard"); };
+
+  // Browser Back closes one on-screen layer at a time, in the same precedence
+  // the UI uses: an open modal first, then a drawer, then engagement→dashboard.
+  const goBack = useCallback(() => {
+    if (modal) { setModal(null); return; }
+    if (openItem) { setOpenItem(null); return; }
+    if (openDeliverable) { setOpenDeliverable(null); return; }
+    if (view === "engagement") { setOpenItem(null); setView("dashboard"); return; }
+  }, [modal, openItem, openDeliverable, view]);
+  const navDepth =
+    (modal ? 1 : 0) + (openItem ? 1 : 0) + (openDeliverable ? 1 : 0) + (view === "engagement" ? 1 : 0);
+  useBackNav(navDepth, goBack);
+
   // Open the Generate modal fresh, or pre-filled from a prior portal (roll-forward).
   const openGenerate = (src = null) => { setRollSource(src); setModal("generate"); };
   const openImportFile = (mode = "create") => {
@@ -686,10 +701,10 @@ export default function App() {
       setSel(new Set());
     }, reloadDetail);
 
-  const generateEngagement = ({ client, template, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite, items, groupId, cadence }) =>
+  const generateEngagement = ({ client, template, periodEnd, baseDue, code, retDays, autoDelete, clientEmail, sendInvite, items, groupId, cadence, language }) =>
     run(async () => {
       const id = await firmApi.createEngagement(
-        { client, template, periodEnd, code, retentionDays: retDays, autoDelete, clientEmail, cadence },
+        { client, template, periodEnd, code, retentionDays: retDays, autoDelete, clientEmail, cadence, language },
         items.map((it, i) => ({
           ref: String(i + 1).padStart(2, "0"), category: it.category || "General",
           description: it.description, required: it.required ?? true, dueDate: baseDue, status: "outstanding", sort: i,
@@ -795,6 +810,13 @@ export default function App() {
     });
   const setPeriodStatusMut = (id, status) => run(() => firmApi.setPeriodStatus(id, status), reloadDetail);
   const renamePeriod = (id, label) => run(() => firmApi.setPeriodLabel(id, label), reloadDetail);
+  // Rename a document category across the period currently being viewed.
+  const renameCategory = (oldCat) => {
+    const next = prompt("เปลี่ยนชื่อหมวดนี้ (ทุกรายการในหมวดจะเปลี่ยนตาม)", oldCat);
+    if (next && next.trim() && next.trim() !== oldCat) {
+      run(() => firmApi.renameCategory(eng.id, oldCat, next.trim(), periodId), reloadDetail);
+    }
+  };
   // Delete a phase opened by mistake. Clear the viewed period first so the
   // default-period effect re-resolves to a surviving one after the reload.
   const deletePeriodMut = (id) => run(() => firmApi.deletePeriod(id), async () => { setOpenItem(null); setPeriodId(null); await reloadDetail(); });
@@ -1259,7 +1281,11 @@ export default function App() {
                       <div className="nv-list"><div style={{ padding: "32px 16px", textAlign: "center", color: "#64748B", fontSize: 13 }}>ไม่พบรายการที่ตรงกับตัวกรอง</div></div>
                     ) : viewGroups.map(([cat, items]) => (
                       <div key={cat}>
-                        <div className="nv-ghead"><span className="gt">{cat}</span><span className="gline" /><span className="gn">{items.filter((i) => i.status === "accepted").length}/{items.length}</span></div>
+                        <div className="nv-ghead"><span className="gt">{cat}</span>
+                        <button className="nv-ghead-edit" title="เปลี่ยนชื่อหมวด" disabled={busy} onClick={() => renameCategory(cat)}>
+                          <Icon name="note" size={12} />
+                        </button>
+                        <span className="gline" /><span className="gn">{items.filter((i) => i.status === "accepted").length}/{items.length}</span></div>
                         <div className="nv-list">
                           {items.map((it, idx) => {
                             const od = isOverdue(it);
@@ -1443,6 +1469,8 @@ export default function App() {
           onSaveRetention={(days, autoDelete) => setEngRetention(eng.id, days, autoDelete)}
           onSaveClientEmail={(email) => run(() => firmApi.setClientEmail(eng.id, email), reloadDetail)}
           onSaveCadence={setCadence}
+          onSavePeriodEnd={(ms) => run(() => firmApi.setPeriodEnd(eng.id, ms), reloadDetail)}
+          onSaveLanguage={(lang) => run(() => firmApi.setLanguage(eng.id, lang), reloadDetail)}
           onDelete={() => deleteEng(eng.id)} />
       )}
       {modal === "notify" && eng && (
@@ -1693,6 +1721,7 @@ const STATUS_ST  = { outstanding: "slate", submitted: "info", review: "amber", a
 // A toolbar button that opens a dropdown menu; closes on item click or backdrop.
 function NvMenu({ label, variant = "dark", align = "left", children }) {
   const [open, setOpen] = useState(false);
+  useEscape(open, () => setOpen(false));
   const cls = variant === "mint" ? "nv-cta" : variant === "light" ? "nv-btn" : "nv-btn dark";
   return (
     <div className="nv-mwrap">
@@ -1710,6 +1739,7 @@ function NvMenu({ label, variant = "dark", align = "left", children }) {
 // Multi-select filter card (status / category) with a clear button in its header.
 function MultiFilter({ label, placeholder, options, selected, onChange }) {
   const [open, setOpen] = useState(false);
+  useEscape(open, () => setOpen(false));
   const has = selected.length > 0;
   const summary = !has ? placeholder
     : selected.length === 1 ? (options.find((o) => o.value === selected[0])?.label || "1 รายการ")
@@ -1788,15 +1818,16 @@ function PeriodSwitcher({ cadence, periods, periodId, busy, onSwitch, onOpenNext
       <button className="nv-mitem" onClick={onOpenNext}>
         <Icon name="plus" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />{W.next}
       </button>
-      {/* Phases are named by the firm, so let them be renamed (a month label is
-          derived and never needs editing). */}
-      {phased && onRename && (
+      {/* Rename the current period/phase. Monthly labels start out derived
+          ('ก.ค. 2569') but the firm may still want to relabel one, so this is
+          offered for every multi-period cadence, not just phases. */}
+      {onRename && (
         <button className="nv-mitem" disabled={busy}
           onClick={() => {
-            const name = prompt("ชื่อเฟสนี้", current.label);
+            const name = prompt(`ชื่อ${W.unit}นี้`, current.label);
             if (name && name.trim() && name.trim() !== current.label) onRename(current.id, name.trim());
           }}>
-          <Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />เปลี่ยนชื่อเฟส
+          <Icon name="note" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />เปลี่ยนชื่อ{W.unit}
         </button>
       )}
       {current.status === "open" ? (
@@ -1811,15 +1842,15 @@ function PeriodSwitcher({ cadence, periods, periodId, busy, onSwitch, onOpenNext
           <Icon name="reopen" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />{W.reopen}
         </button>
       )}
-      {/* Delete a phase created by mistake. Only for phases, and never the last
-          one — a portal must keep at least one period (the server enforces this
-          too). Destructive: it removes the phase's request items and files. */}
-      {phased && onDelete && periods.length > 1 && (
+      {/* Delete a period/phase opened by mistake — never the last one (a portal
+          must keep at least one period; the server enforces this too).
+          Destructive: it removes that period's request items and files. */}
+      {onDelete && periods.length > 1 && (
         <button className="nv-mitem warn" disabled={busy}
           onClick={() => {
-            if (confirm(`ลบเฟส “${current.label}” ทั้งเฟส? รายการคำขอและไฟล์ในเฟสนี้จะถูกลบถาวร (กู้คืนไม่ได้)`)) onDelete(current.id);
+            if (confirm(`ลบ${W.unit} “${current.label}” ทั้ง${W.unit}? รายการคำขอและไฟล์ใน${W.unit}นี้จะถูกลบถาวร (กู้คืนไม่ได้)`)) onDelete(current.id);
           }}>
-          <Icon name="trash" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />ลบเฟสนี้
+          <Icon name="trash" size={13} style={{ verticalAlign: "-2px", marginRight: 6 }} />ลบ{W.unit}นี้
         </button>
       )}
     </NvMenu>
@@ -2595,7 +2626,7 @@ function ExpiredScreen({ eng, role, onExtend, onDelete }) {
   );
 }
 
-function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, onSaveClientEmail, onSaveCadence, onDelete }) {
+function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, onSaveClientEmail, onSaveCadence, onSavePeriodEnd, onSaveLanguage, onDelete }) {
   const base = eng.createdAt || Date.now();
   const currentDays = eng.expiresAt ? Math.round((eng.expiresAt - base) / DAY) : null;
   const matched = RETENTION_OPTIONS.find((o) => o.days === currentDays);
@@ -2605,6 +2636,9 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   const [code, setCode] = useState("");
   const [clientEmail, setClientEmail] = useState(eng.clientEmail || "");
   const [cadence, setCadenceSel] = useState(isMultiPeriod(eng.cadence) ? eng.cadence : "once");
+  const [periodEnd, setPeriodEnd] = useState(eng.periodEnd ? new Date(eng.periodEnd).toISOString().slice(0, 10) : "");
+  const engPeriodEndInput = eng.periodEnd ? new Date(eng.periodEnd).toISOString().slice(0, 10) : "";
+  const [language, setLanguageSel] = useState(eng.language === "en" ? "en" : "th");
   const x = engExpiry(eng);
 
   return (
@@ -2651,6 +2685,35 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
       <button className="tk-btn full" disabled={clientEmail === (eng.clientEmail || "")}
         onClick={() => { onSaveClientEmail(clientEmail); onClose(); }}>บันทึกอีเมลลูกค้า</button>
 
+      {onSavePeriodEnd && (
+        <>
+          <div style={{ height: 18 }} />
+          <p className="tk-block-h">งวดสิ้นสุด</p>
+          <p className="tk-tplblurb" style={{ marginTop: 0 }}>วันสิ้นสุดงวดที่แสดงบนหัวข้อพอร์ทัล — แก้ได้ที่นี่โดยไม่ต้องสร้างพอร์ทัลใหม่</p>
+          <label className="tk-field">
+            <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+          </label>
+          <button className="tk-btn full" disabled={periodEnd === engPeriodEndInput}
+            onClick={() => { onSavePeriodEnd(periodEnd ? new Date(periodEnd).getTime() : null); onClose(); }}>บันทึกงวดสิ้นสุด</button>
+        </>
+      )}
+
+      {onSaveLanguage && (
+        <>
+          <div style={{ height: 18 }} />
+          <p className="tk-block-h">ภาษาที่ลูกค้าเห็น</p>
+          <p className="tk-tplblurb" style={{ marginTop: 0 }}>ใช้กับพอร์ทัลของลูกค้าและอีเมลแจ้งเตือน — ฝั่งสำนักงานยังเป็นภาษาไทยเสมอ</p>
+          <label className="tk-field">
+            <select value={language} onChange={(e) => setLanguageSel(e.target.value)}>
+              <option value="th">ไทย</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <button className="tk-btn full" disabled={language === (eng.language === "en" ? "en" : "th")}
+            onClick={() => { onSaveLanguage(language); onClose(); }}>บันทึกภาษา</button>
+        </>
+      )}
+
       <div style={{ height: 18 }} />
       <p className="tk-block-h">รหัสเข้าพอร์ทัล</p>
       {!showPass ? (
@@ -2680,6 +2743,7 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
 }
 
 function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onPreviewUrl, onListComments, onAddComment, onSaveNote, onUpdateItem, onReturn, onUploadSample, onRemoveSample, canDelete, busy }) {
+  useEscape(true, onClose);
   const fileRef = useRef(null);
   const sampleRef = useRef(null);
   const clientFiles = item.files.filter((f) => !f.isSample);
@@ -2908,6 +2972,7 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
 // deliverable and a request item read as the same kind of surface, just for
 // the opposite direction of the workflow.
 function DeliverableDrawer({ d, eng, busy, onClose, onUpdate, onUpload, onRemoveFile, onDeliver, onDelete, onDownload, onPreviewUrl, onListComments, onAddComment }) {
+  useEscape(true, onClose);
   const fileRef = useRef(null);
   const [title, setTitle] = useState(d.title);
   const [category, setCategory] = useState(d.category);
@@ -3126,6 +3191,11 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
   const [tplKey, setTplKey] = useState(source ? "__source__" : TEMPLATES[0].key);
   const [items, setItems] = useState(() => source ? fromSource() : flatten(TEMPLATES[0]));
   const [client, setClient] = useState(source?.client || "");
+  // The heading shown on the portal (eng.template). Defaults to the chosen
+  // template's name and follows it as long as the firm hasn't typed their own
+  // — once edited, picking a different template no longer overwrites it.
+  const [title, setTitle] = useState(source ? (source.template || "PBC") : TEMPLATES[0].name);
+  const [titleTouched, setTitleTouched] = useState(false);
   const [periodEnd, setPeriodEnd] = useState(() => {
     if (source?.periodEnd) { const d = new Date(source.periodEnd); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); }
     return new Date(new Date().getFullYear() - 1, 11, 31).toISOString().slice(0, 10);
@@ -3140,6 +3210,11 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
   const [newDesc, setNewDesc] = useState("");
   const [clientGroups, setClientGroups] = useState([]);
   const [groupId, setGroupId] = useState(source?.groupId || "");
+  // Which language the CLIENT sees (portal UI + notify emails). Default
+  // Thai. Only surfaced for monthly bookkeeping — the mechanism itself
+  // (engagements.language) is engagement-type-agnostic, but a foreign-
+  // client toggle only matters for the recurring engagement type today.
+  const [language, setLanguage] = useState(source?.language === "en" ? "en" : "th");
   useEffect(() => { firmApi.listClientGroups().then(setClientGroups).catch(() => {}); }, []);
   const tplName = tplKey === "__source__" ? (source?.template || "PBC") : (TEMPLATES.find((t) => t.key === tplKey)?.name || "PBC");
   const included = items.filter((i) => i.include);
@@ -3147,6 +3222,10 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
 
   const changeTpl = (key) => {
     setTplKey(key);
+    if (!titleTouched) {
+      const nm = key === "__source__" ? (source?.template || "PBC") : (TEMPLATES.find((t) => t.key === key)?.name || "PBC");
+      setTitle(nm);
+    }
     if (key === "__source__") setItems(fromSource());
     else setItems(flatten(TEMPLATES.find((t) => t.key === key)));
   };
@@ -3154,6 +3233,15 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
   const allOn = items.length > 0 && items.every((i) => i.include);
   const toggleAll = () => setItems((p) => p.map((i) => ({ ...i, include: !allOn })));
   const editDesc = (id, description) => setItems((p) => p.map((i) => (i.id === id ? { ...i, description } : i)));
+  // Rename a category before the portal exists — updates every item in the
+  // group in local state (prompt-based, like the in-portal rename, so the
+  // grouped list doesn't re-key on every keystroke and steal focus).
+  const renameCat = (oldCat) => {
+    const next = prompt("เปลี่ยนชื่อหมวดนี้", oldCat);
+    if (next && next.trim() && next.trim() !== oldCat) {
+      setItems((p) => p.map((i) => (i.category === oldCat ? { ...i, category: next.trim() } : i)));
+    }
+  };
   const removeCustom = (id) => setItems((p) => p.filter((i) => i.id !== id));
   const addCustom = () => {
     const d = newDesc.trim(); if (!d) return;
@@ -3169,7 +3257,7 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
   const create = () => {
     if (!ready) return;
     onCreate({
-      client: client.trim(), template: tplName,
+      client: client.trim(), template: title.trim() || tplName,
       // Monthly bookkeeping is the ONLY recurring engagement type: it runs
       // month after month against one portal, and it is the only one that
       // sends work back (filed returns, statements, receipts). An audit is a
@@ -3183,6 +3271,7 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
       clientEmail: clientEmail.trim(),
       sendInvite: sendInvite && !!clientEmail.trim(),
       groupId: groupId || null,
+      language,
       items: included.map((i) => ({ category: i.category, description: i.description, required: i.required })),
     });
   };
@@ -3199,6 +3288,9 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
         <label className="tk-field"><span>Client name</span>
           <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g. Northwind Trading Co." /></label>
       </div>
+      <label className="tk-field"><span>ชื่อหัวข้องาน (แสดงบนพอร์ทัล)</span>
+        <input value={title} onChange={(e) => { setTitle(e.target.value); setTitleTouched(true); }}
+          placeholder={tplName} /></label>
       {clientGroups.length > 0 && (
         <label className="tk-field"><span>กลุ่มลูกค้า (ไม่บังคับ)</span>
           <select value={groupId} onChange={(e) => setGroupId(e.target.value)}>
@@ -3225,7 +3317,11 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
         )}
         {groups.map(([cat, rows]) => (
           <div key={cat} className="imp-group">
-            <div className="imp-cat">{cat}</div>
+            <div className="imp-cat">{cat}
+              <button type="button" className="nv-ghead-edit" title="เปลี่ยนชื่อหมวด" onClick={() => renameCat(cat)}>
+                <Icon name="note" size={12} />
+              </button>
+            </div>
             {rows.map((it) => (
               <div key={it.id} className={`imp-row ${it.include ? "" : "off"}`}>
                 <input type="checkbox" checked={it.include} onChange={() => toggle(it.id)} />
@@ -3249,6 +3345,16 @@ function GenerateModal({ onClose, onCreate, busy, source }) {
       </div>
       <label className="tk-field"><span>อีเมลลูกค้า (ไม่บังคับ · สำหรับแจ้งเตือน)</span>
         <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@company.com" /></label>
+      {/* Client language is orthogonal to engagement type — a foreign audit
+          client wants English just as much as a foreign bookkeeping one — so
+          this shows for every template, roll-forward, and import, not only
+          the monthly one. */}
+      <label className="tk-field"><span>ภาษาที่ลูกค้าเห็น (พอร์ทัล + อีเมล)</span>
+        <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+          <option value="th">ไทย</option>
+          <option value="en">English</option>
+        </select>
+      </label>
       {clientEmail.trim() && (
         <label className="tk-check" style={{ alignSelf: "flex-start", paddingBottom: 4 }}>
           <input type="checkbox" checked={sendInvite} onChange={(e) => setSendInvite(e.target.checked)} /> ส่งอีเมลแจ้งลูกค้าทันทีหลังสร้าง
@@ -3994,6 +4100,7 @@ function NotifyModal({ eng, busy, onClose, onSend }) {
 }
 
 function Modal({ title, children, onClose, wide }) {
+  useEscape(true, onClose);
   return (
     <>
       <div className="tk-scrim" onClick={onClose} />
