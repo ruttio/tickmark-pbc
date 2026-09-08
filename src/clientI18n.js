@@ -31,6 +31,13 @@ export const DICT = {
   /* ---- loading ---- */
   "list.loading": { th: "กำลังโหลดรายการเอกสาร…", en: "Loading document list…" },
 
+  /* ---- LINE (Android) in-app browser can't reach the camera ---- */
+  "line.hint": {
+    th: "อยู่ในแอป LINE — ถ่ายรูปเอกสารไม่ได้ กดเพื่อเปิดในเบราว์เซอร์",
+    en: "You're in the LINE app — the camera won't work here. Tap to open in your browser",
+  },
+  "line.openBrowser": { th: "เปิดในเบราว์เซอร์", en: "Open in browser" },
+
   /* ---- portal header ---- */
   "chead.periodEnd": { th: "งวดสิ้นสุด {date} · {n} รายการ", en: "Period ending {date} · {n} items" },
   "chead.acceptedBefore": { th: "ตรวจรับแล้ว ", en: "Accepted " },

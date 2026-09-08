@@ -83,3 +83,11 @@
 .dv-round-h{font-size:11.5px;color:var(--secondary-ink,#64748B);margin:0 0 4px;padding-left:2px}
 .dv-round.old{opacity:.62}
 .dv-round.old .nv-fchip{background:transparent}
+
+/* ---- LINE-on-Android in-app browser escape hint (camera is blocked there) --- */
+.nv-linehint{display:flex;align-items:center;gap:8px;margin:0 0 14px;padding:10px 13px;
+  border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.1);border-radius:12px;
+  color:var(--primary-ink,#0F172A);font-size:12.5px;line-height:1.4;text-decoration:none}
+.nv-linehint svg{flex:none;color:var(--pending-amber,#F59E0B)}
+.nv-linehint span:first-of-type{flex:1}
+.nv-linehint .go{flex:none;font-weight:700;color:var(--ledger-navy,#123563)}

@@ -71,6 +71,19 @@ const fileExt = (name, lang) => (name.includes(".") ? name.split(".").pop().slic
 // so the two lists can't drift apart (one source of truth for what's allowed).
 const ACCEPT_ATTR = ALLOWED_EXT.map((e) => `.${e}`).join(",");
 
+// LINE's in-app browser on Android blocks camera access for a file input,
+// silently falling back to the gallery — a webview limitation the page can't
+// override (iOS LINE is fine). Detected so we can offer a one-tap escape to
+// the system browser, where the camera works. `openExternalBrowser=1` is the
+// param LINE honours to reopen a link externally.
+const IN_LINE_ANDROID =
+  typeof navigator !== "undefined" && /\bLine\//i.test(navigator.userAgent) && /Android/i.test(navigator.userAgent);
+function openExternalUrl() {
+  const u = new URL(window.location.href);
+  u.searchParams.set("openExternalBrowser", "1");
+  return u.toString();
+}
+
 // The client has no login, so "which firm comments have I read" lives in
 // localStorage per engagement: { itemId: seenAtMs }.
 const seenKey = (engId) => `cseen_${engId}`;
@@ -563,6 +576,13 @@ function ClientList({
 
   return (
     <div className="nv-page">
+      {IN_LINE_ANDROID && (
+        <a className="nv-linehint" href={openExternalUrl()}>
+          <Icon name="camera" size={14} />
+          <span>{t(lang, "line.hint")}</span>
+          <span className="go">{t(lang, "line.openBrowser")} →</span>
+        </a>
+      )}
       {eng && (
         <div className="nv-chead">
           <div className="nv-chead-l">

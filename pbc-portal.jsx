@@ -1239,7 +1239,11 @@ export default function App() {
                       </NvMenu>
                       <NvMenu label={<><Icon name="users" size={14} style={{ verticalAlign: "-2px", marginRight: 5 }} />แชร์กับลูกค้า</>} variant="light">
                         <button className="nv-mitem" onClick={() => {
-                          const link = `${location.origin}/client.html?e=${eng.id}`;
+                          // openExternalBrowser=1 makes LINE open the link in the
+                          // system browser (Chrome) instead of its in-app webview,
+                          // whose Android build blocks the camera. Harmless
+                          // elsewhere — only LINE acts on it, our app ignores it.
+                          const link = `${location.origin}/client.html?e=${eng.id}&openExternalBrowser=1`;
                           navigator.clipboard?.writeText(link).catch(() => {});
                           alert("คัดลอกลิงก์สำหรับลูกค้าแล้ว (ส่งรหัส 16 หลักแยกช่องทาง):\n\n" + link);
                         }}><Icon name="link" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />คัดลอกลิงก์ลูกค้า</button>
@@ -2333,7 +2337,7 @@ function GroupCard({ g, onOpen }) {
     e.stopPropagation();
     const url = new URL(window.location);
     url.pathname = '/client.html';
-    url.search = `?g=${g.id}`;
+    url.search = `?g=${g.id}&openExternalBrowser=1`; // LINE → open in Chrome (camera works there)
     const result = await copyToClipboard(url.toString());
     if (result) {
       setCopied(true);
@@ -2435,7 +2439,7 @@ function EngagementCard({ e, onOpen, unread, groupName }) {
     evt.stopPropagation();
     const url = new URL(window.location);
     url.pathname = '/client.html';
-    url.search = `?e=${e.id}`;
+    url.search = `?e=${e.id}&openExternalBrowser=1`; // LINE → open in Chrome (camera works there)
     const result = await copyToClipboard(url.toString());
     if (result) {
       setCopied(true);
