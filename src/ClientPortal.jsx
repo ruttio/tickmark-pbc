@@ -1040,7 +1040,6 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
 
 function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onSeen, periodClosed = false, lang }) {
   const fileRef = useRef(null);
-  const cameraRef = useRef(null);
   const rowRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -1209,18 +1208,16 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
           <>
             <input ref={fileRef} type="file" accept={ACCEPT_ATTR} multiple style={{ display: "none" }}
               onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
-            {/* Separate, single-shot input dedicated to the camera. `capture`
-                and `multiple` don't compose safely across browsers: iOS
-                Safari drops the "Photo Library" option from its picker the
-                moment `capture` is present (camera-only, one shot, no
-                gallery multi-select), while putting `capture` on the SAME
-                input clients use to pick several existing receipts from
-                their gallery would silently break that flow. Keeping this
-                as its own input/button means the gallery input above always
-                keeps full multi-select, and this one is free to be
-                camera-only. */}
-            <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
-              onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+            {/* The camera lives on a real <label> wrapping its own file input,
+                NOT a button that calls input.click(). A synthetic click on a
+                hidden input makes many mobile browsers — and in-app webviews
+                like LINE's, which is how most clients open the link — drop the
+                `capture` intent and fall back to the gallery. A label forwards
+                the tap to the input as a genuine user activation, which is
+                what keeps `capture="environment"` actually opening the camera.
+                It stays a separate single-shot input (no `multiple`): on iOS,
+                `capture` + `multiple` on one input cancels the camera, and the
+                gallery input above needs to keep multi-select. */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: clientFiles.length === 0 ? 0 : 8 }}>
               {clientFiles.length === 0 ? (
                 <div className={`nv-drop ${drag ? "drag" : ""}`} style={{ flex: "1 1 220px", marginTop: 0 }}
@@ -1236,9 +1233,11 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
                   {busy ? t(lang, "row.uploading") : t(lang, "row.uploadMore")}
                 </button>
               )}
-              <button type="button" className="nv-fx" style={{ margin: 0 }} disabled={busy} onClick={() => !busy && cameraRef.current?.click()}>
+              <label className={`nv-fx${busy ? " off" : ""}`} style={{ margin: 0, cursor: busy ? "default" : "pointer" }}>
                 <Icon name="camera" size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t(lang, "row.takePhoto")}
-              </button>
+                <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={busy}
+                  onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+              </label>
             </div>
           </>
         )}
