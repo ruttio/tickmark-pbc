@@ -855,6 +855,12 @@ export default function App() {
   const deleteEng = (id) =>
     run(() => firmApi.deleteEngagement(id), async () => { setOpenItem(null); setModal(null); setView("dashboard"); await reloadList(); });
 
+  // A non-owner member drops their own access to a portal (owners can't leave —
+  // they'd orphan it; they transfer ownership or delete instead). Same landing
+  // as delete: back to the dashboard, list refreshed without this portal.
+  const leavePortal = (id) =>
+    run(() => firmApi.leavePortal(id), async () => { setOpenItem(null); setModal(null); setView("dashboard"); await reloadList(); });
+
   // Private bucket -> short-lived signed URL, opened in a new tab.
   const downloadFile = (f) =>
     run(async () => {
@@ -1259,6 +1265,16 @@ export default function App() {
                           <div className="nv-msep" />
                           {eng.myRole === "owner" && <button className="nv-mitem" onClick={() => setModal("share")}>＋ เชิญสมาชิก / แชร์</button>}
                           <button className="nv-mitem" onClick={() => setModal("settings")}>⚙ ตั้งค่าพอร์ทัล</button>
+                          {/* A member (not the owner) can drop their own access. */}
+                          {eng.myRole !== "owner" && (
+                            <>
+                              <div className="nv-msep" />
+                              <button className="nv-mitem warn" disabled={busy}
+                                onClick={() => { if (confirm(`ออกจากพอร์ทัล “${eng.client}”? คุณจะไม่เห็นพอร์ทัลนี้อีก (เจ้าของเชิญกลับเข้ามาใหม่ได้)`)) leavePortal(eng.id); }}>
+                                <Icon name="external" size={14} style={{ verticalAlign: "-2px", marginRight: 7 }} />ออกจากพอร์ทัล
+                              </button>
+                            </>
+                          )}
                         </NvMenu>
                       </div>
                     </div>
