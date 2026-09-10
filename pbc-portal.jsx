@@ -1059,9 +1059,9 @@ export default function App() {
   // matches what's on screen — see periodItems above.
   const exportCSV = () => {
     if (!eng) return;
-    const head = ["Ref", "Category", "Description", "Required", "Due date", "Status", "Files"];
+    const head = ["Ref", "Category", "Description", "Note", "Required", "Due date", "Status", "Files"];
     const rows = periodItems.map((it) => [
-      it.ref, it.category, it.description, it.required ? "Required" : "Optional",
+      it.ref, it.category, it.description, it.firmNote || "", it.required ? "Required" : "Optional",
       it.dueDate ? new Date(it.dueDate).toISOString().slice(0, 10) : "",
       STATUS[it.status].label, it.files.map((f) => f.name).join(" | "),
     ]);
