@@ -646,8 +646,13 @@
 .nv-eh-pct b{font-size:28px;font-weight:700;color:#12B39A}
 .nv-eh-pct i{font-size:14px;font-style:normal;font-weight:700;color:#12B39A}
 .nv-eh-pct span{display:block;font-size:10.5px;color:#64748B;margin-top:3px}
-.nv-dots{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;width:220px}
-.nv-dots span{height:10px;border-radius:2px;background:rgba(100,116,139,.18)}
+/* Right-aligned, wrapping at 10 per row, so the rightmost box always sits on
+   the block's right edge (flush with the content below) no matter the count —
+   8 items fill one row to the right; 12 wrap to a right-aligned second row.
+   Fixed box width + a width sized to exactly 10 boxes forces the 10-per-row
+   wrap; justify-content:flex-end keeps every row's right edge aligned. */
+.nv-dots{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px;width:calc(10 * 15px + 9 * 3px);max-width:100%}
+.nv-dots span{width:15px;height:10px;border-radius:2px;background:rgba(100,116,139,.18)}
 .nv-dots span.done{background:#12B39A} .nv-dots span.od{background:#EF4444} .nv-dots span.wip{background:#F59E0B}
 
 .nv-work{display:grid;grid-template-columns:288px 1fr;gap:24px;align-items:start}
