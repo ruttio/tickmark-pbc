@@ -267,6 +267,7 @@ Deno.serve(async (req) => {
       let itemsQuery = admin.from("request_items")
         .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(id, name, size, type, storage_path, uploaded_at, rejected, is_sample), item_comments(count)")
         .eq("engagement_id", engagement_id)
+        .is("archived_at", null) // firm soft-deleted (Archived box) → never shown to the client
         .order("sort");
       // Defensive only: a portal created before the periods migration ran its
       // backfill (or with the backfill somehow skipped) has no periods yet —
