@@ -82,9 +82,7 @@ Deno.serve(async (req) => {
       const { data: item } = await admin.from("request_items")
         .select("id").eq("id", item_id).eq("engagement_id", engagement_id).maybeSingle();
       if (!item) return json({ error: "item not in this portal" }, 403);
-      // Random suffix: a folder sample upload can carry several same-named
-      // files, and Date.now() alone can collide within one folder upload.
-      const path = `${engagement_id}/${item_id}/sample_${Date.now()}_${crypto.randomUUID().slice(0, 8)}_${filename}`;
+      const path = `${engagement_id}/${item_id}/sample_${Date.now()}_${filename}`;
       return json({ path, put_url: await presignPut(path) });
     }
 

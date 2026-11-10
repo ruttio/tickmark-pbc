@@ -24,8 +24,6 @@ import { FilePreviewModal, isPreviewable } from "./FilePreview.jsx";
 import { CommentThread } from "./CommentThread.jsx";
 import { ALLOWED_EXT, fileError } from "./uploadRules.js";
 import { compressImage } from "./imageCompress.js";
-import { FolderUploadModal } from "./FolderUploadModal.jsx";
-import { filesFromInput, filesFromDataTransfer, dataTransferHasFolder, groupFilesByFolder } from "./folderUpload.js";
 import { Icon } from "./icons.jsx";
 import { isPastDueDate } from "../lib/dateUtils.js";
 import { useBackNav } from "./useBackNav.js";
@@ -1062,12 +1060,10 @@ function DeliverableRow({ item, token, engagementId, onOpened, onAck, onRequestR
 
 function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onSeen, periodClosed = false, lang }) {
   const fileRef = useRef(null);
-  const folderRef = useRef(null);
   const rowRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [drag, setDrag] = useState(false);
-  const [folderEntries, setFolderEntries] = useState(null); // non-null → preview modal open
   const [preview, setPreview] = useState(null); // { file, url } while the viewer is open
   const [showC, setShowC] = useState(false);
   const [comments, setComments] = useState([]);
@@ -1135,27 +1131,6 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
     }
   };
 
-  // Folder upload: after the client picks/drops a folder, the preview modal
-  // (folderEntries) confirms a plan of { file, folder } — upload each into its
-  // sub-folder, in the folder's order, reporting progress back to the modal.
-  const uploadPlan = async (plan, onProgress) => {
-    setErr("");
-    try {
-      let done = 0;
-      for (const { file, folder } of plan) {
-        const toSend = await compressImage(file);
-        await clientApi.uploadDocument(token, item.id, toSend, engagementId, folder);
-        onProgress?.(++done);
-      }
-      setFolderEntries(null);
-      await onUploaded();
-    } catch (e) {
-      setFolderEntries(null);
-      if (e.status === 401) { await onUploaded(); return; }
-      setErr(e.message || t(lang, "err.upload"));
-    }
-  };
-
   const remove = async (fileId) => {
     if (!confirm(t(lang, "confirm.removeFile"))) return;
     setBusy(true);
@@ -1173,9 +1148,6 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
 
   const clientFiles = item.files.filter((f) => !f.isSample);
   const sampleFiles = item.files.filter((f) => f.isSample);
-  // Group the client's files by their sub-folder for display. Root files ('')
-  // come first under a plain heading; each sub-folder is its own labelled group.
-  const clientFileGroups = groupFilesByFolder(clientFiles);
   const od = isOverdue(item);
   const chip = clientChip(item, lang);
   const rowCls = item.status === "accepted" ? "acc" : od ? "od" : "";
@@ -1199,23 +1171,7 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
 
   const onDrop = (e) => {
     e.preventDefault(); setDrag(false);
-    if (!canUpload) return;
-    // A dropped FOLDER → read its tree and show the preview modal. Loose files
-    // dropped straight in keep the fast, no-confirmation path.
-    if (dataTransferHasFolder(e.dataTransfer)) {
-      filesFromDataTransfer(e.dataTransfer).then((entries) => {
-        if (entries.length) setFolderEntries(entries);
-      }).catch(() => setErr(t(lang, "err.upload")));
-    } else if (e.dataTransfer.files?.length) {
-      upload(e.dataTransfer.files);
-    }
-  };
-
-  // The <input webkitdirectory> picker → straight to the preview modal.
-  const onPickFolder = (e) => {
-    const entries = filesFromInput(e.target.files);
-    e.target.value = "";
-    if (entries.length) setFolderEntries(entries);
+    if (canUpload && e.dataTransfer.files?.length) upload(e.dataTransfer.files);
   };
 
   return (
@@ -1254,36 +1210,24 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
           </div>
         )}
 
-        {clientFileGroups.map(({ folder, files }) => (
-          <div key={folder || "__root__"} className={folder ? "nv-ffolder" : undefined}>
-            {folder && (
-              <div className="nv-ffolder-h">
-                <Icon name="folder" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />
-                {folder}<span className="nv-ffolder-n">{t(lang, "row.filesCount", { n: files.length })}</span>
-              </div>
-            )}
-            <ul className="nv-fchips">
-              {files.map((f) => (
-                <li key={f.id} className="nv-fchip">
-                  <span className="nv-ftype">{fileExt(f.name, lang)}</span>
-                  <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt, lang)}</i></span>
-                  {f.rejected && <span className="nv-frej">{t(lang, "row.needsFix")}</span>}
-                  {isPreviewable(f) && <button className="nv-fx" onClick={() => openPreview(f)}>{t(lang, "deliv.view")}</button>}
-                  {canUpload && <button className="nv-fx" disabled={busy} onClick={() => remove(f.id)}>{t(lang, "row.remove")}</button>}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+        {clientFiles.length > 0 && (
+          <ul className="nv-fchips">
+            {clientFiles.map((f) => (
+              <li key={f.id} className="nv-fchip">
+                <span className="nv-ftype">{fileExt(f.name, lang)}</span>
+                <span className="nv-finfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt, lang)}</i></span>
+                {f.rejected && <span className="nv-frej">{t(lang, "row.needsFix")}</span>}
+                {isPreviewable(f) && <button className="nv-fx" onClick={() => openPreview(f)}>{t(lang, "deliv.view")}</button>}
+                {canUpload && <button className="nv-fx" disabled={busy} onClick={() => remove(f.id)}>{t(lang, "row.remove")}</button>}
+              </li>
+            ))}
+          </ul>
+        )}
 
         {canUpload && (
           <>
             <input ref={fileRef} type="file" accept={ACCEPT_ATTR} multiple style={{ display: "none" }}
               onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
-            {/* Whole-folder picker. webkitdirectory has no `accept` filter, so
-                unsupported files are screened in the preview modal instead. */}
-            <input ref={folderRef} type="file" webkitdirectory="" directory="" multiple
-              style={{ display: "none" }} onChange={onPickFolder} />
             {/* The camera lives on a real <label> wrapping its own file input,
                 NOT a button that calls input.click(). A synthetic click on a
                 hidden input makes many mobile browsers — and in-app webviews
@@ -1314,10 +1258,6 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
                 <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={busy}
                   onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
               </label>
-              <button type="button" className="nv-fx" style={{ margin: 0 }} disabled={busy}
-                onClick={() => folderRef.current?.click()}>
-                <Icon name="folder" size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t(lang, "row.uploadFolder")}
-              </button>
             </div>
           </>
         )}
@@ -1334,15 +1274,6 @@ function ClientRow({ item, index, token, engagementId, onUploaded, autoOpen, onS
       </div>
       <span className={`nv-st ${chip.tone} nv-crow-st`}>{chip.label}</span>
       {preview && <FilePreviewModal file={preview.file} url={preview.url} onClose={() => setPreview(null)} />}
-      {folderEntries && (
-        <FolderUploadModal
-          entries={folderEntries}
-          lang={lang}
-          validate={(f) => fileError(f, lang)}
-          onCancel={() => setFolderEntries(null)}
-          onConfirm={uploadPlan}
-        />
-      )}
     </div>
   );
 }

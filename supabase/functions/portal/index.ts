@@ -63,29 +63,6 @@ async function binRejected(storagePath: string): Promise<void> {
   catch (e) { console.error("binRejected: R2 delete failed", storagePath, String(e)); }
 }
 
-// Normalise a client-supplied relative folder path into safe metadata.
-// Files uploaded from a dropped folder carry a path like "งบ 2566/Q1/x.pdf";
-// the caller sends just the DIRECTORY part ("งบ 2566/Q1"). We keep the folder
-// names (Thai included) but strip anything that could be used to climb out or
-// forge structure: leading/trailing slashes, "." / ".." segments, control
-// chars, and runaway depth/length. The result is display-only metadata — it
-// never touches storage_path — so the worst a bad value can do is look ugly.
-// '' means "the item's root".
-const MAX_FOLDER_DEPTH = 8;
-const MAX_SEGMENT_LEN = 80;
-function sanitizeFolder(raw: unknown): string {
-  const segs = String(raw ?? "")
-    .replace(/\\/g, "/")            // Windows separators → posix
-    .split("/")
-    .map((s) => s.trim())
-    .filter((s) => s && s !== "." && s !== "..")
-    // eslint-disable-next-line no-control-regex
-    .map((s) => s.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, MAX_SEGMENT_LEN))
-    .filter(Boolean)
-    .slice(0, MAX_FOLDER_DEPTH);
-  return segs.join("/");
-}
-
 // LINE-push every firm member of a portal who has linked their account.
 // `build` is only called once we know someone is actually listening, so the
 // message's own lookups are skipped when nobody has LINE linked.
@@ -288,7 +265,7 @@ Deno.serve(async (req) => {
       const period_id = period?.id || null;
 
       let itemsQuery = admin.from("request_items")
-        .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(id, name, size, type, storage_path, folder, uploaded_at, rejected, is_sample), item_comments(count)")
+        .select("id, ref, category, description, required, due_date, status, note, firm_note, item_files(id, name, size, type, storage_path, uploaded_at, rejected, is_sample), item_comments(count)")
         .eq("engagement_id", engagement_id)
         .is("archived_at", null) // firm soft-deleted (Archived box) → never shown to the client
         .order("sort");
@@ -343,12 +320,7 @@ Deno.serve(async (req) => {
       const { data: existing } = await admin.from("item_files").select("size").eq("engagement_id", engagement_id);
       if (exceedsPortalQuota(existing, size)) return json({ error: "พื้นที่จัดเก็บของพอร์ทัลเต็ม" }, 413);
 
-      // A short random suffix guarantees uniqueness: a folder upload can carry
-      // several same-named files (e.g. "bank.pdf" in two sub-folders) and
-      // Date.now() alone can collide, which would overwrite one object with
-      // another. The folder is stored as metadata, not in the path.
-      const rand = crypto.randomUUID().slice(0, 8);
-      const path = `${engagement_id}/${item_id}/${Date.now()}_${rand}_${filename}`;
+      const path = `${engagement_id}/${item_id}/${Date.now()}_${filename}`;
       const put_url = await presignPut(path);   // client PUTs the file bytes to this R2 URL
       return json({ path, put_url });
     }
@@ -405,7 +377,6 @@ Deno.serve(async (req) => {
         size: meta.size,
         type: meta.contentType || String(body.type || ""),
         storage_path,
-        folder: sanitizeFolder(body.folder),
         checksum: meta.etag,
       });
       if (insertError) throw insertError;

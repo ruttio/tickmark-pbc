@@ -159,10 +159,6 @@
 .tk-muted{color:var(--ink-soft);font-size:13px;margin:0}
 .tk-filelist{list-style:none;margin:0 0 4px;padding:0;display:flex;flex-direction:column;gap:8px}
 .tk-filelist li{display:flex;align-items:center;gap:10px}
-/* sub-folder group inside one request item (folder upload) */
-.tk-ffolder{border-left:1px solid rgba(100,116,139,.22);padding-left:10px;margin-top:8px}
-.tk-ffolder-h{display:flex;align-items:center;font-family:'Inter','IBM Plex Sans Thai',sans-serif;font-size:12px;font-weight:700;color:var(--ink);margin:6px 0 4px}
-.tk-ffolder-n{margin-left:6px;font-weight:400;color:var(--ink-soft)}
 .tk-fileicon{color:var(--pine);font-size:16px}
 .tk-fileinfo{flex:1;min-width:0;display:flex;flex-direction:column}
 .tk-fileinfo b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -813,11 +809,6 @@
 .nv-finfo i{font:400 10.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;font-style:normal}
 .nv-frej{font:600 10px 'Inter','IBM Plex Sans Thai',sans-serif;background:rgba(239,68,68,.12);color:#EF4444;padding:2px 7px;border-radius:10px;flex:none}
 .nv-fx{font:500 11px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B;background:none;border:0;cursor:pointer;text-decoration:underline;margin-left:auto;flex:none}
-/* sub-folder group inside one request item (folder upload) */
-.nv-ffolder{margin-top:8px;border-left:1px solid rgba(100,116,139,.22);padding-left:10px}
-.nv-ffolder .nv-fchips{margin-top:4px}
-.nv-ffolder-h{display:flex;align-items:center;font:600 12px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A;margin-top:6px}
-.nv-ffolder-n{margin-left:8px;font:400 10.5px 'Inter','IBM Plex Sans Thai',sans-serif;color:#64748B}
 .nv-drop{margin-top:10px;border:1.5px dashed #12B39A;background:rgba(18,179,154,.06);border-radius:12px;padding:16px;text-align:center;cursor:pointer}
 .nv-drop.drag{background:rgba(18,179,154,.14)}
 .nv-drop .t{font:600 13px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A}

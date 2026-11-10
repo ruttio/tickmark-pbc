@@ -161,8 +161,6 @@ export const DICT = {
   "row.uploadMore": { th: "↑ อัปโหลดเพิ่ม", en: "↑ Upload more" },
   "row.takePhoto": { th: "ถ่ายรูป", en: "Take photo" },
   "row.periodClosedInline": { th: "งวดนี้ปิดแล้ว จึงอัปโหลดเพิ่มไม่ได้ในขณะนี้", en: "This period is closed, so new uploads are disabled." },
-  "row.uploadFolder": { th: "อัปโหลดทั้งโฟลเดอร์", en: "Upload a folder" },
-  "row.rootFiles": { th: "ไฟล์ในข้อนี้", en: "Files in this item" },
 
   /* ---- confirm dialogs ---- */
   "confirm.removeFile": { th: "ลบไฟล์นี้ออกจากพอร์ทัล?", en: "Remove this file from the portal?" },

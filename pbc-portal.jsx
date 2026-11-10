@@ -8,9 +8,6 @@ import { FilePreviewModal, isPreviewable } from "./src/FilePreview.jsx";
 import { CommentThread } from "./src/CommentThread.jsx";
 import { Analytics } from "./src/Analytics.jsx";
 import { Icon } from "./src/icons.jsx";
-import { FolderUploadModal } from "./src/FolderUploadModal.jsx";
-import { filesFromInput, filesFromDataTransfer, dataTransferHasFolder, groupFilesByFolder } from "./src/folderUpload.js";
-import { fileError } from "./src/uploadRules.js";
 import { isPastDueDate } from "./lib/dateUtils.js";
 import "./src/portal.css"; // shared stylesheet (also used by the client portal)
 import "./src/firmPeriods.css"; // firm-only: period switcher + deliverables surface
@@ -782,12 +779,6 @@ export default function App() {
   const updateItem = (itemId, patch) => run(() => firmApi.updateItem(itemId, patch), reloadDetail);
   const uploadSample = (itemId, fileList) =>
     run(async () => { for (const f of Array.from(fileList)) await firmApi.uploadSample(eng.id, itemId, f); }, reloadDetail);
-  // Folder upload for samples: plan is [{ file, folder }] from the preview modal.
-  const uploadSampleFolder = (itemId, plan, onProgress) =>
-    run(async () => {
-      let done = 0;
-      for (const { file, folder } of plan) { await firmApi.uploadSample(eng.id, itemId, file, folder); onProgress?.(++done); }
-    }, reloadDetail);
 
   /* ---- periods: switch months/phases, open the next one, close/reopen ---- */
   // One confirm handler for both cadences. A monthly portal passes a period end
@@ -885,11 +876,7 @@ export default function App() {
   const downloadZip = (onlyNew) =>
     run(async () => {
       if (!eng) return;
-      // Zip layout = category / <the file's own sub-folder> / file. A file
-      // uploaded loose (no sub-folder) sits directly under its category.
-      let files = periodItems.flatMap((it) => it.files.map((f) => ({
-        ...f, folder: it.category + (f.folder ? `/${f.folder}` : ""), ref: it.ref,
-      })));
+      let files = periodItems.flatMap((it) => it.files.map((f) => ({ ...f, folder: it.category, ref: it.ref })));
       const received = files.length;
       // Deliverables come too. Offline archiving is now the retention story —
       // portals expire and their objects are deleted, so the firm's own filed
@@ -1454,7 +1441,7 @@ export default function App() {
           onListComments={(itemId) => firmApi.listComments(itemId)}
           onAddComment={(itemId, body) => firmApi.addComment(itemId, eng.id, body)}
           onUpdateItem={updateItem} onReturn={returnItem}
-          onUploadSample={uploadSample} onUploadSampleFolder={uploadSampleFolder} onRemoveSample={removeSample}
+          onUploadSample={uploadSample} onRemoveSample={removeSample}
           canDelete={eng.myRole === "owner" || eng.myCanDelete} />
       )}
 
@@ -2775,17 +2762,12 @@ function PortalSettingsModal({ eng, onClose, onSavePasscode, onSaveRetention, on
   );
 }
 
-function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onPreviewUrl, onListComments, onAddComment, onSaveNote, onUpdateItem, onReturn, onUploadSample, onUploadSampleFolder, onRemoveSample, canDelete, busy }) {
+function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDelete, onDownload, onPreviewUrl, onListComments, onAddComment, onSaveNote, onUpdateItem, onReturn, onUploadSample, onRemoveSample, canDelete, busy }) {
   useEscape(true, onClose);
   const fileRef = useRef(null);
   const sampleRef = useRef(null);
-  const sampleFolderRef = useRef(null);
-  const [sampleFolderEntries, setSampleFolderEntries] = useState(null); // non-null → preview modal open
-  const [sampleDrag, setSampleDrag] = useState(false);
   const clientFiles = item.files.filter((f) => !f.isSample);
   const sampleFiles = item.files.filter((f) => f.isSample);
-  const clientFileGroups = groupFilesByFolder(clientFiles);
-  const sampleFileGroups = groupFilesByFolder(sampleFiles);
   const [preview, setPreview] = useState(null); // { file, url } while the viewer is open
   const openPreview = async (f) => {
     setPreview({ file: f, url: null });
@@ -2867,32 +2849,27 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
         <div className="tk-block">
           <p className="tk-block-h">Documents</p>
           {clientFiles.length === 0 && <p className="tk-muted">No files yet.</p>}
-          {clientFileGroups.map(({ folder, files }) => (
-            <div key={folder || "__root__"} className={folder ? "tk-ffolder" : undefined}>
-              {folder && <p className="tk-ffolder-h"><Icon name="folder" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />{folder} <span className="tk-ffolder-n">· {files.length}</span></p>}
-              <ul className="tk-filelist">
-                {files.map((f) => (
-                  <li key={f.id}>
-                    <span className="tk-fileicon"><Icon name="doc" size={16} /></span>
-                    <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
-                    {f.rejected && <span className="tk-file-rejected">ต้องแก้ไข</span>}
-                    {role === "firm" && f.downloadedAt && (
-                      <span className="tk-dl-done" title={`โหลดแล้วเมื่อ ${fmtDate(f.downloadedAt)}`}>✓</span>
-                    )}
-                    {onPreviewUrl && isPreviewable(f) && (
-                      <button className="tk-x" onClick={() => openPreview(f)}>ดู</button>
-                    )}
-                    {role === "firm" && onDownload && (
-                      <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>{f.downloadedAt ? "โหลดซ้ำ" : "download"}</button>
-                    )}
-                    {role === "client" && item.status !== "accepted" && (
-                      <button className="tk-x" onClick={() => onRemoveFile(item.id, clientFiles.indexOf(f))}>remove</button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          <ul className="tk-filelist">
+            {clientFiles.map((f, i) => (
+              <li key={i}>
+                <span className="tk-fileicon"><Icon name="doc" size={16} /></span>
+                <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
+                {f.rejected && <span className="tk-file-rejected">ต้องแก้ไข</span>}
+                {role === "firm" && f.downloadedAt && (
+                  <span className="tk-dl-done" title={`โหลดแล้วเมื่อ ${fmtDate(f.downloadedAt)}`}>✓</span>
+                )}
+                {onPreviewUrl && isPreviewable(f) && (
+                  <button className="tk-x" onClick={() => openPreview(f)}>ดู</button>
+                )}
+                {role === "firm" && onDownload && (
+                  <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>{f.downloadedAt ? "โหลดซ้ำ" : "download"}</button>
+                )}
+                {role === "client" && item.status !== "accepted" && (
+                  <button className="tk-x" onClick={() => onRemoveFile(item.id, i)}>remove</button>
+                )}
+              </li>
+            ))}
+          </ul>
           {role === "client" && item.status !== "accepted" && (
             <>
               <input ref={fileRef} type="file" multiple style={{ display: "none" }}
@@ -2907,59 +2884,21 @@ function Drawer({ item, role, onClose, onUpload, onRemoveFile, onSetStatus, onDe
           <div className="tk-block">
             <p className="tk-block-h"><Icon name="paperclip" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />รายการที่เลือก / ตัวอย่าง · ลูกค้าเห็นได้</p>
             {sampleFiles.length === 0 && <p className="tk-muted">ยังไม่มี — อัปโหลดไฟล์ที่ต้องการให้ลูกค้าเห็น (เช่น รายการสุ่มที่เลือก)</p>}
-            {sampleFileGroups.map(({ folder, files }) => (
-              <div key={folder || "__root__"} className={folder ? "tk-ffolder" : undefined}>
-                {folder && <p className="tk-ffolder-h"><Icon name="folder" size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />{folder} <span className="tk-ffolder-n">· {files.length}</span></p>}
-                <ul className="tk-filelist">
-                  {files.map((f) => (
-                    <li key={f.id}>
-                      <span className="tk-fileicon"><Icon name="paperclip" size={16} /></span>
-                      <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
-                      {onPreviewUrl && isPreviewable(f) && <button className="tk-x" onClick={() => openPreview(f)}>ดู</button>}
-                      {onDownload && <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>download</button>}
-                      {onRemoveSample && <button className="tk-x" disabled={busy} onClick={() => onRemoveSample(f)}>remove</button>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+            <ul className="tk-filelist">
+              {sampleFiles.map((f) => (
+                <li key={f.id}>
+                  <span className="tk-fileicon"><Icon name="paperclip" size={16} /></span>
+                  <span className="tk-fileinfo"><b>{f.name}</b><i>{fmtSize(f.size)} · {fmtDate(f.uploadedAt)}</i></span>
+                  {onPreviewUrl && isPreviewable(f) && <button className="tk-x" onClick={() => openPreview(f)}>ดู</button>}
+                  {onDownload && <button className="tk-x" disabled={busy} onClick={() => onDownload(f)}>download</button>}
+                  {onRemoveSample && <button className="tk-x" disabled={busy} onClick={() => onRemoveSample(f)}>remove</button>}
+                </li>
+              ))}
+            </ul>
             <input ref={sampleRef} type="file" multiple style={{ display: "none" }}
               onChange={(e) => { if (e.target.files.length) onUploadSample(item.id, e.target.files); e.target.value = ""; }} />
-            {/* Whole-folder sample upload — unsupported files are screened in the preview modal. */}
-            <input ref={sampleFolderRef} type="file" webkitdirectory="" directory="" multiple style={{ display: "none" }}
-              onChange={(e) => { const entries = filesFromInput(e.target.files); e.target.value = ""; if (entries.length) setSampleFolderEntries(entries); }} />
-            <div
-              onDragOver={(e) => { if (onUploadSampleFolder) { e.preventDefault(); setSampleDrag(true); } }}
-              onDragLeave={() => setSampleDrag(false)}
-              onDrop={(e) => {
-                if (!onUploadSampleFolder) return;
-                e.preventDefault(); setSampleDrag(false);
-                if (dataTransferHasFolder(e.dataTransfer)) {
-                  filesFromDataTransfer(e.dataTransfer).then((entries) => { if (entries.length) setSampleFolderEntries(entries); });
-                } else if (e.dataTransfer.files?.length) {
-                  onUploadSample(item.id, e.dataTransfer.files);
-                }
-              }}
-              style={sampleDrag ? { outline: "2px dashed #12B39A", outlineOffset: 2, borderRadius: 8 } : undefined}>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="tk-btn full" disabled={busy} onClick={() => sampleRef.current?.click()} style={{ flex: "1 1 140px" }}>↑ อัปโหลด sample</button>
-                {onUploadSampleFolder && (
-                  <button className="tk-btn full" disabled={busy} onClick={() => sampleFolderRef.current?.click()} style={{ flex: "1 1 140px" }}>
-                    <Icon name="folder" size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />อัปโหลดทั้งโฟลเดอร์
-                  </button>
-                )}
-              </div>
-            </div>
+            <button className="tk-btn full" disabled={busy} onClick={() => sampleRef.current?.click()}>↑ อัปโหลด sample</button>
           </div>
-        )}
-        {sampleFolderEntries && (
-          <FolderUploadModal
-            entries={sampleFolderEntries}
-            lang="th"
-            validate={(f) => fileError(f, "th")}
-            onCancel={() => setSampleFolderEntries(null)}
-            onConfirm={async (plan, onProgress) => { await onUploadSampleFolder(item.id, plan, onProgress); setSampleFolderEntries(null); }}
-          />
         )}
 
         {/* Firm-internal note (not shown to clients) */}
