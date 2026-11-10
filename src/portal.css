@@ -655,7 +655,7 @@
 .nv-dots span{width:15px;height:10px;border-radius:2px;background:rgba(100,116,139,.18)}
 .nv-dots span.done{background:#12B39A} .nv-dots span.od{background:#EF4444} .nv-dots span.wip{background:#F59E0B}
 
-.nv-work{display:grid;grid-template-columns:288px 1fr;gap:24px;align-items:start}
+.nv-work{display:grid;grid-template-columns:288px minmax(0,1fr);gap:24px;align-items:start}
 .nv-aside{position:sticky;top:80px;align-self:start;display:flex;flex-direction:column;gap:12px}
 .nv-isearch{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:9px 13px;box-shadow:0 16px 40px rgba(8,26,52,.06)}
 .nv-isearch span{color:#64748B;font-size:13px}
@@ -724,7 +724,7 @@
 .nv-bulk .lk.far{margin-left:auto}
 .nv-doc-no{font:400 12px 'Inter',sans-serif;color:#64748B;min-width:22px}
 .nv-doc-main{flex:1;min-width:0}
-.nv-doc-name{font:500 14px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nv-doc-name{font:500 14px 'Inter','IBM Plex Sans Thai',sans-serif;color:#0F172A;overflow-wrap:anywhere}
 .nv-doc-name .req{color:#12B39A;margin-left:4px}
 .nv-doc-sub{display:flex;align-items:center;gap:10px;margin-top:3px;flex-wrap:wrap}
 .nv-doc-sub .f{font:400 11px 'Inter',sans-serif;color:#12B39A}
