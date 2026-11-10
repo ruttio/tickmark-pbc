@@ -47,9 +47,9 @@ jobs:
       - name: Link production project
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
       - name: Preview database changes
-        run: supabase db push --dry-run
+        run: supabase db push --remote --dry-run
       - name: Apply database migrations
-        run: supabase db push
+        run: supabase db push --remote
       - name: Deploy all Edge Functions
         run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_ID"
       - name: Read-only smoke tests
