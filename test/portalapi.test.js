@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clientApi, mapEngagement, mapFile, mapHistory, mapItem } from "../lib/portalApi.js";
+import { clientApi, mapEngagement, mapFile, mapHistory, mapItem, sanitizeFolder, folderOfPath } from "../lib/portalApi.js";
 
 const response = (body, { ok = true, status = 200 } = {}) => ({
   ok,
@@ -17,12 +17,17 @@ describe("portal row mappers", () => {
     expect(mapFile({
       id: "f1", name: "tb.xlsx", size: "42", type: null,
       storage_path: "e/i/tb.xlsx", uploaded_at: "2026-07-14T01:00:00Z",
-      firm_downloaded_at: null, rejected: 1, is_sample: 0,
+      firm_downloaded_at: null, rejected: 1, is_sample: 0, folder: "งบ 2566/Q1",
     })).toEqual({
       id: "f1", name: "tb.xlsx", size: 42, type: "", storagePath: "e/i/tb.xlsx",
+      folder: "งบ 2566/Q1",
       uploadedAt: Date.parse("2026-07-14T01:00:00Z"), downloadedAt: null,
       rejected: true, isSample: false,
     });
+  });
+
+  it("defaults folder to '' when the column is absent (pre-migration row)", () => {
+    expect(mapFile({ id: "f1", name: "a.pdf", size: 1, storage_path: "e/i/a.pdf" }).folder).toBe("");
   });
 
   it("maps nested item relations and comment counts", () => {
@@ -51,6 +56,28 @@ describe("portal row mappers", () => {
       id: "e1", client: "ACME", clientEmail: "", template: "Audit",
       periodEnd: Date.parse("2026-12-31"), expiresAt: null, autoDelete: false, groupId: null,
     });
+  });
+});
+
+describe("sanitizeFolder / folderOfPath", () => {
+  it("keeps clean multi-segment folders (Thai included)", () => {
+    expect(sanitizeFolder("งบการเงิน 2566/Q1")).toBe("งบการเงิน 2566/Q1");
+  });
+  it("strips leading/trailing slashes, blanks, '.' and '..' segments", () => {
+    expect(sanitizeFolder("/a//./b/../c/")).toBe("a/b/c");
+    expect(sanitizeFolder("..")).toBe("");
+    expect(sanitizeFolder("")).toBe("");
+    expect(sanitizeFolder(null)).toBe("");
+  });
+  it("normalises Windows separators and caps depth at 8", () => {
+    expect(sanitizeFolder("a\\b\\c")).toBe("a/b/c");
+    expect(sanitizeFolder("1/2/3/4/5/6/7/8/9/10")).toBe("1/2/3/4/5/6/7/8");
+  });
+  it("folderOfPath returns the directory part, '' for a bare filename", () => {
+    expect(folderOfPath("งบ 2566/Q1/bank.pdf")).toBe("งบ 2566/Q1");
+    expect(folderOfPath("bank.pdf")).toBe("");
+    // ".." is dropped as a segment (never resolved as parent navigation).
+    expect(folderOfPath("root/../x/bank.pdf")).toBe("root/x");
   });
 });
 
@@ -93,6 +120,20 @@ describe("clientApi transport", () => {
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toMatchObject({
       action: "confirm", token: "tok", engagement_id: "e1", item_id: "i1",
       storage_path: "e1/i1/object.pdf",
+    });
+  });
+
+  it("passes a folder through to confirm for a folder upload", async () => {
+    const file = new File(["abc"], "bank.pdf", { type: "application/pdf" });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ path: "e1/i1/object.pdf", put_url: "https://upload.example" }))
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      .mockResolvedValueOnce(response({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await clientApi.uploadDocument("tok", "i1", file, "e1", "งบ 2566/Q1");
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toMatchObject({
+      action: "confirm", folder: "งบ 2566/Q1",
     });
   });
 

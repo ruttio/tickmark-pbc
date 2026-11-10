@@ -51,7 +51,7 @@ jobs:
       - name: Apply database migrations
         run: supabase db push --remote
       - name: Deploy all Edge Functions
-        run: supabase functions deploy --project-ref "$SUPABASE_PROJECT_ID"
+        run: supabase functions deploy --remote="$SUPABASE_PROJECT_ID" --yes
       - name: Read-only smoke tests
         run: |
           curl --fail --silent --show-error \
