@@ -67,6 +67,7 @@ const {
       eq: (...a) => { record.ops.push(["eq", ...a]); return chain; },
       in: (...a) => { record.ops.push(["in", ...a]); return chain; },
       not: (...a) => { record.ops.push(["not", ...a]); return chain; },
+      is: (...a) => { record.ops.push(["is", ...a]); return chain; },
       order: (...a) => { record.ops.push(["order", ...a]); return chain; },
       maybeSingle: () => Promise.resolve(resolve()),
       upsert: (...a) => { record.ops.push(["upsert", ...a]); return Promise.resolve(resolve()); },
